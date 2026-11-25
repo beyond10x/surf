@@ -58,10 +58,28 @@ pub enum DomEnd {
     /// A write would go over a limit of the parser: nothing is written,
     /// [`end_with_limit`] records the limit and ends the script there.
     Limit(Limit),
+    /// The String the member would answer has more UTF-16 code units than the agent's
+    /// `string_length`: the realm's `RangeError`, as for a String answered whole.
+    StringLength,
 }
 
 /// What every method of a slice answers.
 pub type DomResult<T> = Result<T, DomEnd>;
+
+/// The message of the `RangeError` for a String longer than `string_length`: swell's own for a
+/// String its operations would make too long.
+pub const STRING_LENGTH_MESSAGE: &str = "the string would be longer than string_length";
+
+/// The UTF-16 code units of `text`.
+pub fn utf16_units(text: &str) -> u64 {
+    u64::try_from(text.encode_utf16().count()).unwrap_or(u64::MAX)
+}
+
+/// Whether `text` has more UTF-16 code units than `limit`. A text of at most `limit` bytes has
+/// at most that many units and is not counted; a longer one is counted once.
+pub fn longer_than(text: &str, limit: u64) -> bool {
+    u64::try_from(text.len()).unwrap_or(u64::MAX) > limit && utf16_units(text) > limit
+}
 
 /// The `NotSupportedError` a member answers until its slice gives it behaviour: its message
 /// names the member, `<interface>.<member> is not supported`.
@@ -169,6 +187,12 @@ impl<'e> DomCx<'_, 'e> {
     /// The agent's interrupt handle.
     pub fn interrupt(&self) -> &InterruptHandle {
         &self.state.interrupt
+    }
+
+    /// The agent's `string_length`: a String a member answers with more UTF-16 code units is
+    /// the `RangeError` of [`DomEnd::StringLength`].
+    pub fn string_length(&self) -> u64 {
+        self.engine.host().string_length()
     }
 
     /// The engine, for a wrapper's host object.
@@ -561,11 +585,22 @@ fn realm_of(cx: &Cx<'_, ScriptHost>) -> Completion<RealmRef> {
 
 /// A `TypeError` of the realm with `message`, thrown.
 fn type_error(cx: &mut Cx<'_, ScriptHost>, message: &str) -> Abrupt {
-    let realm = match realm_of(cx) {
-        Ok(realm) => realm,
-        Err(abrupt) => return abrupt,
-    };
-    match engine(cx.new_error(realm, ErrorKind::TypeError, message)) {
+    match realm_of(cx) {
+        Ok(realm) => error_of(cx, realm, ErrorKind::TypeError, message),
+        Err(abrupt) => abrupt,
+    }
+}
+
+/// The `RangeError` of the realm for a String longer than the agent's `string_length`, thrown,
+/// with swell's message ([`STRING_LENGTH_MESSAGE`]).
+fn string_length_error(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::RangeError, STRING_LENGTH_MESSAGE)
+}
+
+/// An error of `kind` of `realm` with `message`, thrown.
+fn error_of(cx: &mut Cx<'_, ScriptHost>, realm: RealmRef, kind: ErrorKind, message: &str) -> Abrupt {
+    match engine(cx.new_error(realm, kind, message)) {
         Ok(error) => Abrupt::Throw(Value::Object(error)),
         Err(abrupt) => abrupt,
     }
@@ -818,6 +853,7 @@ fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
         Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
+        Err(DomEnd::StringLength) => Err(string_length_error(cx)),
     }
 }
 
@@ -1096,13 +1132,19 @@ fn number(value: f64) -> Value {
     Value::Number(value)
 }
 
-/// A new String of `text`.
-fn string_value(cx: &mut Cx<'_, ScriptHost>, text: &str) -> Completion<Value> {
-    cx.new_string(text).map(Value::String)
+/// A new String of `text`: the one conversion of a member's String answer. swell applies
+/// `string_length` to a String its own operations create, not to one `Cx::new_string` makes,
+/// so a text longer than the agent's `string_length` is the realm's `RangeError` here, before
+/// the engine copies and charges it.
+fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    if longer_than(text, cx.string_length()) {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string(text).map(Value::String)
 }
 
 /// `DOMString?` returned.
-fn nullable_string_value(cx: &mut Cx<'_, ScriptHost>, text: Option<String>) -> Completion<Value> {
+fn nullable_string_value(cx: &mut DomCx<'_, '_>, text: Option<String>) -> Completion<Value> {
     match text {
         Some(text) => string_value(cx, &text),
         None => Ok(Value::Null),
@@ -1228,7 +1270,7 @@ fn strings_value(cx: &mut DomCx<'_, '_>, strings: Vec<String>) -> Completion<Val
         return Err(missing());
     };
     for (index, text) in strings.iter().enumerate() {
-        let value = string_value(cx.engine, text)?;
+        let value = string_value(cx, text)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(value, true, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
@@ -1405,7 +1447,7 @@ pub fn install(
         }
         define(cx, object, "prototype", data_property(Value::Object(prototype), false, false, false))?;
         define(cx, prototype, "constructor", data_property(Value::Object(object), true, false, true))?;
-        let name = string_value(cx, interface.name())?;
+        let name = Value::String(cx.new_string(interface.name())?);
         engine(cx.define_property_or_throw(
             prototype,
             PropertyKey::Symbol(tag),

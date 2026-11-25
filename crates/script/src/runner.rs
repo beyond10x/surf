@@ -155,6 +155,8 @@ pub struct ScriptHost {
     /// The DOM bindings of a document's runner ([`run_document`]); `None` for a runner
     /// without a document.
     pub(crate) dom: Option<Box<Dom>>,
+    /// The agent's `string_length`, which the bindings apply to a String a member answers.
+    string_length: u64,
 }
 
 enum Clock {
@@ -163,15 +165,26 @@ enum Clock {
 }
 
 impl ScriptHost {
-    /// The host of `mode`.
-    pub fn new(mode: Mode) -> Self {
+    /// The host of `mode` for an agent made with `string_length`. swell applies that limit to
+    /// a String its own operations create; the bindings apply it to a String a member answers,
+    /// before `Cx::new_string`.
+    pub fn new(mode: Mode, string_length: u64) -> Self {
         let clock = match mode {
             Mode::Session => Clock::System,
             Mode::Test => Clock::Test {
                 next: TEST_CLOCK_START,
             },
         };
-        Self { clock, dom: None }
+        Self {
+            clock,
+            dom: None,
+            string_length,
+        }
+    }
+
+    /// The agent's `string_length`, in UTF-16 code units.
+    pub fn string_length(&self) -> u64 {
+        self.string_length
     }
 
     /// The document of a runner with the DOM bindings, `None` for one without.
@@ -569,8 +582,8 @@ impl Runner {
         document: Option<Document>,
     ) -> Result<Self, RunnerError> {
         let seeds = mode.seeds().map_err(RunnerError::Seeds)?;
-        let mut agent =
-            Agent::new(ScriptHost::new(mode), limits.engine, seeds).map_err(RunnerError::Agent)?;
+        let host = ScriptHost::new(mode, limits.engine.string_length);
+        let mut agent = Agent::new(host, limits.engine, seeds).map_err(RunnerError::Agent)?;
         let mut window = |cx: &mut HookCx<'_, ScriptHost>, realm: RealmRef| {
             let global = cx
                 .new_host_object(bindings::window_spec(realm))

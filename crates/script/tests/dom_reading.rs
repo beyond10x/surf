@@ -1616,13 +1616,32 @@ fn string_steps() {
     assert!(long >= short + 999, "{long} against {short}");
 }
 
-/// A text of 16,777,217 bytes, one more than the session's `string_length`, parsed under raised
-/// limits. The story expected `textContent` to throw a `RangeError`; at swell 0.8.0 the engine
-/// applies `string_length` to a String made at run time from other values only, not to one the
-/// host makes with `new_string`, and the read ends with the whole String. The case asserts the
-/// end it reached: the String's length.
-#[test]
-fn string_length() {
+/// The message of the `RangeError` for a String longer than `string_length`: swell's own.
+const STRING_LENGTH_MESSAGE: &str = "the string would be longer than string_length";
+
+/// The functions of the scripts that read past `string_length`: `rangeError(f, what)` checks
+/// that `f` throws the realm's `RangeError` with swell's message.
+const RANGE: &str = r#"
+function rangeError(read, what) {
+  try { read(); } catch (e) {
+    if (!(e instanceof RangeError) || e.constructor !== RangeError) {
+      throw new Error(what + ": not a RangeError: " + e);
+    }
+    if (e.message !== MESSAGE) { throw new Error(what + ": the message " + e.message); }
+    return;
+  }
+  throw new Error(what + ": no throw");
+}
+"#;
+
+/// `source` after [`CHECK`], [`RANGE`] and `MESSAGE`.
+fn with_range(source: &str) -> String {
+    format!("{CHECK}{RANGE}var MESSAGE = \"{STRING_LENGTH_MESSAGE}\";\n{source}")
+}
+
+/// The end of `source` in a runner with the session's engine limits over a document of one text
+/// of `bytes` bytes of ASCII, parsed under limits raised for it, and the time it took.
+fn one_text(bytes: usize, source: &str) -> (ScriptEnd, Duration) {
     let started = Instant::now();
     let parse_limits = ParserLimits {
         max_input_bytes: 32 * 1024 * 1024,
@@ -1631,11 +1650,12 @@ fn string_length() {
     };
     let mut session = limits();
     session.engine = SESSION_ENGINE_LIMITS;
+    let source = with_range(source);
     let end = run_document(
         session,
         Mode::Test,
         move || {
-            let text = "a".repeat(16_777_217);
+            let text = "a".repeat(bytes);
             let options = ParseOptions {
                 limits: parse_limits,
                 ..ParseOptions::default()
@@ -1646,18 +1666,176 @@ fn string_length() {
                 slices: slices(DocumentInfo::default()),
             }
         },
-        |runner| {
-            runner.evaluate(
-                r#"var t = document.documentElement.lastChild.firstChild;
-                   if (t.length !== 16777217) throw new Error("length " + t.length);
-                   var read = t.textContent;
-                   if (read.length !== 16777217) throw new Error("read " + read.length);"#,
-            )
-        },
+        |runner| runner.evaluate(&source),
     )
     .expect("a runner");
-    eprintln!("string_length: {end} in {:?}", started.elapsed());
+    (end, started.elapsed())
+}
+
+/// 8h: a text of 16,777,217 bytes, one more than the session's `string_length`, parsed under
+/// raised limits: its `textContent` and the body's are the realm's `RangeError`, caught by the
+/// script.
+#[test]
+fn string_length() {
+    let (end, took) = one_text(
+        16_777_217,
+        r##"var t = document.documentElement.lastChild.firstChild;
+           check(t.length === 16777217, "length " + t.length);
+           rangeError(function () { return t.textContent; }, "the text");
+           rangeError(function () { return document.documentElement.lastChild.textContent; }, "the body");
+           check(t.nodeName === "#text", "read on");"##,
+    );
+    eprintln!("string_length: {end} in {took:?}");
     assert_eq!(end, ScriptEnd::Ran, "{end}");
+}
+
+/// A text of exactly `string_length` code units is read whole.
+#[test]
+fn a_string_of_string_length_units_is_read() {
+    let (end, took) = one_text(
+        16_777_216,
+        r#"var t = document.documentElement.lastChild.firstChild;
+           check(t.textContent.length === 16777216, "the text");
+           check(document.documentElement.lastChild.textContent.length === 16777216, "the body");"#,
+    );
+    eprintln!("a String of string_length units: {end} in {took:?}");
+    assert_eq!(end, ScriptEnd::Ran, "{end}");
+}
+
+/// The limits of [`limits`] with a `string_length` of 1,024 code units.
+fn short_strings() -> RunnerLimits {
+    let mut short = limits();
+    short.engine.string_length = 1_024;
+    short
+}
+
+/// `string_length` counts UTF-16 code units, not bytes: two-byte and three-byte characters are
+/// one unit each, an astral character two.
+#[test]
+fn string_length_counts_utf16_units() {
+    let page = format!(
+        "<p id=\"two\">{}</p><p id=\"three\">{}</p><p id=\"astral\">{}</p><p id=\"over\">{}a</p>",
+        "\u{e9}".repeat(1_024),
+        "\u{20ac}".repeat(1_024),
+        "\u{1f600}".repeat(512),
+        "\u{1f600}".repeat(512),
+    );
+    with_page(short_strings(), page, info(), |runner| {
+        ran(
+            runner,
+            &with_range(
+                r#"function text(id) { return document.getElementById(id).firstChild; }
+                   check(text("two").data.length === 1024, "two-byte data");
+                   check(text("two").parentNode.textContent.length === 1024, "two-byte content");
+                   check(text("three").data.length === 1024, "three-byte data");
+                   check(text("astral").data.length === 1024, "astral data");
+                   rangeError(function () { return text("over").data; }, "astral and one");
+                   rangeError(function () { return text("over").parentNode.textContent; },
+                              "astral and one, content");"#,
+            ),
+        );
+    });
+}
+
+/// A String the glue alone checks (an element's name, which the slice copies unchecked) past
+/// `string_length` is the `RangeError`; one of `string_length` units is read.
+#[test]
+fn a_name_past_string_length_is_a_range_error() {
+    let long = "a".repeat(1_025);
+    let units = format!("a{}", "\u{e9}".repeat(1_023));
+    let page = format!("<{long}></{long}><{units}></{units}>");
+    with_page(short_strings(), page, info(), |runner| {
+        ran(
+            runner,
+            &with_range(
+                r#"var body = document.documentElement.lastChild;
+                   check(body.childNodes.length === 2, "two elements");
+                   rangeError(function () { return body.firstChild.tagName; }, "tagName");
+                   rangeError(function () { return body.firstChild.localName; }, "localName");
+                   check(body.lastChild.localName.length === 1024, "a name of 1,024 units");"#,
+            ),
+        );
+    });
+}
+
+/// `data` and `nodeValue` past `string_length` throw before the copy: the read of 64,000 bytes
+/// costs the steps of the read of 1,025, not one per 64 bytes. The script catches the error and
+/// reads on: the same wrapper answers, and the parent's collection reads as before.
+#[test]
+fn data_past_string_length_throws_before_the_copy() {
+    let page = format!("<p>{}</p><p>{}</p>", "a".repeat(1_025), "a".repeat(64_000));
+    with_page(short_strings(), page, info(), |runner| {
+        ran(
+            runner,
+            &with_range(
+                r##"var body = document.documentElement.lastChild;
+                   var p = body.firstChild, a = p.firstChild;
+                   var b = body.lastChild.firstChild;
+                   var kids = p.childNodes;
+                   check(kids.length === 1 && kids[0] === a, "before");
+                   rangeError(function () { return a.data; }, "data");
+                   rangeError(function () { return a.nodeValue; }, "nodeValue");
+                   check(a.nodeName === "#text", "nodeName after");
+                   check(p.firstChild === a, "the same wrapper after");
+                   check(p.childNodes === kids, "the same collection after");
+                   check(kids.length === 1 && kids[0] === a, "the collection after");"##,
+            ),
+        );
+        let short = steps(runner, "try { a.data; } catch (e) {}");
+        let long = steps(runner, "try { b.data; } catch (e) {}");
+        eprintln!("data past string_length: 1,025 bytes {short} steps, 64,000 bytes {long}");
+        assert!(long < short + 10, "{long} against {short}");
+    });
+}
+
+/// The members that concatenate (`textContent`, `wholeText`, `title`) throw when the pieces
+/// pass `string_length` only together, and stop there: the content of 1,000 texts of 400 bytes
+/// costs the steps of the first three. `title` is held to the String it answers, after the
+/// whitespace is collapsed.
+#[test]
+fn concatenation_past_string_length_stops() {
+    let page = format!(
+        "<p id=\"p\">{}</p><p id=\"q\">{}</p><p id=\"r\">{}</p><div id=\"d\">{}</div>",
+        "a".repeat(400),
+        "b".repeat(400),
+        "c".repeat(400),
+        format!("<i>{}</i>", "x".repeat(400)).repeat(1_000),
+    );
+    with_page(short_strings(), page, info(), |runner| {
+        ran(
+            runner,
+            &with_range(
+                r#"function el(id) { return document.getElementById(id); }
+                   var p = el("p");
+                   check(p.textContent.length === 400, "one piece");
+                   p.appendChild(el("q").firstChild);
+                   p.appendChild(el("r").firstChild);
+                   check(p.childNodes.length === 3, "three adjacent texts");
+                   check(p.childNodes[1].data.length === 400, "each piece reads");
+                   rangeError(function () { return p.textContent; }, "textContent");
+                   rangeError(function () { return p.firstChild.wholeText; }, "wholeText");
+                   rangeError(function () { return p.lastChild.wholeText; }, "wholeText, last");
+                   var d = el("d");"#,
+            ),
+        );
+        let stopped = steps(runner, "try { d.textContent; } catch (e) {}");
+        eprintln!("textContent of 1,000 texts past string_length: {stopped} steps");
+        assert!(stopped < 200, "{stopped}");
+    });
+    let title = |text: String| format!("<title>{text}</title>");
+    with_page(short_strings(), title("a ".repeat(600)), info(), |runner| {
+        ran(
+            runner,
+            &with_range(r#"rangeError(function () { return document.title; }, "title");"#),
+        );
+    });
+    let spaces = title(format!("{}x{}", " ".repeat(2_000), " ".repeat(2_000)));
+    with_page(short_strings(), spaces, info(), |runner| {
+        ran(
+            runner,
+            &with_range(r#"check(document.title === "x", "collapsed");"#),
+        );
+    });
 }
 
 /// The loops over a collection read `length` and the index properties: after no write a read of

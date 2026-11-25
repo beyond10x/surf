@@ -7,6 +7,13 @@
 //! work, so a script over a large tree ends at its step limit and not at the wall clock. The
 //! walks keep their own list of nodes, so a deep tree does not deepen the call stack.
 //!
+//! Strings. A String a member answers with more UTF-16 code units than the agent's
+//! `string_length` is the realm's `RangeError`; the bindings check every answer before the
+//! engine copies it. The members here do not build what would be thrown away: `data`,
+//! `nodeValue` and a text's `textContent` check the data before they copy it, and the members
+//! that concatenate (`textContent`, `wholeText`, `title`) stop at the piece that would take the
+//! String past the limit, with the steps of what they visited charged.
+//!
 //! Siblings. The tree has no sibling read: a sibling is found by the node's index among its
 //! parent's children. [`SurfReading`] keeps that index for the last eight parents it answered
 //! about ([`Hints`]). A hint is never trusted: the child at the hinted index, the one before it
@@ -18,7 +25,8 @@ use surf_html::{Namespace, NodeData, NodeId, QuirksMode, Tree};
 use surf_url::Url;
 
 use crate::bindings::{
-    DomCx, DomEnd, DomException, DomResult, GetRootNodeOptions, Reading, TheWindow,
+    DomCx, DomEnd, DomException, DomResult, GetRootNodeOptions, Reading, TheWindow, longer_than,
+    utf16_units,
 };
 
 use super::DocumentInfo;
@@ -187,10 +195,78 @@ fn text(cx: &mut DomCx<'_, '_>, text: String) -> DomResult<String> {
     Ok(text)
 }
 
-/// `node`'s data as a member answers it, charged as [`text`].
-fn copied(cx: &mut DomCx<'_, '_>, data: &str) -> DomResult<String> {
-    charge(cx, data.len() / 64)?;
-    Ok(data.to_string())
+/// The character data of `node` as `data`, `nodeValue` and `textContent` answer it, `None` for
+/// a node without: past the agent's `string_length` the `RangeError`, before it is charged or
+/// copied; else charged as [`text`], then copied.
+fn copied(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<String>> {
+    let limit = cx.string_length();
+    let Some(data) = character_data(cx.tree(), node) else {
+        return Ok(None);
+    };
+    if longer_than(data, limit) {
+        return Err(DomEnd::StringLength);
+    }
+    let steps = data.len() / 64;
+    charge(cx, steps)?;
+    Ok(character_data(cx.tree(), node).map(str::to_string))
+}
+
+/// A String a member builds from pieces (`textContent`, `wholeText`, `title`), held to the
+/// agent's `string_length` before each piece is appended: a piece that would take it past the
+/// limit is not appended, and the member ends with the `RangeError`. Its UTF-16 code units are
+/// counted only once its bytes pass the limit: what it holds then once, and each later piece.
+struct Gathered {
+    text: String,
+    limit: u64,
+    units: Option<u64>,
+}
+
+impl Gathered {
+    fn new(limit: u64) -> Gathered {
+        Gathered {
+            text: String::new(),
+            limit,
+            units: None,
+        }
+    }
+
+    /// Admits `piece`: the `RangeError` when the String with it would be longer than the limit.
+    /// Admitted, it is to be appended with [`Gathered::append`].
+    fn admit(&mut self, piece: &str) -> DomResult<()> {
+        let bytes = self.text.len().saturating_add(piece.len());
+        if u64::try_from(bytes).unwrap_or(u64::MAX) <= self.limit {
+            return Ok(());
+        }
+        let held = match self.units {
+            Some(units) => units,
+            None => utf16_units(&self.text),
+        };
+        let units = held.saturating_add(utf16_units(piece));
+        if units > self.limit {
+            return Err(DomEnd::StringLength);
+        }
+        self.units = Some(units);
+        Ok(())
+    }
+
+    /// The steps of appending `bytes` more: one per 64 bytes of the whole.
+    fn steps(&self, bytes: usize) -> usize {
+        (self.text.len() + bytes) / 64 - self.text.len() / 64
+    }
+
+    fn append(&mut self, piece: &str) {
+        self.text.push_str(piece);
+    }
+}
+
+/// Appends the data of the text `node` to `gathered`: admitted, charged, then copied.
+fn gather(cx: &mut DomCx<'_, '_>, gathered: &mut Gathered, node: NodeId) -> DomResult<()> {
+    let data = character_data(cx.tree(), node).unwrap_or_default();
+    gathered.admit(data)?;
+    let steps = gathered.steps(data.len());
+    charge(cx, steps)?;
+    gathered.append(character_data(cx.tree(), node).unwrap_or_default());
+    Ok(())
 }
 
 fn is_element(tree: &Tree, node: NodeId) -> bool {
@@ -721,10 +797,7 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         this: NodeId,
     ) -> DomResult<Option<String>> {
-        match character_data(cx.tree(), this).map(str::to_string) {
-            Some(data) => text(cx, data).map(Some),
-            None => Ok(None),
-        }
+        copied(cx, this)
     }
 
     fn node_text_content(
@@ -738,22 +811,20 @@ impl Reading for SurfReading {
                 self.node_node_value(cx, this)
             }
             NodeData::Element { .. } | NodeData::DocumentFragment => {
-                // The descendant text content: the data of the Text nodes under it, in order.
-                let texts = select(cx, this, |tree, node| {
-                    matches!(tree.data(node), NodeData::Text(_))
-                })?;
-                let tree = cx.tree();
-                let bytes: usize = texts
-                    .iter()
-                    .filter_map(|&node| character_data(tree, node))
-                    .map(str::len)
-                    .sum();
-                charge(cx, bytes / 64)?;
-                let tree = cx.tree();
-                let mut content = String::with_capacity(bytes);
-                for node in texts {
-                    content.push_str(character_data(tree, node).unwrap_or_default());
+                // The descendant text content: the data of the Text nodes under it, in order,
+                // one step per node visited; the walk stops at the text that would take the
+                // String past `string_length`.
+                let mut content = Gathered::new(cx.string_length());
+                let mut pending = vec![this];
+                while let Some(next) = pending.pop() {
+                    charge(cx, 1)?;
+                    let tree = cx.tree();
+                    pending.extend(tree.children(next).iter().rev());
+                    if matches!(tree.data(next), NodeData::Text(_)) {
+                        gather(cx, &mut content, next)?;
+                    }
                 }
+                let content = content.text;
                 Ok(Some(content))
             }
         }
@@ -1070,11 +1141,11 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         _this: NodeId,
     ) -> DomResult<String> {
-        copied(cx, &self.info.encoding)
+        text(cx, self.info.encoding.clone())
     }
 
     fn document_charset(&mut self, cx: &mut DomCx<'_, '_>, _this: NodeId) -> DomResult<String> {
-        copied(cx, &self.info.encoding)
+        text(cx, self.info.encoding.clone())
     }
 
     fn document_input_encoding(
@@ -1082,7 +1153,7 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         _this: NodeId,
     ) -> DomResult<String> {
-        copied(cx, &self.info.encoding)
+        text(cx, self.info.encoding.clone())
     }
 
     fn document_content_type(
@@ -1090,7 +1161,7 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         _this: NodeId,
     ) -> DomResult<String> {
-        copied(cx, &self.info.content_type)
+        text(cx, self.info.content_type.clone())
     }
 
     fn document_doctype(
@@ -1191,25 +1262,48 @@ impl Reading for SurfReading {
         };
         let children = cx.tree().children(title).len();
         charge(cx, children)?;
+        // The collapsed String is gathered word by word, a word running on across two texts,
+        // and held to `string_length` as it grows: the limit applies to what `title` answers.
+        let mut collapsed = Gathered::new(cx.string_length());
+        let mut space = false;
+        let mut over = false;
         let tree = cx.tree();
-        let mut content = String::new();
-        for &child in tree.children(title) {
-            if let NodeData::Text(data) = tree.data(child) {
-                content.push_str(data);
+        'texts: for &child in tree.children(title) {
+            let NodeData::Text(data) = tree.data(child) else {
+                continue;
+            };
+            let mut rest: &str = data;
+            while !rest.is_empty() {
+                let word = rest.trim_start_matches(|c: char| c.is_ascii_whitespace());
+                space |= word.len() < rest.len();
+                let end = word
+                    .find(|c: char| c.is_ascii_whitespace())
+                    .unwrap_or(word.len());
+                if end > 0 {
+                    let pieces = [" ", &word[..end]];
+                    let first = usize::from(!space || collapsed.text.is_empty());
+                    for piece in &pieces[first..] {
+                        if collapsed.admit(piece).is_err() {
+                            over = true;
+                            break 'texts;
+                        }
+                        collapsed.append(piece);
+                    }
+                    space = false;
+                }
+                rest = &word[end..];
             }
         }
-        let collapsed = content
-            .split_ascii_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-        text(cx, collapsed)
+        let steps = collapsed.text.len() / 64;
+        charge(cx, steps)?;
+        if over {
+            return Err(DomEnd::StringLength);
+        }
+        Ok(collapsed.text)
     }
 
     fn character_data_data(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<String> {
-        let data = character_data(cx.tree(), this)
-            .unwrap_or_default()
-            .to_string();
-        text(cx, data)
+        copied(cx, this).map(Option::unwrap_or_default)
     }
 
     fn character_data_length(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<u32> {
@@ -1281,18 +1375,14 @@ impl Reading for SurfReading {
             .position(|&node| !is_text(node))
             .map_or(children.len(), |at| index + at);
         let run: Vec<NodeId> = children[first..last].to_vec();
-        let bytes: usize = run
-            .iter()
-            .filter_map(|&node| character_data(tree, node))
-            .map(str::len)
-            .sum();
-        charge(cx, run.len() + bytes / 64)?;
-        let tree = cx.tree();
-        let mut whole = String::with_capacity(bytes);
+        // One step per text visited; the run stops at the text that would take the String
+        // past `string_length`.
+        let mut whole = Gathered::new(cx.string_length());
         for node in run {
-            whole.push_str(character_data(tree, node).unwrap_or_default());
+            charge(cx, 1)?;
+            gather(cx, &mut whole, node)?;
         }
-        Ok(whole)
+        Ok(whole.text)
     }
 
     fn text_assigned_slot(

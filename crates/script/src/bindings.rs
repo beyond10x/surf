@@ -50,13 +50,13 @@
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! b3fbe10e75e1c160ea1bc239423bc3fb3fcc0b1e88b24ad679c2e9dd80613fe3  crates/webidl/src/generate.rs
+//! f24ef2e6f8da8efd2666ca4248c675316b3bee44c34cb245dc99634a4547ef7a  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! e280eafbb9e2d1be14c333ca6b049527cb47610be0677d959621d34d6620067e  crates/webidl/src/prelude.rs
+//! 16ea3cd2daf6b2205ea3d13910c652b212c844856f9291fa89f73f2ff754ac01  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 9e266590d45c1776ace461b4948a39c958d71d9b4640c656af3baf01ee0e73d7
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: eeb222f15be74b35f60c5701a649b19aed1357f739d854024b725b2fe9797b2c
 
 use std::cell::Cell;
 
@@ -123,10 +123,28 @@ pub enum DomEnd {
     /// A write would go over a limit of the parser: nothing is written,
     /// [`end_with_limit`] records the limit and ends the script there.
     Limit(Limit),
+    /// The String the member would answer has more UTF-16 code units than the agent's
+    /// `string_length`: the realm's `RangeError`, as for a String answered whole.
+    StringLength,
 }
 
 /// What every method of a slice answers.
 pub type DomResult<T> = Result<T, DomEnd>;
+
+/// The message of the `RangeError` for a String longer than `string_length`: swell's own for a
+/// String its operations would make too long.
+pub const STRING_LENGTH_MESSAGE: &str = "the string would be longer than string_length";
+
+/// The UTF-16 code units of `text`.
+pub fn utf16_units(text: &str) -> u64 {
+    u64::try_from(text.encode_utf16().count()).unwrap_or(u64::MAX)
+}
+
+/// Whether `text` has more UTF-16 code units than `limit`. A text of at most `limit` bytes has
+/// at most that many units and is not counted; a longer one is counted once.
+pub fn longer_than(text: &str, limit: u64) -> bool {
+    u64::try_from(text.len()).unwrap_or(u64::MAX) > limit && utf16_units(text) > limit
+}
 
 /// The `NotSupportedError` a member answers until its slice gives it behaviour: its message
 /// names the member, `<interface>.<member> is not supported`.
@@ -234,6 +252,12 @@ impl<'e> DomCx<'_, 'e> {
     /// The agent's interrupt handle.
     pub fn interrupt(&self) -> &InterruptHandle {
         &self.state.interrupt
+    }
+
+    /// The agent's `string_length`: a String a member answers with more UTF-16 code units is
+    /// the `RangeError` of [`DomEnd::StringLength`].
+    pub fn string_length(&self) -> u64 {
+        self.engine.host().string_length()
     }
 
     /// The engine, for a wrapper's host object.
@@ -631,11 +655,32 @@ fn realm_of(cx: &Cx<'_, ScriptHost>) -> Completion<RealmRef> {
 
 /// A `TypeError` of the realm with `message`, thrown.
 fn type_error(cx: &mut Cx<'_, ScriptHost>, message: &str) -> Abrupt {
-    let realm = match realm_of(cx) {
-        Ok(realm) => realm,
-        Err(abrupt) => return abrupt,
-    };
-    match engine(cx.new_error(realm, ErrorKind::TypeError, message)) {
+    match realm_of(cx) {
+        Ok(realm) => error_of(cx, realm, ErrorKind::TypeError, message),
+        Err(abrupt) => abrupt,
+    }
+}
+
+/// The `RangeError` of the realm for a String longer than the agent's `string_length`, thrown,
+/// with swell's message ([`STRING_LENGTH_MESSAGE`]).
+fn string_length_error(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(
+        cx.engine,
+        realm,
+        ErrorKind::RangeError,
+        STRING_LENGTH_MESSAGE,
+    )
+}
+
+/// An error of `kind` of `realm` with `message`, thrown.
+fn error_of(
+    cx: &mut Cx<'_, ScriptHost>,
+    realm: RealmRef,
+    kind: ErrorKind,
+    message: &str,
+) -> Abrupt {
+    match engine(cx.new_error(realm, kind, message)) {
         Ok(error) => Abrupt::Throw(Value::Object(error)),
         Err(abrupt) => abrupt,
     }
@@ -904,6 +949,7 @@ fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
         Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
+        Err(DomEnd::StringLength) => Err(string_length_error(cx)),
     }
 }
 
@@ -1188,13 +1234,19 @@ fn number(value: f64) -> Value {
     Value::Number(value)
 }
 
-/// A new String of `text`.
-fn string_value(cx: &mut Cx<'_, ScriptHost>, text: &str) -> Completion<Value> {
-    cx.new_string(text).map(Value::String)
+/// A new String of `text`: the one conversion of a member's String answer. swell applies
+/// `string_length` to a String its own operations create, not to one `Cx::new_string` makes,
+/// so a text longer than the agent's `string_length` is the realm's `RangeError` here, before
+/// the engine copies and charges it.
+fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    if longer_than(text, cx.string_length()) {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string(text).map(Value::String)
 }
 
 /// `DOMString?` returned.
-fn nullable_string_value(cx: &mut Cx<'_, ScriptHost>, text: Option<String>) -> Completion<Value> {
+fn nullable_string_value(cx: &mut DomCx<'_, '_>, text: Option<String>) -> Completion<Value> {
     match text {
         Some(text) => string_value(cx, &text),
         None => Ok(Value::Null),
@@ -1320,7 +1372,7 @@ fn strings_value(cx: &mut DomCx<'_, '_>, strings: Vec<String>) -> Completion<Val
         return Err(missing());
     };
     for (index, text) in strings.iter().enumerate() {
-        let value = string_value(cx.engine, text)?;
+        let value = string_value(cx, text)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(value, true, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
@@ -1518,7 +1570,7 @@ pub fn install(
             "constructor",
             data_property(Value::Object(object), true, false, true),
         )?;
-        let name = string_value(cx, interface.name())?;
+        let name = Value::String(cx.new_string(interface.name())?);
         engine(cx.define_property_or_throw(
             prototype,
             PropertyKey::Symbol(tag),
@@ -3724,7 +3776,7 @@ fn getter_node_node_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.node_node_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -3738,7 +3790,7 @@ fn getter_node_base_uri(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Comp
         let answer = slices.reading.node_base_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -3921,7 +3973,7 @@ fn getter_node_node_value(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Co
         let answer = slices.reading.node_node_value(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -3952,7 +4004,7 @@ fn getter_node_text_content(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
         let answer = slices.reading.node_text_content(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4102,7 +4154,7 @@ fn operation_node_lookup_prefix(
         let answer = slices.reading.node_lookup_prefix(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4125,7 +4177,7 @@ fn operation_node_lookup_namespace_uri(
         let answer = slices.reading.node_lookup_namespace_uri(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4245,7 +4297,7 @@ fn getter_element_namespace_uri(
         let answer = slices.reading.element_namespace_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4259,7 +4311,7 @@ fn getter_element_prefix(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.element_prefix(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4273,7 +4325,7 @@ fn getter_element_local_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.reading.element_local_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4287,7 +4339,7 @@ fn getter_element_tag_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
         let answer = slices.reading.element_tag_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4301,7 +4353,7 @@ fn getter_element_id(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Complet
         let answer = slices.attributes.element_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4329,7 +4381,7 @@ fn getter_element_class_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.attributes.element_class_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4373,7 +4425,7 @@ fn getter_element_slot(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Compl
         let answer = slices.attributes.element_slot(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4447,7 +4499,7 @@ fn operation_element_get_attribute(
         let answer = slices.attributes.element_get_attribute(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4474,7 +4526,7 @@ fn operation_element_get_attribute_ns(
             .element_get_attribute_ns(dcx, this, a0, a1);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -5246,7 +5298,7 @@ fn getter_document_url(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Compl
         let answer = slices.reading.document_url(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5263,7 +5315,7 @@ fn getter_document_document_uri(
         let answer = slices.reading.document_document_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5280,7 +5332,7 @@ fn getter_document_compat_mode(
         let answer = slices.reading.document_compat_mode(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5297,7 +5349,7 @@ fn getter_document_character_set(
         let answer = slices.reading.document_character_set(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5311,7 +5363,7 @@ fn getter_document_charset(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
         let answer = slices.reading.document_charset(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5328,7 +5380,7 @@ fn getter_document_input_encoding(
         let answer = slices.reading.document_input_encoding(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5345,7 +5397,7 @@ fn getter_document_content_type(
         let answer = slices.reading.document_content_type(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6015,7 +6067,7 @@ fn getter_document_title(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.document_title(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6046,7 +6098,7 @@ fn getter_character_data_data(
         let answer = slices.reading.character_data_data(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6105,7 +6157,7 @@ fn operation_character_data_substring_data(
             .character_data_substring_data(dcx, this, a0, a1);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6339,7 +6391,7 @@ fn getter_text_whole_text(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Co
         let answer = slices.reading.text_whole_text(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6420,7 +6472,7 @@ fn getter_processing_instruction_target(
         let answer = slices.reading.processing_instruction_target(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6574,7 +6626,7 @@ fn getter_document_type_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.reading.document_type_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6591,7 +6643,7 @@ fn getter_document_type_public_id(
         let answer = slices.reading.document_type_public_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6608,7 +6660,7 @@ fn getter_document_type_system_id(
         let answer = slices.reading.document_type_system_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }

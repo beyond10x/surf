@@ -218,9 +218,9 @@ impl Return {
             Return::Unsigned16 | Return::Unsigned32 => {
                 "|_, _, value| Ok(number(f64::from(value)))".to_string()
             }
-            Return::String => "|dcx, _, value| string_value(dcx.engine(), &value)".to_string(),
+            Return::String => "|dcx, _, value| string_value(dcx, &value)".to_string(),
             Return::NullableString => {
-                "|dcx, _, value| nullable_string_value(dcx.engine(), value)".to_string()
+                "|dcx, _, value| nullable_string_value(dcx, value)".to_string()
             }
             Return::Node => "node_value".to_string(),
             Return::NullableNode => "nullable_node_value".to_string(),
