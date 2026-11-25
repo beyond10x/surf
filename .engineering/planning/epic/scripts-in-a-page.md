@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 59
+revision: 60
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -133,7 +133,9 @@ Out, each with its reason:
   member that returns a live `NodeList` or `HTMLCollection` returns a snapshot with indexed own
   properties, a named deviation recorded beside each such member; selectors beyond the subset of
   `scripts-dom-selectors`, and selectors over its bounds, throw a `SyntaxError` whose message
-  says surf does not support them, a named deviation (a browser runs them).
+  says surf does not support them, a named deviation (a browser runs them); a pseudo-class or
+  pseudo-element that surf recognises by its shape gets the same message also where a browser
+  calls the text not valid (`a:hovr`), a second named deviation.
 - `document.write` and the rest of HTML's `Document`, `Window` beyond `document`, `window` and
   `self`, and the element interfaces (`HTMLElement`, `HTMLAnchorElement`, ...): an element's
   wrapper is an `Element`, a named deviation. Which HTML definitions are generated is S6.
@@ -743,7 +745,9 @@ Behaviour in the first version, by slice (146 members of the table):
   presence and equality, compounds, descendant and child combinators, lists); a valid selector
   outside it, or over its bounds, throws a `SyntaxError` whose message says surf does not
   support it (the DOM Standard gives these members only `SyntaxError`), a named deviation (a
-  browser would run it).
+  browser would run it); a pseudo-class or pseudo-element that surf recognises by its shape
+  gets the same message also where a browser calls the text not valid (`a:hovr`), a second
+  named deviation.
 - Generated to throw `NotSupportedError`, naming the member and its reason, 23 and both
   constructors: events (`addEventListener`, `removeEventListener`, `dispatchEvent`,
   `createEvent`, `new EventTarget()`), attribute nodes and token lists (`attributes`, `classList`,
@@ -761,7 +765,9 @@ Behaviour in the first version, by slice (146 members of the table):
   `children` only as the same snapshot object refreshed when it is read; an element's wrapper is
   an `Element`, not `HTMLAnchorElement` and its kin; a valid selector outside the subset of
   `scripts-dom-selectors`, or over its bounds, throws a `SyntaxError` whose message says surf
-  does not support it, where a browser runs it.
+  does not support it, where a browser runs it; and a pseudo-class or pseudo-element that surf
+  recognises by its shape gets that message too, also where a browser calls the text not valid
+  (`a:hovr`, `a:nth-child(x y z)`), a second deviation of the same members.
 
 How the bindings meet swell's host interface (`docs/design/host-interface.md` sections 7, 14,
 15, and `crates/swell/src/host/` at `6a43e18`):
@@ -993,6 +999,7 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 716-724 ("Tree reading, 73"): `compatMode`, `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and `contentType` need the document's facts, which no generated type holds: `surf_script::dom::DocumentInfo` (address as a `surf_url::Url`, content type, encoding name), built by `story:scripts-parse-run`, and the quirks mode, which the parser writes into `surf_html::Tree`. `Node.baseURI` is the HTML document base URL (the first `base` element with an `href`, parsed against the address), with three named deviations. Decisions 11 to 13.
 - Lines 473-474 (candidate 10): "the 14 attribute members, held to the attribute limits. Depends on 7 and 8. Writes `crates/script/src/dom/attributes.rs` and its tests." Now: `story:scripts-dom-attributes` writes three files of `crates/script/src/dom/` (`attributes.rs` for the members, `attribute_reads.rs` for every read of the tree, `attribute_writes.rs` for every write) and its tests, and also `crates/html/src/tree.rs` (five public reads, `get_attribute`, `has_attribute`, `get_attribute_ns`, `has_attribute_ns` and `attribute_names`, and `Attribute::stored_bytes`), the generator (`crates/webidl/src/prelude.rs`: `charge_stored`, `undo_stored`, the counts `live` and `peak` of `DomState`, and a charge for each element in `strings_value`), `crates/webidl/selection.txt`, `crates/script/src/bindings.rs`, `docs/design/scripts.md`, `AGENTS.md` and the public surfaces. The bytes a script's attribute writes add to the tree are charged to `memory_bytes` by peak: twice the highest number of stored bytes that script's writes have held at once, before the write, and never refunded when the peak falls (no story is planned for a refund). One named deviation: `Element.setAttributeNS` with a namespace outside the six of the tree's `Namespace` throws `NotSupportedError`; `story:html-open-namespace` lifts it. Attribute nodes (`Attr`, `NamedNodeMap`, the attribute node members, `createAttribute`) and token lists (`classList`) stay excluded by this epic (lines 128, 687 and 745); no story. Decisions 3 and 7 to 9 of the story.
 - Lines 134-135, 475-477, 738-742 and 753-758 (the selector members): `story:scripts-dom-selectors` replaces "`NotSupportedError`" for a valid selector outside the subset by a `SyntaxError` whose message says surf does not support it, because the DOM Standard gives `querySelector`, `querySelectorAll`, `closest`, `matches` and `webkitMatchesSelector` only `SyntaxError` and Selectors Level 4 (3.9) says an agent treats a construct it has no usable support for as invalid; the two bounds of the story (4,096 bytes, 512 simple selectors) throw the same kind; the count "7" becomes 9 (`DocumentFragment` adds two) and "that `scripts-decisions` names" becomes "that `scripts-dom-selectors` names". The deviation that stays is the subset itself, named beside the nine members.
+- Lines 134-136, 743-746 and 762-764 (the deviation texts of the selector members): `story:scripts-dom-selectors` names a second deviation beside the subset. A pseudo-class or pseudo-element that surf recognises by its shape (a colon or two, an identifier, an argument in balanced parentheses) gets the same `SyntaxError` and the same message, that surf does not support it, also where a browser would call the text not valid (`a:hovr`, `a:nth-child(x y z)`), because surf does not validate the name or the argument of a pseudo-class it excludes. The story's acceptance 4a tests both texts and its decision 11 names the deviation beside the nine members.
 
 2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic (its lines as of plan commit `2e38276`); where
 they differ, the story's decisions win, and the lines named are this file's:
