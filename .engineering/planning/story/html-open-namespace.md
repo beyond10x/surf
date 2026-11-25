@@ -17,7 +17,7 @@ scope:
   path: crates/script/src/dom/attribute_writes.rs
 - confidence: inferred
   path: crates/webidl/selection.txt
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -47,7 +47,8 @@ page or a consumer that needs a seventh namespace.
    and are charged to the script that writes them, at the price of a byte the DOM slices use; the
    count of distinct addresses of a tree is bounded.
 3. Whether an element in another namespace is in scope (`createElementNS`), or attributes only.
-   `story:scripts-dom-mutation` says what `createElementNS` does today.
+   `story:scripts-dom-mutation` makes `createElementNS` with a prefix or a namespace outside the
+   six throw `NotSupportedError`; this story is the one that can lift that.
 4. What the serializer and the text extraction do with an attribute or an element whose
    namespace is not one of the six.
 

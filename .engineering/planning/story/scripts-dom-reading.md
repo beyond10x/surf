@@ -90,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 43
+revision: 44
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -596,9 +596,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       the measured steps of one `textContent` read of a page of 50,003 nodes and 950,000
       bytes of text, and of `getElementsByTagName('*')` walked by index over 25,003 elements.
       The limit's value is `story:scripts-parse-run`'s to measure again.
-    - Open, for the slices that reach them: a refill copies the old list and the child list
-      before any charge but the call's own step (the mutation slice makes it reachable); an
-      array of Strings charges no step an element (`getAttributeNames`, the attributes slice).
+    - Closed by `story:scripts-dom-mutation` (decision 6): the glue reads the old list's length
+      and the child list's length, charges `8 x (old_len + children_len)` and only then clones
+      and copies. Open, for the attributes slice: an array of Strings charges no step an
+      element (`getAttributeNames`).
 
 ## Change
 

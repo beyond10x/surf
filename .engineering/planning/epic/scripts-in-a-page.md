@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 58
+revision: 59
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -993,3 +993,32 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 716-724 ("Tree reading, 73"): `compatMode`, `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and `contentType` need the document's facts, which no generated type holds: `surf_script::dom::DocumentInfo` (address as a `surf_url::Url`, content type, encoding name), built by `story:scripts-parse-run`, and the quirks mode, which the parser writes into `surf_html::Tree`. `Node.baseURI` is the HTML document base URL (the first `base` element with an `href`, parsed against the address), with three named deviations. Decisions 11 to 13.
 - Lines 473-474 (candidate 10): "the 14 attribute members, held to the attribute limits. Depends on 7 and 8. Writes `crates/script/src/dom/attributes.rs` and its tests." Now: `story:scripts-dom-attributes` writes three files of `crates/script/src/dom/` (`attributes.rs` for the members, `attribute_reads.rs` for every read of the tree, `attribute_writes.rs` for every write) and its tests, and also `crates/html/src/tree.rs` (five public reads, `get_attribute`, `has_attribute`, `get_attribute_ns`, `has_attribute_ns` and `attribute_names`, and `Attribute::stored_bytes`), the generator (`crates/webidl/src/prelude.rs`: `charge_stored`, `undo_stored`, the counts `live` and `peak` of `DomState`, and a charge for each element in `strings_value`), `crates/webidl/selection.txt`, `crates/script/src/bindings.rs`, `docs/design/scripts.md`, `AGENTS.md` and the public surfaces. The bytes a script's attribute writes add to the tree are charged to `memory_bytes` by peak: twice the highest number of stored bytes that script's writes have held at once, before the write, and never refunded when the peak falls (no story is planned for a refund). One named deviation: `Element.setAttributeNS` with a namespace outside the six of the tree's `Namespace` throws `NotSupportedError`; `story:html-open-namespace` lifts it. Attribute nodes (`Attr`, `NamedNodeMap`, the attribute node members, `createAttribute`) and token lists (`classList`) stay excluded by this epic (lines 128, 687 and 745); no story. Decisions 3 and 7 to 9 of the story.
 - Lines 134-135, 475-477, 738-742 and 753-758 (the selector members): `story:scripts-dom-selectors` replaces "`NotSupportedError`" for a valid selector outside the subset by a `SyntaxError` whose message says surf does not support it, because the DOM Standard gives `querySelector`, `querySelectorAll`, `closest`, `matches` and `webkitMatchesSelector` only `SyntaxError` and Selectors Level 4 (3.9) says an agent treats a construct it has no usable support for as invalid; the two bounds of the story (4,096 bytes, 512 simple selectors) throw the same kind; the count "7" becomes 9 (`DocumentFragment` adds two) and "that `scripts-decisions` names" becomes "that `scripts-dom-selectors` names". The deviation that stays is the subset itself, named beside the nine members.
+
+2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic (its lines as of plan commit `2e38276`); where
+they differ, the story's decisions win, and the lines named are this file's:
+
+- Lines 469-472 (candidate 9): "the 29 mutating members, the setters of `nodeValue`,
+  `textContent` and `document.title`, the constructors of `Text`, `Comment` and
+  `DocumentFragment` ... Writes `crates/script/src/dom/mutation.rs` and its tests". Now: 46 member
+  rows, four setters and four constructors (`Text`, `Comment`, `DocumentFragment` and
+  `ProcessingInstruction`), 54 methods of the trait `Mutation`, in three files (`mutation.rs`,
+  `mutation_reads.rs`, `mutation_writes.rs`). The story also writes `crates/html/src/tree.rs`
+  (visibility and recounted passes), `crates/webidl/src/prelude.rs` and
+  `crates/script/src/bindings.rs` (a bulk node charge, a charge for each item of a variadic
+  list, the refill charged before its copy), `crates/webidl/selection.txt`,
+  `crates/script/src/dom/reads.rs`, the comment of `crates/script/src/runner.rs` at the
+  placeholder arm for `Limit::InputBytes` and `Limit::Steps`, `docs/design/scripts.md`,
+  `AGENTS.md` and the public surfaces.
+- Lines 732-737 ("Tree mutation, 29"): "Every write is held to the parser's limits". Now: held to
+  the parser's limits and to the engine's `memory_bytes`, each write charged by a step for the
+  work it makes the tree do, before the call. At the default limits a script that makes nodes
+  ends `limit: memory` before `limit: nodes`: a created node takes 408 bytes of charge and 423
+  of wrapper (`docs/design/scripts.md:329-332`), so 80,756 nodes fill 67,108,864 bytes. A
+  removed node is not refunded.
+- Lines 753-758 (deviations): three more, each named beside its member in `selection.txt`:
+  `cloneNode` of a `Document` throws `NotSupportedError` (the standard clones it);
+  `createElementNS` with a prefix or a namespace outside the six throws `NotSupportedError` (the
+  tree's element has no prefix and no open namespace); a clone of a `script` element is recorded
+  as inserted when it is inserted, where a browser does not prepare a copy of a started script
+  again. `importNode` and `adoptNode` of a `Document` throw as the standard says. Deviations
+  1 to 3 of the story.
