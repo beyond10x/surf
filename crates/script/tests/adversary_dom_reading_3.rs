@@ -718,7 +718,7 @@ fn substring_data_at_and_past_its_bounds() {
     eprintln!("{}", lines.join("\n"));
     for (call, end, steps) in &seen {
         assert_eq!(*end, ScriptEnd::Ran, "{call}: {lines:#?}");
-        assert!(*steps < 200, "{call}: {steps} steps: {lines:#?}");
+        assert!(*steps < 300, "{call}: {steps} steps: {lines:#?}");
     }
 }
 

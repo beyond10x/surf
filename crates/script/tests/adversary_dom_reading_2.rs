@@ -564,7 +564,8 @@ fn attribute_walks_charge_what_they_read() {
     eprintln!("{}", lines.join("\n"));
     // Per element one step, one per 4 attributes passed (eleven: 2) and one per class token
     // (1), the walk's step per other node, and the collection's eight steps per node: about
-    // 120,000. Charging every attribute's bytes would add about 150,000.
+    // 120,000. Charging every attribute (one step each and one per 16 bytes of the names and
+    // values, 1,076 bytes an element) would add about 780,000.
     assert!(
         class_steps < 150_000,
         "getElementsByClassName charges {class_steps} steps for 10,000 elements whose class is \

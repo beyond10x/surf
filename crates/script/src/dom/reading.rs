@@ -2,22 +2,23 @@
 //! tree and never write it, as the DOM Standard (the HTML Standard for `Window` and
 //! `Document.title`) says, with the deviations `crates/webidl/selection.txt` names.
 //!
-//! Steps. The bindings charge one step per call. A member whose work grows with the tree
-//! charges one step per node it visits and one per 64 bytes of a String it builds, before the
-//! work, so a script over a large tree ends at its step limit and not at the wall clock. The
-//! walks keep their own list of nodes, so a deep tree does not deepen the call stack. A member
-//! that looks for an attribute by name charges one step per 4 attributes it passes, from the
-//! list's length before its one pass, and one per 64 bytes of each value it reads or compares;
-//! the class walk also one per class token. One that reads attributes whole (a compare of two
-//! lists) charges one step per attribute and per 64 bytes of their names and values. So a step
-//! buys a bounded piece of work: a few name compares, a token's lookup, 64 bytes compared.
+//! Steps. The bindings charge one step per call. Every read of the tree is a function of
+//! [`super::reads`], and each charges before the work it pays for: a node it walks one step,
+//! attributes it passes by name one step per 4, a byte it reads, compares, folds, collapses or
+//! copies one step per 16 (the one price of a byte, the glue's for a String it copies in or
+//! out), and a piece a value splits into (a class token, a word of a title) one step. Where the
+//! count is not known before the walk (a scan that stops at its first match), the step goes
+//! before each node it reads. So a step buys a bounded piece of work: one node, four name
+//! compares, sixteen bytes, one token; a script over a large tree ends at its step limit and
+//! not at the wall clock. The walks keep their own list of nodes, so a deep tree does not
+//! deepen the call stack.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
 //! engine copies it. The members here do not build what would be thrown away: `data`,
-//! `nodeValue` and a text's `textContent` check the data before they copy it, and the members
-//! that concatenate (`textContent`, `wholeText`, `title`) stop at the piece that would take the
-//! String past the limit, with the steps of what they visited charged.
+//! `nodeValue` and a text's `textContent` check the data before they
+//! copy it, and the members that concatenate (`textContent`, `wholeText`, `title`) stop at the
+//! piece that would take the String past the limit, with the steps of what they read charged.
 //!
 //! Siblings. The tree has no sibling read: a sibling is found by the node's index among its
 //! parent's children. [`SurfReading`] keeps two such indices (the two last answered, so a parent

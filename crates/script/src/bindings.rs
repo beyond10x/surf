@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! d78ffd8d93b67f6a6f69cad5c65041d2b7a90bcf5e2d50cd28473168802f3f64  crates/webidl/src/prelude.rs
+//! 6966133d129966be9a1fd58a716b25b16a734e40a639e67f29448b1f2b8857ae  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 1e2b45141d2435ec13f25587adcb7f424fe4b9e8be0b155bb5033969b1df49fb
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 6d2d6e49062797346d97a898536ed44f27fc7b9f7e71a97ab84cf1a4685b6ec1
 
 use std::cell::Cell;
 
@@ -616,16 +616,18 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per 64 bytes copied.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units
+    /// copied (8 units), the price of a String answer's copy. The charge comes after the copy:
+    /// the host interface of the engine's pinned tag answers a String's length only by copying
+    /// it (`to_utf16` and `to_rust_string_lossy` are its only reads of a String), and the copy
+    /// is bounded by the agent's `string_length`.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
-        let text = cx
-            .to_utf16(string)
-            .map(|units| String::from_utf16_lossy(&units))
-            .map_err(defect)?;
+        let units = cx.to_utf16(string).map_err(defect)?;
+        let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let units = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(units / 64)?;
+        let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         Ok(text)
     }
 }
@@ -1403,8 +1405,8 @@ fn refused(step: Completion<()>) -> Completion<bool> {
 }
 
 /// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
-/// properties and its data always show the same list. A step is charged per old and per new
-/// node, before the work. In this order:
+/// properties and its data always show the same list. [`COLLECTION_NODE_STEPS`] are charged per
+/// old and per new node, before the work. In this order:
 ///   1. each old index at or past the new length is defined again as the glue's property of
 ///      its old node, which fails at once on an index the script made non-configurable, and
 ///      makes every such index one the glue can delete;
@@ -1998,7 +2000,7 @@ const LEGACY_NAME_UNITS: f64 = 26.0;
 
 /// The legacy code of the name. A name longer than [`LEGACY_NAME_UNITS`] code units, read with
 /// [`string_length`], which copies nothing, has none: 0 without a copy. A shorter name is
-/// copied for the comparison with the ledger of [`Copies`] (a step per 64 bytes), and the copy
+/// copied for the comparison with the ledger of [`Copies`] (a step per 16 bytes), and the copy
 /// is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;

@@ -512,10 +512,11 @@ fn text_content_of_comments_and_of_short_texts_under_a_chain() {
 
 /// An ordinary page under the session's limits: 25,000 paragraphs of a 38-byte text (50,003
 /// nodes, 950,000 bytes of text). One read of the document element's `textContent` costs more
-/// than a hundredth of the session's 10,000,000 steps an entry through the copy's charge, so a
-/// loop of 100 reads ends `limit: steps-per-script`; without that charge (the walk and the
-/// 64-byte charge only) the hundred reads fit. The loop itself is not run here: it runs about
-/// 5 s in the test profile.
+/// than a hundredth of the session's 10,000,000 steps an entry through the charges of its bytes
+/// (one step per 16 where the member gathers them and again where the glue copies the answer),
+/// so a loop of 100 reads ends `limit: steps-per-script`; without those two charges (the walk
+/// only) the hundred reads fit. The loop itself is not run here: it runs about 5 s in the test
+/// profile.
 #[test]
 fn an_ordinary_page_read_once() {
     let text = "abcdefghijklmnopqrstuvwxyzabcdefghijkl";
@@ -528,10 +529,10 @@ fn an_ordinary_page_read_once() {
         let before = runner.steps();
         ran(runner, "document.documentElement.textContent;");
         let one = runner.steps() - before;
-        let without = one - bytes / 16;
+        let without = one - 2 * bytes / 16;
         eprintln!(
             "an ordinary page of 50,003 nodes and {bytes} bytes of text: \
-             documentElement.textContent {one} steps, {without} without the copy's charge; \
+             documentElement.textContent {one} steps, {without} for the walk alone; \
              100 reads {} against {}",
             100 * one,
             SESSION_ENGINE_LIMITS.steps_per_entry

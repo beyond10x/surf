@@ -9,12 +9,18 @@ use std::collections::HashMap;
 use surf_html::{Namespace, NodeData, NodeId, QuirksMode, Tree};
 use surf_url::Url;
 
-use crate::bindings::{DomCx, DomEnd, DomException, DomResult, longer_than, utf16_units};
+use crate::bindings::{
+    DomCx, DomEnd, DomException, DomResult, STRING_BYTES_A_STEP, longer_than, utf16_units,
+};
 
 use super::reading::Hints;
 
-/// The index of `node` among the children of `parent`: a hint's, or a scan's at one step
-/// per node visited.
+/// The bytes one step pays for: [`STRING_BYTES_A_STEP`], the one price of a byte read,
+/// compared, folded, collapsed or copied.
+const BYTES_A_STEP: usize = STRING_BYTES_A_STEP as usize;
+
+/// The index of `node` among the children of `parent`: a hint's (at most six compares, no
+/// charge), or a scan's at one step per child, charged before the child is read.
 pub(super) fn index_in(
     cx: &mut DomCx<'_, '_>,
     hints: &Hints,
@@ -32,19 +38,22 @@ pub(super) fn index_in(
             }
         }
     }
-    let found = children.iter().position(|&child| child == node);
-    let visited = found.map_or(children.len(), |index| index + 1);
-    charge(cx, visited)?;
-    found.ok_or_else(|| {
-        DomEnd::Throw(DomException::new(
-            "InvalidStateError",
-            "a node is not among its parent's children",
-        ))
-    })
+    let count = children.len();
+    for index in 0..count {
+        charge(cx, 1)?;
+        if cx.tree().children(parent).get(index) == Some(&node) {
+            return Ok(index);
+        }
+    }
+    Err(DomEnd::Throw(DomException::new(
+        "InvalidStateError",
+        "a node is not among its parent's children",
+    )))
 }
 
 /// The sibling of `node` one place before it (`forward` false) or after it, of any kind
-/// (`elements` false) or the nearest element, at one step per node passed.
+/// (`elements` false) or the nearest element: [`index_in`]'s charge, then one step per sibling
+/// passed, charged before it is read.
 pub(super) fn sibling(
     cx: &mut DomCx<'_, '_>,
     hints: &mut Hints,
@@ -57,7 +66,7 @@ pub(super) fn sibling(
     };
     let mut index = index_in(cx, hints, parent, node)?;
     hints.set(parent, index);
-    let mut passed = 0;
+    let mut first = true;
     let answer = loop {
         let next = if forward {
             index.checked_add(1)
@@ -67,6 +76,12 @@ pub(super) fn sibling(
         let Some(next) = next else {
             break None;
         };
+        // The sibling one place over is read for the node's own step; each one past it is
+        // charged before it is read.
+        if !first {
+            charge(cx, 1)?;
+        }
+        first = false;
         let Some(&child) = cx.tree().children(parent).get(next) else {
             break None;
         };
@@ -74,12 +89,7 @@ pub(super) fn sibling(
         if !elements || is_element(cx.tree(), child) {
             break Some(child);
         }
-        passed += 1;
-        if passed % 64 == 0 {
-            charge(cx, 64)?;
-        }
     };
-    charge(cx, passed % 64)?;
     if answer.is_some() {
         hints.set(parent, index);
     }
@@ -130,15 +140,89 @@ fn charge(cx: &mut DomCx<'_, '_>, steps: usize) -> DomResult<()> {
     })
 }
 
-/// A String a member answers, charged at one step per 64 bytes.
+/// A String a member answers that it made of no read of the tree (the document's address, its
+/// encoding, a parsed URL): one step per 16 bytes.
 pub(super) fn text(cx: &mut DomCx<'_, '_>, text: String) -> DomResult<String> {
-    charge(cx, text.len() / 64)?;
+    charge(cx, text.len() / BYTES_A_STEP)?;
     Ok(text)
 }
 
+/// A copy of the text `pick` reads of `node` (a name, a target, an id of a doctype): one step
+/// per 16 bytes, before the copy.
+fn copy_of(cx: &mut DomCx<'_, '_>, node: NodeId, pick: fn(&NodeData) -> &str) -> DomResult<String> {
+    let bytes = pick(cx.tree().data(node)).len();
+    charge(cx, bytes / BYTES_A_STEP)?;
+    Ok(pick(cx.tree().data(node)).to_string())
+}
+
+/// An element's local name, empty for another node.
+fn local_name_of(data: &NodeData) -> &str {
+    match data {
+        NodeData::Element { local_name, .. } => local_name,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
+/// A processing instruction's target, empty for another node.
+fn target_of(data: &NodeData) -> &str {
+    match data {
+        NodeData::ProcessingInstruction { target, .. } => target,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Element { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_) => "",
+    }
+}
+
+/// A doctype's name, empty for another node.
+fn doctype_name_of(data: &NodeData) -> &str {
+    match data {
+        NodeData::Doctype { name, .. } => name,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Element { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
+/// A doctype's public ID, empty for another node.
+fn public_id_of(data: &NodeData) -> &str {
+    match data {
+        NodeData::Doctype { public_id, .. } => public_id,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Element { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
+/// A doctype's system ID, empty for another node.
+fn system_id_of(data: &NodeData) -> &str {
+    match data {
+        NodeData::Doctype { system_id, .. } => system_id,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Element { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
 /// The character data of `node` as `data`, `nodeValue` and `textContent` answer it, `None` for
-/// a node without: past the agent's `string_length` the `RangeError`, before it is charged or
-/// copied; else charged as [`text`], then copied.
+/// a node without: held to the agent's `string_length` (past it the `RangeError`), then one
+/// step per 16 bytes before the copy.
 pub(super) fn copied(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<String>> {
     let limit = cx.string_length();
     let Some(data) = character_data(cx.tree(), node) else {
@@ -147,7 +231,7 @@ pub(super) fn copied(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<S
     if longer_than(data, limit) {
         return Err(DomEnd::StringLength);
     }
-    let steps = data.len() / 64;
+    let steps = data.len() / BYTES_A_STEP;
     charge(cx, steps)?;
     Ok(character_data(cx.tree(), node).map(str::to_string))
 }
@@ -190,9 +274,9 @@ impl Gathered {
         Ok(())
     }
 
-    /// The steps of appending `bytes` more: one per 64 bytes of the whole.
+    /// The steps of appending `bytes` more: one per 16 bytes of the whole.
     fn steps(&self, bytes: usize) -> usize {
-        (self.text.len() + bytes) / 64 - self.text.len() / 64
+        (self.text.len() + bytes) / BYTES_A_STEP - self.text.len() / BYTES_A_STEP
     }
 
     fn append(&mut self, piece: &str) {
@@ -200,7 +284,8 @@ impl Gathered {
     }
 }
 
-/// Appends the data of the text `node` to `gathered`: admitted, charged, then copied.
+/// Appends the data of the text `node` to `gathered`: admitted, charged at one step per 16
+/// bytes, then copied.
 fn gather(cx: &mut DomCx<'_, '_>, gathered: &mut Gathered, node: NodeId) -> DomResult<()> {
     let data = character_data(cx.tree(), node).unwrap_or_default();
     gathered.admit(data)?;
@@ -217,6 +302,17 @@ fn is_element(tree: &Tree, node: NodeId) -> bool {
 /// Whether `node` is an element of the HTML namespace named `name`.
 fn html_element(tree: &Tree, node: NodeId, name: &str) -> bool {
     matches!(tree.data(node), NodeData::Element { namespace: Namespace::Html, local_name, .. } if local_name == name)
+}
+
+/// Whether `node` is an element of the HTML namespace.
+fn html_element_any(tree: &Tree, node: NodeId) -> bool {
+    matches!(
+        tree.data(node),
+        NodeData::Element {
+            namespace: Namespace::Html,
+            ..
+        }
+    )
 }
 
 /// The data of character data: a text's, a comment's or a processing instruction's.
@@ -239,7 +335,7 @@ enum Reads {
     /// Also the attribute of a name, found by name and its value not read: one step per 4
     /// attributes of the element, from the list's length, before the one pass that finds it.
     Name(&'static str),
-    /// As `Name`, and the value of the attribute found is read or compared: one step per 64
+    /// As `Name`, and the value of the attribute found is read or compared: one step per 16
     /// bytes of it, before it is read.
     Value(&'static str),
     /// As `Value` for `class`, and one step per class token of the value, before the first
@@ -310,7 +406,7 @@ fn scan_for(cx: &mut DomCx<'_, '_>, node: NodeId, reads: Reads) -> DomResult<Opt
     charge(cx, attribute_count(cx.tree(), node) / ATTRIBUTES_A_STEP)?;
     let [at] = positions(cx.tree(), node, [name]);
     if let (Some(at), true) = (at, value) {
-        charge(cx, value_at(cx.tree(), node, at).len() / 64)?;
+        charge(cx, value_at(cx.tree(), node, at).len() / BYTES_A_STEP)?;
         if tokens {
             let count = value_at(cx.tree(), node, at)
                 .split_ascii_whitespace()
@@ -321,7 +417,7 @@ fn scan_for(cx: &mut DomCx<'_, '_>, node: NodeId, reads: Reads) -> DomResult<Opt
     Ok(at)
 }
 
-/// The steps of reading `node`'s attributes whole: one per attribute and one per 64 bytes of
+/// The steps of reading `node`'s attributes whole: one per attribute and one per 16 bytes of
 /// their names and values, so a compare of whole lists or a scan by value is bounded by its
 /// charge.
 fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
@@ -331,7 +427,7 @@ fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
                 .iter()
                 .map(|attribute| attribute.local_name.len() + attribute.value.len())
                 .sum();
-            attributes.len() + bytes / 64
+            attributes.len() + bytes / BYTES_A_STEP
         }
         NodeData::Document
         | NodeData::DocumentFragment
@@ -342,10 +438,23 @@ fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
     }
 }
 
-/// `node` and the nodes under it in tree order, each charged before it is visited (one step,
-/// and its attribute scan as [`scan_for`] charges it when the walk `reads` one), until `stop`
-/// answers true for one: that node. `stop` gets the position of the attribute the walk looks
-/// for, if the node has it.
+/// The bytes of an element's local name, which a walk may compare; 0 for another node.
+fn name_bytes(tree: &Tree, node: NodeId) -> usize {
+    match tree.data(node) {
+        NodeData::Element { local_name, .. } => local_name.len(),
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => 0,
+    }
+}
+
+/// `node` and the nodes under it in tree order, each charged before it is visited (one step and
+/// one per 16 bytes of an element's name, and its attribute scan as [`scan_for`] charges it
+/// when the walk `reads` one), until `stop` answers true for one: that node. `stop` gets the
+/// position of the attribute the walk looks for, if the node has it.
 fn find(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -354,7 +463,7 @@ fn find(
 ) -> DomResult<Option<NodeId>> {
     let mut pending = vec![node];
     while let Some(next) = pending.pop() {
-        charge(cx, 1)?;
+        charge(cx, 1 + name_bytes(cx.tree(), next) / BYTES_A_STEP)?;
         let at = scan_for(cx, next, reads)?;
         let tree = cx.tree();
         if stop(tree, next, at) {
@@ -392,6 +501,8 @@ pub(super) fn by_tag_name(
     node: NodeId,
     qualified_name: &str,
 ) -> DomResult<Vec<NodeId>> {
+    // The name folded once, one step per 16 bytes of it, before the fold.
+    charge(cx, qualified_name.len() / BYTES_A_STEP)?;
     let lower = qualified_name.to_ascii_lowercase();
     select(cx, node, Reads::Names, |tree, next, _| {
         match tree.data(next) {
@@ -456,12 +567,12 @@ pub(super) fn by_class_name(
     node: NodeId,
     class_names: &str,
 ) -> DomResult<Vec<NodeId>> {
-    // The wanted classes: an ordered set (duplicates dropped), built once, one step per 64
+    // The wanted classes: an ordered set (duplicates dropped), built once, one step per 16
     // bytes of the argument and one per token of it, before it is built; in quirks mode each
     // in ASCII lower case.
-    charge(cx, class_names.len() / 64)?;
+    charge(cx, class_names.len() / BYTES_A_STEP)?;
     charge(cx, class_names.split_ascii_whitespace().count())?;
-    let quirks = cx.tree().quirks_mode() == QuirksMode::Quirks;
+    let quirks = quirks(cx);
     let mut wanted: HashMap<String, usize> = HashMap::new();
     for token in class_names.split_ascii_whitespace() {
         let next = wanted.len();
@@ -476,7 +587,8 @@ pub(super) fn by_class_name(
         return Ok(Vec::new());
     }
     // An element matches when its classes hold every wanted one: one set lookup per class (in
-    // quirks mode after its fold), each paid by the step per token the walk charges before it.
+    // quirks mode after its fold, a copy of the bytes lowered in place), each paid by the step
+    // per token and the step per 16 bytes the walk charges before it.
     let mut matched_by = vec![0usize; wanted.len()];
     let mut element = 0usize;
     let mut folded = String::new();
@@ -489,7 +601,8 @@ pub(super) fn by_class_name(
         for class in classes.split_ascii_whitespace() {
             let key = if quirks {
                 folded.clear();
-                folded.extend(class.chars().map(|c| c.to_ascii_lowercase()));
+                folded.push_str(class);
+                folded.make_ascii_lowercase();
                 folded.as_str()
             } else {
                 class
@@ -527,27 +640,26 @@ pub(super) fn element_children(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResul
         .collect())
 }
 
-/// The first element child of `node` (`last` false) or the last, one step per child passed.
+/// The first element child of `node` (`last` false) or the last: the child at the edge is read
+/// for the call's step, each one past it charged one step before it is read.
 pub(super) fn edge_element_child(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
     last: bool,
 ) -> DomResult<Option<NodeId>> {
-    let tree = cx.tree();
-    let children = tree.children(node);
-    let found = if last {
-        children.iter().rposition(|&child| is_element(tree, child))
-    } else {
-        children.iter().position(|&child| is_element(tree, child))
-    };
-    let passed = match (found, last) {
-        (Some(index), false) => index,
-        (Some(index), true) => children.len() - 1 - index,
-        (None, _) => children.len(),
-    };
-    let answer = found.map(|index| children[index]);
-    charge(cx, passed)?;
-    Ok(answer)
+    let count = cx.tree().children(node).len();
+    for read in 0..count {
+        if read > 0 {
+            charge(cx, 1)?;
+        }
+        let index = if last { count - 1 - read } else { read };
+        let tree = cx.tree();
+        let child = tree.children(node)[index];
+        if is_element(tree, child) {
+            return Ok(Some(child));
+        }
+    }
+    Ok(None)
 }
 
 /// The count of `node`'s element children, one step per child.
@@ -556,15 +668,19 @@ pub(super) fn element_count(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<u
     Ok(u32::try_from(count).unwrap_or(u32::MAX))
 }
 
-/// The ancestors of `node`, itself first and the root last, one step per node.
+/// The ancestors of `node`, itself first and the root last: one step per node, charged before
+/// its parent is read.
 pub(super) fn ancestors(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Vec<NodeId>> {
     let mut chain = vec![node];
     let mut at = node;
-    while let Some(parent) = cx.tree().parent(at) {
+    loop {
+        charge(cx, 1)?;
+        let Some(parent) = cx.tree().parent(at) else {
+            break;
+        };
         chain.push(parent);
         at = parent;
     }
-    charge(cx, chain.len())?;
     Ok(chain)
 }
 
@@ -632,26 +748,20 @@ pub(super) fn locate_namespace(
             Some(_) | None => {}
         }
     }
-    // A scan for one attribute by name on each element: one step for the element and one per 4
-    // attributes it passes, before the scan, and one per 64 bytes of the one value it reads.
+    // A scan for one attribute by name on each element: one step for the element, and one per 4
+    // attributes it passes before the scan, and one per 16 bytes of the one value it reads. The
+    // null prefix scans no attribute and is charged none.
     while let Some(element) = at {
-        charge(
-            cx,
-            1 + attribute_count(cx.tree(), element) / ATTRIBUTES_A_STEP,
-        )?;
-        let tree = cx.tree();
-        let NodeData::Element {
-            namespace,
-            attributes,
-            ..
-        } = tree.data(element)
-        else {
-            break;
-        };
-        // An element of the tree has no prefix: it matches the null prefix only.
-        if prefix.is_none() {
+        charge(cx, 1)?;
+        if let (None, NodeData::Element { namespace, .. }) = (prefix, cx.tree().data(element)) {
+            // An element of the tree has no prefix: it matches the null prefix only.
             return Ok(Some(namespace.url().to_string()));
         }
+        charge(cx, attribute_count(cx.tree(), element) / ATTRIBUTES_A_STEP)?;
+        let tree = cx.tree();
+        let NodeData::Element { attributes, .. } = tree.data(element) else {
+            break;
+        };
         let declared = attributes.iter().position(|attribute| {
             attribute.namespace == Some(Namespace::Xmlns)
                 && match prefix {
@@ -663,7 +773,10 @@ pub(super) fn locate_namespace(
                 }
         });
         if let Some(declared) = declared {
-            charge(cx, value_at(cx.tree(), element, declared).len() / 64)?;
+            charge(
+                cx,
+                value_at(cx.tree(), element, declared).len() / BYTES_A_STEP,
+            )?;
             let value = value_at(cx.tree(), element, declared);
             return Ok(Some(value.to_string()).filter(|value| !value.is_empty()));
         }
@@ -681,7 +794,7 @@ pub(super) fn locate_prefix(
 ) -> DomResult<Option<String>> {
     let mut at = lookup_start(cx, node)?;
     // On each element: one step and one per 4 attributes it passes, before the pass, and one
-    // per 64 bytes of each `xmlns` value it compares, before the compare; other values are not
+    // per 16 bytes of each `xmlns` value it compares, before the compare; other values are not
     // read.
     while let Some(element) = at {
         let count = attribute_count(cx.tree(), element);
@@ -702,7 +815,7 @@ pub(super) fn locate_prefix(
             let Some(bytes) = compared else {
                 continue;
             };
-            charge(cx, bytes / 64)?;
+            charge(cx, bytes / BYTES_A_STEP)?;
             if let NodeData::Element { attributes, .. } = cx.tree().data(element)
                 && let Some(attribute) = attributes.get(index)
                 && attribute.value == namespace
@@ -796,21 +909,23 @@ fn shallow_equal(tree: &Tree, a: NodeId, b: NodeId) -> bool {
     }
 }
 
-/// The steps of comparing `node` with another: one, and one per attribute and per 64 bytes of
+/// The steps of comparing `node` with another: one, and one per attribute and per 16 bytes of
 /// the names, values and data compared. A compare of two strings reads no further than the
 /// shorter, so the bytes of `node`'s side bound it.
 fn equal_cost(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
         NodeData::Element { local_name, .. } => {
-            1 + local_name.len() / 64 + attribute_steps(tree, node)
+            1 + local_name.len() / BYTES_A_STEP + attribute_steps(tree, node)
         }
-        NodeData::Text(data) | NodeData::Comment(data) => 1 + data.len() / 64,
-        NodeData::ProcessingInstruction { target, data } => 1 + (target.len() + data.len()) / 64,
+        NodeData::Text(data) | NodeData::Comment(data) => 1 + data.len() / BYTES_A_STEP,
+        NodeData::ProcessingInstruction { target, data } => {
+            1 + (target.len() + data.len()) / BYTES_A_STEP
+        }
         NodeData::Doctype {
             name,
             public_id,
             system_id,
-        } => 1 + (name.len() + public_id.len() + system_id.len()) / 64,
+        } => 1 + (name.len() + public_id.len() + system_id.len()) / BYTES_A_STEP,
         NodeData::Document | NodeData::DocumentFragment => 1,
     }
 }
@@ -828,18 +943,19 @@ pub(super) fn node_type(cx: &DomCx<'_, '_>, node: NodeId) -> u16 {
     }
 }
 
-/// `nodeName`: the name as [`tag_name`] for an element, else the kind's; charged as [`text`].
+/// `nodeName`: as [`tag_name`] for an element; a target or a doctype's name charged as
+/// [`copy_of`]; else the kind's fixed name, no charge.
 pub(super) fn node_name(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<String> {
     let name = match cx.tree().data(node) {
         NodeData::Element { .. } => return tag_name(cx, node),
-        NodeData::Text(_) => "#text".to_string(),
-        NodeData::ProcessingInstruction { target, .. } => target.clone(),
-        NodeData::Comment(_) => "#comment".to_string(),
-        NodeData::Document => "#document".to_string(),
-        NodeData::Doctype { name, .. } => name.clone(),
-        NodeData::DocumentFragment => "#document-fragment".to_string(),
+        NodeData::ProcessingInstruction { .. } => return copy_of(cx, node, target_of),
+        NodeData::Doctype { .. } => return copy_of(cx, node, doctype_name_of),
+        NodeData::Text(_) => "#text",
+        NodeData::Comment(_) => "#comment",
+        NodeData::Document => "#document",
+        NodeData::DocumentFragment => "#document-fragment",
     };
-    text(cx, name)
+    Ok(name.to_string())
 }
 
 /// Whether `node` is a document; no charge.
@@ -878,8 +994,10 @@ pub(super) fn has_children(cx: &DomCx<'_, '_>, node: NodeId) -> bool {
     !cx.tree().children(node).is_empty()
 }
 
-/// The children of `node`, copied; the bindings charge the collection they make of them.
+/// The children of `node`, copied: one step per child, before the copy (the bindings charge
+/// the collection they make of them beside it).
 pub(super) fn children(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Vec<NodeId>> {
+    charge(cx, cx.tree().children(node).len())?;
     Ok(cx.tree().children(node).to_vec())
 }
 
@@ -944,18 +1062,20 @@ pub(super) fn is_equal(cx: &mut DomCx<'_, '_>, this: NodeId, other: NodeId) -> D
 }
 
 /// Of `mine` and `theirs`, children of `parent`, the one first among its children: one step
-/// per child visited.
+/// per child, charged before it is read.
 pub(super) fn first_of_two(
     cx: &mut DomCx<'_, '_>,
     parent: NodeId,
     mine: NodeId,
     theirs: NodeId,
 ) -> DomResult<Option<NodeId>> {
-    let children = cx.tree().children(parent);
-    let mut visited = 0;
+    // The scan reads on to the second of the two, as it always has, so a child list that does
+    // not hold both is read whole.
+    let count = cx.tree().children(parent).len();
     let mut first = None;
-    for &child in children {
-        visited += 1;
+    for index in 0..count {
+        charge(cx, 1)?;
+        let child = cx.tree().children(parent)[index];
         if child == mine || child == theirs {
             if first.is_some() {
                 break;
@@ -963,7 +1083,6 @@ pub(super) fn first_of_two(
             first = Some(child);
         }
     }
-    charge(cx, visited)?;
     Ok(first)
 }
 
@@ -985,38 +1104,20 @@ pub(super) fn namespace_uri(cx: &DomCx<'_, '_>, node: NodeId) -> Option<String> 
     }
 }
 
-/// `localName` of an element, empty for another node; charged as [`text`].
+/// `localName` of an element, empty for another node; charged as [`copy_of`].
 pub(super) fn local_name(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<String> {
-    let name = match cx.tree().data(node) {
-        NodeData::Element { local_name, .. } => local_name.clone(),
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => String::new(),
-    };
-    text(cx, name)
+    copy_of(cx, node, local_name_of)
 }
 
 /// `tagName`: the HTML-uppercased qualified name, in upper case for an element of the HTML
-/// namespace (the document being an HTML document); charged as [`text`].
+/// namespace (the document being an HTML document); charged as [`copy_of`], which pays the
+/// fold of the copy in place.
 pub(super) fn tag_name(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<String> {
-    let name = match cx.tree().data(node) {
-        NodeData::Element {
-            namespace: Namespace::Html,
-            local_name,
-            ..
-        } => local_name.to_ascii_uppercase(),
-        NodeData::Element { local_name, .. } => local_name.clone(),
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => String::new(),
-    };
-    text(cx, name)
+    let mut name = copy_of(cx, node, local_name_of)?;
+    if html_element_any(cx.tree(), node) {
+        name.make_ascii_uppercase();
+    }
+    Ok(name)
 }
 
 /// Whether the document is in quirks mode; no charge.
@@ -1038,8 +1139,9 @@ pub(super) fn doctype(cx: &mut DomCx<'_, '_>, document: NodeId) -> DomResult<Opt
 }
 
 /// `title` (HTML, "document.title"): the child text content of the first `title` element in
-/// tree order, with ASCII whitespace stripped and collapsed; the walk charged as [`find`], one
-/// step per child of the title and one per 64 bytes of the String.
+/// tree order, with ASCII whitespace stripped and collapsed: the walk charged as [`find`], one
+/// step per child of the title, and for each text child one step per 16 bytes and one per word
+/// before the collapse reads it.
 pub(super) fn title(cx: &mut DomCx<'_, '_>, document: NodeId) -> DomResult<String> {
     let Some(title) = find(cx, document, Reads::Names, |tree, node, _| {
         html_element(tree, node, "title")
@@ -1053,13 +1155,17 @@ pub(super) fn title(cx: &mut DomCx<'_, '_>, document: NodeId) -> DomResult<Strin
     // and held to `string_length` as it grows: the limit applies to what `title` answers.
     let mut collapsed = Gathered::new(cx.string_length());
     let mut space = false;
-    let mut over = false;
-    let tree = cx.tree();
-    'texts: for &child in tree.children(title) {
-        let NodeData::Text(data) = tree.data(child) else {
+    for index in 0..children {
+        let child = cx.tree().children(title)[index];
+        let Some(bytes) = text_bytes(cx.tree(), child) else {
             continue;
         };
-        let mut rest: &str = data;
+        // The text's bytes, then its words (a run of other than ASCII whitespace; the pass
+        // that counts them is paid by the bytes' charge), before the collapse reads it.
+        charge(cx, bytes / BYTES_A_STEP)?;
+        let words = text_of(cx.tree(), child).split_ascii_whitespace().count();
+        charge(cx, words)?;
+        let mut rest = text_of(cx.tree(), child);
         while !rest.is_empty() {
             let word = rest.trim_start_matches(|c: char| c.is_ascii_whitespace());
             space |= word.len() < rest.len();
@@ -1070,10 +1176,7 @@ pub(super) fn title(cx: &mut DomCx<'_, '_>, document: NodeId) -> DomResult<Strin
                 let pieces = [" ", &word[..end]];
                 let first = usize::from(!space || collapsed.text.is_empty());
                 for piece in &pieces[first..] {
-                    if collapsed.admit(piece).is_err() {
-                        over = true;
-                        break 'texts;
-                    }
+                    collapsed.admit(piece)?;
                     collapsed.append(piece);
                 }
                 space = false;
@@ -1081,25 +1184,47 @@ pub(super) fn title(cx: &mut DomCx<'_, '_>, document: NodeId) -> DomResult<Strin
             rest = &word[end..];
         }
     }
-    let steps = collapsed.text.len() / 64;
-    charge(cx, steps)?;
-    if over {
-        return Err(DomEnd::StringLength);
-    }
     Ok(collapsed.text)
 }
 
-/// `length` of character data, in UTF-16 code units: one step per 64 bytes of the data.
+/// The bytes of a text's data, none for another node.
+fn text_bytes(tree: &Tree, node: NodeId) -> Option<usize> {
+    match tree.data(node) {
+        NodeData::Text(data) => Some(data.len()),
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Element { .. }
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => None,
+    }
+}
+
+/// A text's data, empty for another node.
+fn text_of(tree: &Tree, node: NodeId) -> &str {
+    match tree.data(node) {
+        NodeData::Text(data) => data,
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Element { .. }
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
+/// `length` of character data, in UTF-16 code units: one step per 16 bytes of the data,
+/// before they are counted.
 pub(super) fn length(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<u32> {
+    let bytes = character_data(cx.tree(), node).map_or(0, str::len);
+    charge(cx, bytes / BYTES_A_STEP)?;
     let data = character_data(cx.tree(), node).unwrap_or_default();
-    let bytes = data.len();
     let units: usize = data.chars().map(char::len_utf16).sum();
-    charge(cx, bytes / 64)?;
     Ok(u32::try_from(units).unwrap_or(u32::MAX))
 }
 
 /// `substringData(offset, count)` (DOM, "substring data", in UTF-16 code units): one step
-/// per 64 of `offset + count`, at most the data's bytes, before the walk.
+/// per 16 of `offset + count`, at most the data's bytes, before the walk.
 pub(super) fn substring_data(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -1114,7 +1239,7 @@ pub(super) fn substring_data(
     let offset = usize::try_from(offset).unwrap_or(usize::MAX);
     let count = usize::try_from(count).unwrap_or(usize::MAX);
     let bytes = character_data(cx.tree(), node).map_or(0, str::len);
-    charge(cx, offset.saturating_add(count).min(bytes) / 64)?;
+    charge(cx, offset.saturating_add(count).min(bytes) / BYTES_A_STEP)?;
     let data = character_data(cx.tree(), node).unwrap_or_default();
     let mut units = data.encode_utf16();
     let mut past_the_end = false;
@@ -1148,47 +1273,47 @@ pub(super) fn substring_data(
 }
 
 /// `wholeText` (DOM, "contiguous Text nodes"): the Text siblings next to `node`, without
-/// another kind between, itself included, in order; [`index_in`]'s charge, then one step per
-/// text and its bytes as [`gather`] charges them.
+/// another kind between, itself included, in order: [`index_in`]'s charge, one step per
+/// sibling read on each side, each charged before it is read, and the texts' bytes as
+/// [`gather`] charges them.
 pub(super) fn whole_text(cx: &mut DomCx<'_, '_>, hints: &Hints, node: NodeId) -> DomResult<String> {
     let Some(parent) = cx.tree().parent(node) else {
         return copied(cx, node).map(Option::unwrap_or_default);
     };
     let index = index_in(cx, hints, parent, node)?;
-    let tree = cx.tree();
-    let children = tree.children(parent);
-    let is_text = |node: NodeId| matches!(tree.data(node), NodeData::Text(_));
-    let first = children[..index]
-        .iter()
-        .rposition(|&node| !is_text(node))
-        .map_or(0, |at| at + 1);
-    let last = children[index..]
-        .iter()
-        .position(|&node| !is_text(node))
-        .map_or(children.len(), |at| index + at);
-    let run: Vec<NodeId> = children[first..last].to_vec();
-    // One step per text visited; the run stops at the text that would take the String
-    // past `string_length`.
-    let mut whole = Gathered::new(cx.string_length());
-    for node in run {
+    let is_text = |cx: &DomCx<'_, '_>, at: usize| {
+        let child = cx.tree().children(parent)[at];
+        matches!(cx.tree().data(child), NodeData::Text(_))
+    };
+    let mut first = index;
+    while first > 0 {
         charge(cx, 1)?;
+        if !is_text(cx, first - 1) {
+            break;
+        }
+        first -= 1;
+    }
+    let count = cx.tree().children(parent).len();
+    let mut last = index + 1;
+    while last < count {
+        charge(cx, 1)?;
+        if !is_text(cx, last) {
+            break;
+        }
+        last += 1;
+    }
+    // The run stops at the text that would take the String past `string_length`.
+    let mut whole = Gathered::new(cx.string_length());
+    for at in first..last {
+        let node = cx.tree().children(parent)[at];
         gather(cx, &mut whole, node)?;
     }
     Ok(whole.text)
 }
 
-/// `target` of a processing instruction, empty for another node; charged as [`text`].
+/// `target` of a processing instruction, empty for another node; charged as [`copy_of`].
 pub(super) fn target(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<String> {
-    let target = match cx.tree().data(node) {
-        NodeData::ProcessingInstruction { target, .. } => target.clone(),
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Element { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_) => String::new(),
-    };
-    text(cx, target)
+    copy_of(cx, node, target_of)
 }
 
 /// Which field of a doctype [`doctype_field`] reads.
@@ -1199,35 +1324,24 @@ pub(super) enum DoctypeField {
     SystemId,
 }
 
-/// A doctype's `name`, `publicId` or `systemId`, empty for another node; charged as [`text`].
+/// A doctype's `name`, `publicId` or `systemId`, empty for another node; charged as
+/// [`copy_of`].
 pub(super) fn doctype_field(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
     field: DoctypeField,
 ) -> DomResult<String> {
-    let value = match cx.tree().data(node) {
-        NodeData::Doctype {
-            name,
-            public_id,
-            system_id,
-        } => match field {
-            DoctypeField::Name => name.clone(),
-            DoctypeField::PublicId => public_id.clone(),
-            DoctypeField::SystemId => system_id.clone(),
-        },
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Element { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => String::new(),
+    let pick = match field {
+        DoctypeField::Name => doctype_name_of,
+        DoctypeField::PublicId => public_id_of,
+        DoctypeField::SystemId => system_id_of,
     };
-    text(cx, value)
+    copy_of(cx, node, pick)
 }
 
 /// `namedItem(name)` (DOM): the first of `nodes` whose ID is `name` or, in the HTML
 /// namespace, whose `name` attribute is; one step per element and one per 4 attributes it
-/// passes before the pass, one per 64 bytes of each value compared before the compare.
+/// passes before the pass, one per 16 bytes of each value compared before the compare.
 pub(super) fn named_item(
     cx: &mut DomCx<'_, '_>,
     nodes: &[NodeId],
@@ -1246,7 +1360,7 @@ pub(super) fn named_item(
         let [id, named] = positions(tree, node, ["id", "name"]);
         let named = named.filter(|_| html);
         for at in [id, named].into_iter().flatten() {
-            charge(cx, value_at(cx.tree(), node, at).len() / 64)?;
+            charge(cx, value_at(cx.tree(), node, at).len() / BYTES_A_STEP)?;
         }
         let tree = cx.tree();
         if [id, named]

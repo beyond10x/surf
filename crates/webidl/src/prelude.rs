@@ -546,16 +546,18 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per 64 bytes copied.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units
+    /// copied (8 units), the price of a String answer's copy. The charge comes after the copy:
+    /// the host interface of the engine's pinned tag answers a String's length only by copying
+    /// it (`to_utf16` and `to_rust_string_lossy` are its only reads of a String), and the copy
+    /// is bounded by the agent's `string_length`.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
-        let text = cx
-            .to_utf16(string)
-            .map(|units| String::from_utf16_lossy(&units))
-            .map_err(defect)?;
+        let units = cx.to_utf16(string).map_err(defect)?;
+        let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let units = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(units / 64)?;
+        let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         Ok(text)
     }
 }
@@ -1297,8 +1299,8 @@ fn refused(step: Completion<()>) -> Completion<bool> {
 }
 
 /// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
-/// properties and its data always show the same list. A step is charged per old and per new
-/// node, before the work. In this order:
+/// properties and its data always show the same list. [`COLLECTION_NODE_STEPS`] are charged per
+/// old and per new node, before the work. In this order:
 ///   1. each old index at or past the new length is defined again as the glue's property of
 ///      its old node, which fails at once on an index the script made non-configurable, and
 ///      makes every such index one the glue can delete;
@@ -1829,7 +1831,7 @@ const LEGACY_NAME_UNITS: f64 = 26.0;
 
 /// The legacy code of the name. A name longer than [`LEGACY_NAME_UNITS`] code units, read with
 /// [`string_length`], which copies nothing, has none: 0 without a copy. A shorter name is
-/// copied for the comparison with the ledger of [`Copies`] (a step per 64 bytes), and the copy
+/// copied for the comparison with the ledger of [`Copies`] (a step per 16 bytes), and the copy
 /// is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;

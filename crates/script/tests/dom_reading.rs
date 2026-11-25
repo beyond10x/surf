@@ -1463,10 +1463,10 @@ check(document.lookupNamespaceURI(null) === HTML, "the document: its element's n
     );
 }
 
-/// `baseURI` charges a long `href` before each piece of work on it: one step per 64 bytes where
-/// it reads the value to parse it, one per 64 bytes of the String it answers, and the glue one
-/// per 16 bytes of that String's copy into the engine. The walk that finds the `base` element
-/// passes the attributes' names and charges none of their bytes.
+/// `baseURI` charges a long `href` before each piece of work on it, one step per 16 bytes each:
+/// where it reads the value to parse it, the String it answers, and the glue's copy of that
+/// String into the engine. The walk that finds the `base` element passes the attributes' names
+/// and charges none of their bytes.
 #[test]
 fn base_uri_charges_its_href() {
     let spent = |bytes: usize| {
@@ -1481,7 +1481,7 @@ fn base_uri_charges_its_href() {
     let (long, short) = (spent(64_000), spent(64));
     eprintln!("baseURI of a href of 64,000 bytes: {long} steps, of 64 bytes: {short}");
     assert!(
-        (short + 5_990..short + 6_100).contains(&long),
+        (short + 11_980..short + 12_100).contains(&long),
         "{long} against {short}"
     );
 }
@@ -1861,7 +1861,7 @@ fn steps_in_proportion() {
 /// A member charges the attributes it reads, before it reads them. A scan for attributes by
 /// name (`getElementById` for `id`, `getElementsByClassName` for `class`, `namedItem` for `id`
 /// and `name`, `baseURI`'s walk for `href`) charges one step per 4 attributes it passes and one
-/// per 64 bytes of each value of those names, and nothing for the bytes of the others. A compare
+/// per 16 bytes of each value of those names, and nothing for the bytes of the others. A compare
 /// of whole lists (`isEqualNode`) charges every attribute's bytes. Values of 128,000 bytes
 /// against 64, and 640 attributes against 2.
 #[test]
@@ -1930,11 +1930,11 @@ fn attributes_are_charged_where_they_are_read() {
 }
 
 /// The namespace lookups charge the `xmlns` values they read: `lookupNamespaceURI(prefix)` the
-/// one it finds by name, `lookupPrefix(namespace)` each it compares, one step per 64 bytes
+/// one it finds by name, `lookupPrefix(namespace)` each it compares, one step per 16 bytes
 /// before the read; a value of another attribute is not read and costs nothing. An `svg`
 /// element's `xmlns:xlink` (the parser gives it the `xmlns` namespace) of 128,000 bytes against
 /// 64, and a `data-x` of the same lengths. `lookupNamespaceURI` answers the value it read, so
-/// the glue's copy of that String (one step per 16 bytes, 8,000) comes beside the read's 2,000;
+/// the glue's copy of that String (one step per 16 bytes, 8,000) comes beside the read's 8,000;
 /// `lookupPrefix` answers null.
 #[test]
 fn the_lookups_charge_the_xmlns_values_they_read() {
@@ -1950,9 +1950,9 @@ fn the_lookups_charge_the_xmlns_values_they_read() {
         (
             "lookupNamespaceURI",
             "g.lookupNamespaceURI(\"xlink\");",
-            10_000,
+            16_000,
         ),
-        ("lookupPrefix", "g.lookupPrefix(\"urn:none\");", 2_000),
+        ("lookupPrefix", "g.lookupPrefix(\"urn:none\");", 8_000),
     ] {
         let (long, short) = (
             spent("xmlns:xlink", 128_000, read),
@@ -1971,7 +1971,7 @@ fn the_lookups_charge_the_xmlns_values_they_read() {
 
 /// `substringData` answers UTF-16 code units: an end inside a surrogate pair answers its lone
 /// half; an answer past `string_length` is the `RangeError`, one of `string_length` units is
-/// read; the walk to the offset costs one step per 64 bytes of the data walked.
+/// read; the walk to the offset costs one step per 16 bytes of the data walked.
 #[test]
 fn substring_data_in_code_units() {
     let page = format!(
@@ -2007,9 +2007,9 @@ fn substring_data_in_code_units() {
     assert!(long >= short + 990, "{long} against {short}");
 }
 
-/// `wholeText` charges one step per text of the run and one per 64 bytes it gathers: 1,000
+/// `wholeText` charges one step per text of the run and one per 16 bytes it gathers: 1,000
 /// adjacent texts of one byte cost at least 1,000 steps, one text of 64,000 bytes at least
-/// 1,000 more than one of 64.
+/// 3,996 more than one of 64.
 #[test]
 fn whole_text_charges_its_texts_and_bytes() {
     let page = format!(
@@ -2041,10 +2041,10 @@ fn whole_text_charges_its_texts_and_bytes() {
     let (long, short) = (bytes(64_000), bytes(64));
     eprintln!("wholeText: 1,000 texts {texts} steps; 64,000 bytes {long} steps, 64 bytes {short}");
     assert!(texts >= 1_000, "{texts}");
-    assert!(long >= short + 999, "{long} against {short}");
+    assert!(long >= short + 3_996, "{long} against {short}");
 }
 
-/// A String a member builds costs a step per 64 bytes.
+/// A String a member builds costs a step per 16 bytes.
 #[test]
 fn string_steps() {
     let read = |bytes: usize| {
@@ -2059,7 +2059,7 @@ fn string_steps() {
     };
     let (long, short) = (read(64_000), read(64));
     eprintln!("textContent of 64,000 bytes: {long} steps; of 64 bytes: {short}");
-    assert!(long >= short + 999, "{long} against {short}");
+    assert!(long >= short + 3_996, "{long} against {short}");
 }
 
 /// The message of the `RangeError` for a String longer than `string_length`: swell's own.

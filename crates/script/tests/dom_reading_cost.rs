@@ -484,10 +484,10 @@ fn an_argument_of_131_072_classes() {
 
 /// Texts: 50,000 adjacent texts of one byte (made through the tree's writes, since the parser
 /// joins adjacent text), and one text of 1 MiB, whose String answer the glue copies at one step
-/// per 16 bytes (per 8 UTF-16 units) beside the member's step per 64 bytes.
+/// per 16 bytes (per 8 UTF-16 units) beside the member's step per 16 bytes.
 #[test]
 fn many_short_texts_and_one_long_text() {
-    const COPIED: u64 = (1 << 20) / 64 + (1 << 20) / 16;
+    const COPIED: u64 = (1 << 20) / 16 + (1 << 20) / 16;
     let tree = || {
         let mut tree = parsed("<!DOCTYPE html><p id=\"t\"></p><p id=\"l\"></p>".to_string())();
         let found = elements(&tree, "p");
@@ -524,7 +524,7 @@ fn many_short_texts_and_one_long_text() {
                 runner,
                 "substringData(0, 1 Mi) of 1 MiB",
                 "l.substringData(0, 1048576);",
-                (1 << 20) / 64 + (2 << 20) / 16,
+                (1 << 20) / 16 + (2 << 20) / 16,
             ),
         ]
     });
