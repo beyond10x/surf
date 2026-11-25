@@ -13,7 +13,9 @@ use surf_html::limits::Limits as ParserLimits;
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, WriteError, parse_document};
 use surf_script::bindings::{DomCx, DomEnd, DomException, DomResult, Mutation, Slices};
 use surf_script::dom::{self, DocumentInfo};
-use surf_script::{Document, Mode, Runner, RunnerLimits, ScriptEnd, run_document};
+use surf_script::{
+    Document, Mode, Runner, RunnerLimits, SESSION_ENGINE_LIMITS, ScriptEnd, run_document,
+};
 use surf_url::Url;
 use swell::Limits;
 
@@ -617,6 +619,74 @@ fn with_tree_under<R: Send>(
     .expect("a runner with the bindings")
 }
 
+/// `title` over 2 MiB of whitespace around one letter, and over 512 Ki one-letter words: one
+/// step per 16 bytes of each text and one per word, before the collapse reads it.
+#[test]
+fn a_title_of_whitespace_and_a_title_of_words() {
+    let mut calls = Vec::new();
+    let spaces = " ".repeat(1 << 20);
+    let page = format!("<!DOCTYPE html><title>{spaces}a{spaces}</title>");
+    calls.push(with_tree(parsed(page), |runner| {
+        call(
+            runner,
+            "title of 2 MiB of whitespace around one letter",
+            "document.title;",
+            (2 << 20) / 16,
+        )
+    }));
+    let page = format!("<!DOCTYPE html><title>{}</title>", "a ".repeat(1 << 19));
+    calls.push(with_tree(parsed(page), |runner| {
+        call(
+            runner,
+            "title of 512 Ki one-letter words",
+            "document.title;",
+            (1 << 20) / 16 + (1 << 19),
+        )
+    }));
+    report("titles", &calls);
+}
+
+/// The class walk in quirks mode over 40 elements whose `class` is one token of 256 KiB: one
+/// step per 16 bytes of each value, which pays its fold.
+#[test]
+fn the_quirks_fold_of_40_tokens_of_256_kib() {
+    let tree = || {
+        let token = "a".repeat(1 << 18);
+        let mut tree = parsed(format!("<div>{}</div>", "<p></p>".repeat(40)))();
+        for element in elements(&tree, "p") {
+            tree.set_attribute(element, "class", &token)
+                .expect("a class");
+        }
+        tree
+    };
+    let calls = with_tree(tree, |runner| {
+        vec![call(
+            runner,
+            "40 classes of one 256 KiB token in quirks, getElementsByClassName('b')",
+            "document.getElementsByClassName('b');",
+            40 * (1 << 18) / 16,
+        )]
+    });
+    report("the quirks fold of long tokens", &calls);
+}
+
+/// A String argument of 4 Mi code units, copied out of the engine at one step per 8 units.
+#[test]
+fn a_string_argument_of_4_mi_units() {
+    let calls = with_tree(parsed("<!DOCTYPE html><p></p>".to_string()), |runner| {
+        let end = runner
+            .evaluate("var G = this; G.big = 'a'; while (big.length < 4194304) big = big + big;");
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+        vec![call(
+            runner,
+            "getElementById(4 Mi units)",
+            "document.getElementById(big);",
+            (4 << 20) * 2 / 16,
+        )]
+    });
+    report("a String argument of 4 Mi units", &calls);
+}
+
 /// A text of 1 MiB read under a `string_length` of 512 Ki units: its bytes are charged, one step
 /// per 16, before its code units are counted against the limit; the read is the `RangeError`.
 #[test]
@@ -651,4 +721,44 @@ fn a_value_over_string_length_is_charged_before_it_is_measured() {
         ]
     });
     report("a value over string_length", &calls);
+}
+
+/// An ordinary page under the session's limits: 25,000 paragraphs of a 38-byte text (50,003
+/// nodes, 950,000 bytes of text). One `documentElement.textContent` read: the walk's step a
+/// node, the text's bytes at one step per 16 where the member gathers them and again where the
+/// glue copies the answer; the reads of it that one script's steps hold. And
+/// `getElementsByTagName('*')` walked by index over its 25,003 elements.
+#[test]
+fn an_ordinary_page() {
+    let text = "abcdefghijklmnopqrstuvwxyzabcdefghijkl";
+    let page = format!(
+        "<!DOCTYPE html><body>{}</body>",
+        format!("<p>{text}</p>").repeat(25_000)
+    );
+    let bytes = 25_000 * text.len() as u64;
+    let mut session = limits();
+    session.engine = SESSION_ENGINE_LIMITS;
+    let calls = with_tree_under(session, parsed(page), |runner| {
+        vec![
+            call(
+                runner,
+                "documentElement.textContent of 50,003 nodes and 950,000 bytes",
+                "document.documentElement.textContent;",
+                50_003 + 2 * bytes / 16,
+            ),
+            call(
+                runner,
+                "getElementsByTagName('*') walked by index over 25,003 elements",
+                "var c = document.getElementsByTagName('*'); \
+                 for (var i = 0; i < c.length; i++) c[i];",
+                25_003 * 8,
+            ),
+        ]
+    });
+    eprintln!(
+        "an ordinary page: {} reads of textContent fit in one script's {} steps",
+        SESSION_ENGINE_LIMITS.steps_per_entry / calls[0].steps,
+        SESSION_ENGINE_LIMITS.steps_per_entry
+    );
+    report("an ordinary page", &calls);
 }
