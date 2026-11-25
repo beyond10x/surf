@@ -168,10 +168,17 @@
 //!   parse pass after its last token, one for each entry left (a `meta` that changes the
 //!   encoding of [`parse_document_bytes`] ends the first pass and starts a second; that pass
 //!   takes no hook, so its stack stays inside the depth limit). The count is read after each
-//!   token, inside every loop over the stack of open elements, its scope boundaries or the
-//!   list of active formatting elements, before each entry, and before every write of the
-//!   parser to the tree: past the limit the loop ends, the write is not made, and parsing
-//!   stops. So the token that takes the count past the limit is processed up to the next
+//!   token; before each entry of every scan of the stack of open elements or of the list of
+//!   active formatting elements (the scans named above, and the pass that reads the stack's
+//!   depths again, before each entry it reads); and before every write of the parser to the
+//!   tree and every stop at another limit. Past the limit the scan ends with its answer for
+//!   "not found", the write is not made, and parsing stops at the step limit, never at another
+//!   limit. Not read inside them, and counted as said: the pass that marks the stack's depths
+//!   to be read again (no step), the moves of the entries above and of the boundaries in a
+//!   removal from inside the stack or an insertion into it (counted at once), the pops after
+//!   a scan that found where to stop (the scan counted them), a walk up the tree from one
+//!   entry (each hop), and the scans of a child list and the walk under the furthest block
+//!   (each node). So the token that takes the count past the limit is processed up to the next
 //!   read, and the tree keeps what it wrote before; an adoption agency iteration that the
 //!   limit ends inside puts the clones it made back into the tree first. A parse ends fewer
 //!   than 4 × `max_nodes` steps past the limit ([`limits::Limits::max_steps`] gives the

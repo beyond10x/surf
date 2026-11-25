@@ -1215,14 +1215,18 @@ impl TreeBuilder {
     /// Whether an element inserted at `place` stays inside the depth limit: the depth of
     /// `place`'s parent ([`Self::place_depth`]) is below the limit. When it is not, parsing
     /// stops: that parent is an element at the limit. `Some` with that depth when it does;
-    /// `None` after parsing stopped, also past the step limit (a read of it).
+    /// `None` after parsing stopped, also past the step limit (a read of it). The walk to a
+    /// template's host that `place_depth` may take is counted: past the step limit after it,
+    /// parsing stops at the step limit, never at the depth limit.
     fn room_at(&mut self, place: (NodeId, Option<NodeId>)) -> Option<usize> {
         if self.stopped || self.past_step_limit() {
             return None;
         }
         let depth = self.place_depth(place);
         if depth >= self.limits.max_depth {
-            self.stop_at(Limit::Depth);
+            if !self.past_step_limit() {
+                self.stop_at(Limit::Depth);
+            }
             return None;
         }
         Some(depth)
@@ -1521,9 +1525,11 @@ impl TreeBuilder {
     /// would give the element more attributes than the attribute limit, its attributes counted
     /// whatever their names, or pass the stored-byte limit, is not made, and parsing stops. The
     /// names of the element's attributes in no namespace are kept in a set, so the merge costs
-    /// O(1) for each attribute of the token.
+    /// O(1) for each attribute of the token. The step limit is read first: the rules that merge
+    /// come after a scan for a `template` the limit may have ended, and past it parsing stops
+    /// at the step limit, never at the attribute limit.
     fn merge_attributes(&mut self, element: NodeId, attributes: &[TokenAttribute]) {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return;
         }
         let held = match self.tree.data(element) {

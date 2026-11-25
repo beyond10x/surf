@@ -422,14 +422,26 @@ count there would change what the step limit checked for that token. A `meta` th
 encoding of `parse_document_bytes` ends the first pass and starts a second over the same bytes;
 that pass takes no hook, so its stack stays inside the depth limit.
 
-Read inside the token (fix round 5, ruling D423): with the stack that long, one token's work
+Read inside the token (fix round 5): with the stack that long, one token's work
 could pass the limit by any factor (one `</b>` whose inner loop removes N entries, each removal
-moving the M entries above it). The count is read after each token, inside every loop over the
-stack of open elements, its scope boundaries or the list of active formatting elements before
-each entry, and before every write of the parser to the tree. Past the limit the loop ends, the
-write is not made and parsing stops at `Steps`; an adoption agency iteration whose inner loop
-made clones puts them back at the place of step 4.14 first, so every node the parse made stays
-in the tree. Below the limit no read changes a tree or a count. A parse ends fewer than 4 ×
+moving the M entries above it). The count is read after each token, before each entry of every
+scan of the stack of open elements or of the list of active formatting elements (the scopes,
+the stack position, popping, the implied end tags, "any other end tag", the `li` and `dd`/`dt`
+scans, clearing back to a table context, resetting the insertion mode, the search for a
+`template`, the place of foster parenting, the breakout of foreign content and its end tags,
+Noah's Ark, the reconstruction, the list's scans and the adoption agency's scans and inner
+loop, and the pass that reads the stack's depths again), and before every write of the parser
+to the tree and every stop at another limit. Not read inside them, counted as the derivation
+at `max_steps` says: the pass that marks the stack's depths to be read again (no step), the
+moves of a removal from inside the stack or an insertion into it (counted at once), the pops
+after a scan that found where to stop (the scan counted them), a walk up the tree from one
+entry (each hop), a child list's scan or move and the walk under the furthest block (each
+node). Past the limit the scan ends with its answer for "not found", the write is not made and
+parsing stops at `Steps`, never at another limit (a page that sets the attribute, depth, node
+or stored-byte limit just past what a cut scan's answer would do stops at `Steps`, fix round 6);
+an adoption agency iteration whose inner loop made clones puts them back at the place of step
+4.14 first, so every node the parse made stays in the tree. Below the limit no read changes a
+tree or a count. A parse ends fewer than 4 ×
 `max_nodes` steps past the limit: past it only the rest of the stretch between two reads and
 the putting back are counted, and the longest stretches hold four pieces of work of fewer than
 `max_nodes` visits each (`limits.rs`, `max_steps`, has the derivation).

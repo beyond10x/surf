@@ -1847,7 +1847,7 @@ fn reachable(tree: &Tree) -> usize {
 }
 
 /// Each loop over the stack of open elements or the list of active formatting elements reads
-/// the step limit before each entry it visits, and ends there (ruling D423 of fix round 5;
+/// the step limit before each entry it visits, and ends there (fix round 5;
 /// `limits.rs`, `max_steps`): a parse whose limit falls inside one such loop of its last token
 /// ends at `Steps` 1 step past the limit, and every node the parse made is in the tree. Each
 /// case is a page whose last token runs that loop over about 2,000 entries (the depth limit
@@ -2132,6 +2132,153 @@ fn every_stop_inside_a_token_leaves_a_tree() {
         wrong.len(),
         &wrong[..wrong.len().min(10)]
     );
+}
+
+/// A parse that has passed the step limit stops at it and names no other limit. For each limit
+/// other than the steps that a scan the step limit ends could reach, a page whose last token
+/// acts on that scan's answer, with the limit set so that the answer "not found" passes it and
+/// the true answer does not: the whole parse ends with no limit, and with every step limit
+/// from 0 to its steps the parse ends whole or at `Steps`. The attribute limit: the `html` and
+/// `body` start tags merge only when no `template` is open, a scan from the stack's first
+/// entry. The depth limit: `<p>` over a `p` closes it when it is in button scope, else goes
+/// under the top `span`, one deeper than the limit allows. The node and stored-byte limits:
+/// `</p>` with a `p` in button scope makes nothing, else it makes a `p`, one node and one byte
+/// over the limits. And a step counted between the read of the step limit and the check of the
+/// depth limit (below).
+#[test]
+fn a_parse_past_the_step_limit_names_no_other_limit() {
+    let span = "<span>".repeat(40);
+    let div = "<div>".repeat(40);
+    let at = |limits: Limits, page: &str| parse_document(page, &scripted_with(limits));
+    let depth_page = format!("<p>{span}<p>");
+    let max_depth = (1..)
+        .find(|&max_depth| {
+            let limits = Limits {
+                max_depth,
+                ..Limits::default()
+            };
+            at(limits, &depth_page).stopped_by().is_none()
+        })
+        .unwrap();
+    let end_page = format!("<p>{span}</p>");
+    let whole = at(Limits::default(), &end_page);
+    let cases = [
+        (
+            Limit::Attributes,
+            format!("<html a=1 b=1>{div}<template><html c=1>"),
+            Limits {
+                max_attributes: 2,
+                ..Limits::default()
+            },
+        ),
+        (
+            Limit::Attributes,
+            format!("<body a=1 b=1>{div}<template><body c=1>"),
+            Limits {
+                max_attributes: 2,
+                ..Limits::default()
+            },
+        ),
+        (
+            Limit::Depth,
+            depth_page.clone(),
+            Limits {
+                max_depth,
+                ..Limits::default()
+            },
+        ),
+        (
+            Limit::Nodes,
+            end_page.clone(),
+            Limits {
+                max_nodes: whole.node_count(),
+                ..Limits::default()
+            },
+        ),
+        (
+            Limit::StoredBytes,
+            end_page,
+            Limits {
+                max_stored_bytes: whole.stored_bytes(),
+                ..Limits::default()
+            },
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (kind, page, limits) in cases {
+        let all = at(limits, &page);
+        assert_eq!(all.stopped_by(), None, "{kind:?}: {page}");
+        let mut stops = 0;
+        for max_steps in 0..=all.steps() {
+            let tree = at(
+                Limits {
+                    max_steps,
+                    ..limits
+                },
+                &page,
+            );
+            match tree.stopped_by() {
+                None => {}
+                Some(Limit::Steps) => stops += 1,
+                Some(other) => wrong.push(format!("{kind:?}, step limit {max_steps}: {other:?}")),
+            }
+        }
+        assert!(stops > 0, "{kind:?}: no stop at Steps");
+    }
+    // A counted walk between the read of the step limit and the check of the depth limit: the
+    // depth of a template's contents is read by a step to the template. With a depth limit the
+    // `span` passes, the whole parse stops at `Depth`; a parse whose steps passed its step limit
+    // names `Steps`, also the one whose limit that step passes.
+    let limits = Limits {
+        max_depth: 3,
+        ..Limits::default()
+    };
+    let page = "<template><span>";
+    let all = at(limits, page);
+    assert_eq!(all.stopped_by(), Some(Limit::Depth));
+    for max_steps in 0..=all.steps() {
+        let tree = at(
+            Limits {
+                max_steps,
+                ..limits
+            },
+            page,
+        );
+        if tree.steps() > max_steps && tree.stopped_by() != Some(Limit::Steps) {
+            wrong.push(format!(
+                "{page}, step limit {max_steps}: {} steps, {:?}",
+                tree.steps(),
+                tree.stopped_by()
+            ));
+        }
+    }
+    // And the adoption agency's check of a move down, after the walk of the nodes under the
+    // furthest block, a step each: [`KeepOpen`] takes the `p` out of the `i` to the body, so
+    // the clone of the `i` puts the `p` and the 20 `span` under it one deeper than the depth
+    // limit allows, and the whole parse stops at `Depth` there.
+    let page = format!("<b><i><p><script>x</script>{}</b>", "<span>".repeat(20));
+    let keep_open =
+        |limits: Limits| parse_document_with_hook(&page, &scripted_with(limits), &mut KeepOpen);
+    let limits = Limits {
+        max_depth: 23,
+        ..Limits::default()
+    };
+    let all = keep_open(limits);
+    assert_eq!(all.stopped_by(), Some(Limit::Depth));
+    for max_steps in 0..=all.steps() {
+        let tree = keep_open(Limits {
+            max_steps,
+            ..limits
+        });
+        if tree.steps() > max_steps && tree.stopped_by() != Some(Limit::Steps) {
+            wrong.push(format!(
+                "the move down, step limit {max_steps}: {} steps, {:?}",
+                tree.steps(),
+                tree.stopped_by()
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 /// Past the step limit the parser writes nothing to the tree: the node a page's last token

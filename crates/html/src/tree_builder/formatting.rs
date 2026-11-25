@@ -19,7 +19,7 @@
 //! read before each outer iteration, in each scan, before each iteration of the inner loop and
 //! after its scan of the list, and after step 4.23: past it, an inner loop that made clones
 //! ends with them put back at the place of step 4.14 (step 4.23), the furthest block under the
-//! last, and parsing stops (fix round 5 of `story:html-script-hook`, ruling D423).
+//! last, and parsing stops (fix round 5 of `story:html-script-hook`).
 
 use super::{Entry, Scope, TreeBuilder};
 use crate::limits::Limit;
@@ -363,7 +363,9 @@ impl TreeBuilder {
         debug_assert!(self.tree.contents(furthest_block).is_none());
         let below = self.tree.height_below(furthest_block, &self.steps);
         let fits = new_element + below <= self.limits.max_depth;
-        if !fits {
+        // The walks of `place_depth` and `height_below` are counted: past the step limit after
+        // them, parsing stops at the step limit, never at the depth limit.
+        if !fits && !self.past_step_limit() {
             self.stop_at(Limit::Depth);
         }
         fits
