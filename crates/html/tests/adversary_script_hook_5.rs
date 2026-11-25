@@ -6,9 +6,10 @@
 //! unit to: ruling 1 of fix round 4 ("the step limit bounds the work of a parse"), the crate
 //! documentation's "Limits" and the documentation of `src/limits.rs`.
 
-use surf_html::limits::Limits;
+use surf_html::limits::{Limit, Limits};
 use surf_html::{
-    NodeData, NodeId, NotRun, ParseOptions, ScriptHook, Tree, parse_document_with_hook,
+    Context, Namespace, NodeData, NodeId, NotRun, ParseOptions, ScriptHook, Tree, parse_document,
+    parse_document_with_hook, parse_fragment,
 };
 
 /// A hook that moves the script's parent, the current node, to the end of the `body`: the
@@ -123,4 +124,111 @@ fn one_end_tag_of_the_adoption_agency_stays_near_the_step_limit() {
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+// The cases below held on the tip they were written against (`dc175e9`).
+
+/// The `debug_assert`s of fix round 4 in `OpenElements::remove`, `::insert` and `::replace`
+/// (tree_builder.rs): no rule removes a scope boundary from inside the stack, the adoption
+/// agency inserts its new formatting element with no boundary at or above its place, and its
+/// inner loop replaces no boundary. Each case reaches one of the rules that remove from
+/// inside (the `head` put back after head, `</form>`, an `a` start tag over an `a` the
+/// algorithm left, the algorithm's own removals and insertion) with a boundary above, below
+/// or around the entry, also in a fragment whose context is a `form`; a debug build panics
+/// on a broken assert. Then 30,000 random pages of those pieces.
+#[test]
+fn no_rule_removes_inserts_or_replaces_a_scope_boundary_inside_the_stack() {
+    let cases = [
+        "<a><table><a>",
+        "<a><object><a>",
+        "<a><marquee><a>",
+        "<a><applet><a>",
+        "<a><svg><desc><a>",
+        "<a><math><mi><a>",
+        "<a><select><a>",
+        "<a><table><td><a>",
+        "<a><table><caption><a>",
+        "<a><template><a>",
+        "<html><head></head><template><input>",
+        "<html><head></head><meta><template></template><link><p>",
+        "<html><head></head><script>x</script><template><object>",
+        "<form><object></form>",
+        "<form><table></form>",
+        "<form><div><object></div></form>",
+        "<object><b><span><div></b>",
+        "<b><object><span><div></b>",
+        "<b><span><object><div></b>",
+        "<b><i><u><s><span><div><object></b>",
+        "<table><b><tr><td><b><span><div></b>",
+        "<svg><desc><b><span><div></b>",
+        "<b><select><option><div></b>",
+        "<a><b><i><a><div></a></b>",
+        "<b><p><object></b></p>",
+        "<nobr><nobr><object><nobr>",
+    ];
+    let options = ParseOptions {
+        scripting_disabled: false,
+        ..ParseOptions::default()
+    };
+    for case in cases {
+        parse_document_with_hook(case, &options, &mut Lift);
+        parse_document(case, &ParseOptions::default());
+        let form = Context {
+            namespace: Namespace::Html,
+            local_name: "form".to_string(),
+        };
+        parse_fragment(case, &form, &ParseOptions::default());
+    }
+    const PIECES: &[&str] = &[
+        "<a>",
+        "</a>",
+        "<b>",
+        "</b>",
+        "<i>",
+        "<nobr>",
+        "<form>",
+        "</form>",
+        "<object>",
+        "</object>",
+        "<marquee>",
+        "<applet>",
+        "<table>",
+        "<td>",
+        "<caption>",
+        "</table>",
+        "<template>",
+        "</template>",
+        "<select>",
+        "<option>",
+        "<svg><desc>",
+        "</svg>",
+        "<math><mi>",
+        "</math>",
+        "<p>",
+        "</p>",
+        "<div>",
+        "<span>",
+        "<button>",
+        "x",
+        "</head>",
+        "<meta>",
+        "<link>",
+        "<body>",
+        "<script>x</script>",
+    ];
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut below = |n: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % n as u64) as usize
+    };
+    for _ in 0..30_000 {
+        let mut page = String::from(if below(2) == 0 { "<html><head>" } else { "" });
+        for _ in 0..4 + below(24) {
+            page.push_str(PIECES[below(PIECES.len())]);
+        }
+        let tree = parse_document_with_hook(&page, &options, &mut Lift);
+        assert_ne!(tree.stopped_by(), Some(Limit::Steps), "{page}");
+    }
 }
