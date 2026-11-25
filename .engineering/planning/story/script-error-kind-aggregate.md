@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:script-error-kind-aggregate
 kind: story
-status: draft
+status: active
 title: The specification records a script that threw an AggregateError by its own word
 summary: surf.document.ScriptErrorKind gains AggregateError; the scenario of every error kind records nine kinds; the generated types and the conformance target follow, with no new planted defect; the synthesis of the suite is timed against its bound.
 relations:
@@ -25,7 +25,10 @@ scope:
   path: spec/scenarios/document-records-every-error-kind.yaml
 - confidence: cited
   path: website/docs/how-it-is-built.md
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 14, executor: "agent:coordinator"}
 ---
 ## Context
 
