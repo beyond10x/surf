@@ -401,13 +401,11 @@ fn hostile_shapes_of_a_kept_collection() {
     }
     let page =
         format!("<div id=\"p\"><b></b></div><div id=\"q\"><u></u></div><div id=\"r\">{kids}</div>");
+    // Frozen, sealed, non-extensible, a non-configurable index 0 and an own `length` are held
+    // index by index, for lists that grow, shrink and empty, by
+    // `adversary_dom_reading_2::refill_shapes_index_by_index`.
     let shapes = [
-        "Object.freeze(c)",
-        "Object.preventExtensions(c)",
-        "Object.seal(c)",
         "Object.defineProperty(c, '0', { get: function () { return 'accessor'; }, configurable: true })",
-        "Object.defineProperty(c, '0', { value: 'fixed', writable: false, configurable: false })",
-        "Object.defineProperty(c, 'length', { value: 99 })",
         "delete c[0]",
         "c[0] = 'set'",
         "c[5] = document.getElementById('q')",

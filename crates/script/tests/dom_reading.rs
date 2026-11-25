@@ -2078,6 +2078,44 @@ fn one_text(bytes: usize, source: &str) -> (ScriptEnd, Duration) {
     (end, started.elapsed())
 }
 
+/// As [`one_text`], with the text put into the body of an empty document through the tree's
+/// write surface instead of parsed: the parse of a text this long is most of [`one_text`]'s time
+/// in a test build.
+fn one_built_text(bytes: usize, source: &str) -> (ScriptEnd, Duration) {
+    let started = Instant::now();
+    let parse_limits = ParserLimits {
+        max_input_bytes: 32 * 1024 * 1024,
+        max_stored_bytes: 128 * 1024 * 1024,
+        ..ParserLimits::default()
+    };
+    let mut session = limits();
+    session.engine = SESSION_ENGINE_LIMITS;
+    let source = with_range(source);
+    let end = run_document(
+        session,
+        Mode::Test,
+        move || {
+            let options = ParseOptions {
+                limits: parse_limits,
+                ..ParseOptions::default()
+            };
+            let mut tree = parse_document("", &options);
+            let html = *tree.children(tree.root()).last().expect("the html element");
+            let body = *tree.children(html).last().expect("the body");
+            let text = tree.create_text_node(&"a".repeat(bytes)).expect("the text");
+            tree.append_child(body, text).expect("the text in the body");
+            Document {
+                tree,
+                limits: parse_limits,
+                slices: slices(DocumentInfo::default()),
+            }
+        },
+        |runner| runner.evaluate(&source),
+    )
+    .expect("a runner");
+    (end, started.elapsed())
+}
+
 /// 8h: a text of 16,777,217 bytes, one more than the session's `string_length`, parsed under
 /// raised limits: its `textContent` and the body's are the realm's `RangeError`, caught by the
 /// script.
@@ -2095,10 +2133,11 @@ fn string_length() {
     assert_eq!(end, ScriptEnd::Ran, "{end}");
 }
 
-/// A text of exactly `string_length` code units is read whole.
+/// A text of exactly `string_length` code units, put into the body, is read whole: its own
+/// `textContent` and the body's.
 #[test]
 fn a_string_of_string_length_units_is_read() {
-    let (end, took) = one_text(
+    let (end, took) = one_built_text(
         16_777_216,
         r#"var t = document.documentElement.lastChild.firstChild;
            check(t.textContent.length === 16777216, "the text");
