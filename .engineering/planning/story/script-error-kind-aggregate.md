@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:script-error-kind-aggregate
 kind: story
-status: active
+status: implemented
 title: The specification records a script that threw an AggregateError by its own word
 summary: surf.document.ScriptErrorKind gains AggregateError; the scenario of every error kind records nine kinds; the generated types and the conformance target follow, with no new planted defect; the synthesis of the suite is timed against its bound.
 relations:
@@ -25,10 +25,11 @@ scope:
   path: spec/scenarios/document-records-every-error-kind.yaml
 - confidence: cited
   path: website/docs/how-it-is-built.md
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 14, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-25T05:12:59Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -181,3 +182,43 @@ that writes the record, as `story:scripts-spec` was.
 
 The epic records each script's end with its document; a page that throws an `AggregateError`
 under swell `0.9.0` needs a word in that record.
+
+## As built
+
+The unit is on `main` at `0f49fc8` (the merge of `impl/script-error-kind-aggregate` at `c0bb9db`).
+Where it differs from the text above:
+
+- Decision 2 and acceptance 2: the scenario `document-records-every-error-kind` holds ten
+  `AddScriptEnd` steps, not nine. The tenth is a script that threw an `AggregateError` without a
+  message, read back with `message: null`: swell `0.9.0` gives that record for
+  `throw new AggregateError([])`, and the review showed that no scenario noticed a target that
+  refused it or invented a message for it. Its counts are `{at_least: 10, at_most: 10}`. The
+  greps of acceptance 2 print 10 (`command: surf.document.AddScriptEnd`) and 4
+  (`error_kind: AggregateError`).
+- The Change gains `spec/scenarios/adversary-script-ends-q7-excluded.yaml`: one step, a
+  refused end with `AggregateError`, outcome `invalid-end`. Decision 5 added the term
+  `RefusedKind(AggregateError)` to `adversary2_each_term_of_invalid_end_removed_is_noticed`, and
+  without the step no scenario noticed its removal (`0 of 15 not passed`).
+- The Change gains `conformance/tests/adversary_3.rs`, the review's nine cases: the new kind
+  stored as another, another stored as the new kind, a thrown one refused, a refused one
+  accepted, and the two cases of the message. The conformance crate has 63 tests (54 on the
+  base) and the tree 207 test files (206).
+- Decision 7 and acceptance 4: the bound of 4.65 s was not applied as an absolute number,
+  because the host's load moved the base's own times past it (base 5.052 s median at a load of
+  about 19). The synthesis was timed as five pairs, base then tip in turn, and judged by the
+  ratio of the medians: the tip's median is at most 1.15 times the base's. `/usr/bin/time` is
+  not on the host; the times are differences of `date +%s%N`. The last round, on the tip with
+  both added steps, base `9934c89` (seconds, with the 1-minute load before each pair):
+  3.685 and 3.694 (11.74), 4.040 and 5.038 (12.80), 3.479 and 3.829 (14.46), 3.367 and 3.278
+  (14.34), 4.160 and 3.878 (13.95). Medians 3.685 and 3.829, ratio 1.039; the tip's median is
+  also under 4.65 s. The two rounds before it, at loads of 19 to 27: ratios 0.974 and 0.943.
+- Acceptance 5: besides the two digests, the gate blocks' line of the conformance crate
+  (`63 tests run: 63 passed`) and of the test layout (`207 test files`) changed, and the
+  paragraph under each block gained one sentence that names this story for those lines.
+- In a parallel run two tests of the conformance crate ran over 5 s:
+  `adversary2_each_term_of_invalid_end_removed_is_noticed` 5.887 s and
+  `adversary3_refused_aggregate_error_added_is_noticed` 5.056 s.
+- Left to other stories, as the review noted: `docs/design/scripts.md` and
+  `crates/script/src/runner.rs` still list seven kinds (`story:swell-0-9-0`); the mapping to
+  this enum is `story:scripts-document-port`. The variant's place before `Value` is held by
+  review only: the enum has no order a test can read.
