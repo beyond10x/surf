@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:swell-0-9-0
 kind: story
-status: proposed
+status: active
 title: surf takes swell 0.10.0, runs the microtask checkpoint after each script, and maps swell's new error kind and host error
 summary: The tag moves to 0.10.0, which holds 0.9.0 and 0.9.1, in one place with the lock, the allow-list, the test constants, NOTICE and the tag sentences; the runner performs HTML's microtask checkpoint after each script under the document's totals and clock and clears the queue after a limit; AggregateError gets its word and a wildcard arm whose swallowing a test notices; HostError::MemoryBudget joins surf_defect!(); clock_advances runs; the test that swell 0.9.1's interrupt fix breaks is rewritten; the design note is revised at 0.10.0, with requirement 11 held and HOST-216 to HOST-220 recorded.
 relations:
@@ -53,9 +53,10 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
+- {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
 ---
 ## Context
 
