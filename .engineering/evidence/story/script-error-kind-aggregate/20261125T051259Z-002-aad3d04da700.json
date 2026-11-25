@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T05:12:59Z",
+  "actor": "human:operator",
+  "artifact": "story:script-error-kind-aggregate",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one pass on the unit by a reviewer who did not write it, 2026-11-25",
+    "reference": "on 68b41ae: no must, 1 should (no scenario recorded a thrown AggregateError without a message), 9 tests merged, 2 red; one fix round by the implementor, both red tests green on c0bb9db; conform-rust 63 of 63"
+  }
+}

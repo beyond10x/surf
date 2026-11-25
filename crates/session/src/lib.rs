@@ -1879,10 +1879,13 @@ impl<T: Transport> Session<T> {
         };
         self.browser.run()?;
         self.caller.set(None);
+        // `scripts` is the option's off value: the client refuses `--scripts` and no session
+        // runs a script until `story:scripts-document-port` (`docs/design/scripts.md`, Q7).
         let outcome = self.browser.agent_mut().open_session(OpenSession {
             session_id: self.session_id.clone(),
             window_id,
             tab_id,
+            scripts: false,
         })?;
         match outcome {
             OpenSessionOutcome::Opened { .. } => {}
@@ -2430,7 +2433,8 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
-        | RefusalReason::SessionTimeout => 3,
+        | RefusalReason::SessionTimeout
+        | RefusalReason::ScriptsUnavailable => 3,
     }
 }
 

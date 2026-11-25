@@ -125,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "surf-agent"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "surf-answer",
  "surf-secret",
@@ -150,7 +150,7 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-cli"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "surf",
  "surf-answer",
@@ -222,12 +222,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-script"
+version = "0.1.0"
+dependencies = [
+ "surf-html",
+ "surf-secret",
+ "swell",
+]
+
+[[package]]
 name = "surf-secret"
 version = "0.1.0"
 
 [[package]]
 name = "surf-session"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "surf",
  "surf-agent",
@@ -327,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "surfd"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "surf-agent",
  "surf-answer",
@@ -335,6 +344,54 @@ dependencies = [
  "surf-test-process",
  "surf-view",
 ]
+
+[[package]]
+name = "swell"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+dependencies = [
+ "swell-compiler",
+ "swell-num",
+ "swell-regexp",
+ "swell-syntax",
+ "swell-unicode",
+]
+
+[[package]]
+name = "swell-compiler"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+dependencies = [
+ "swell-num",
+ "swell-syntax",
+]
+
+[[package]]
+name = "swell-num"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+
+[[package]]
+name = "swell-regexp"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+dependencies = [
+ "swell-unicode",
+]
+
+[[package]]
+name = "swell-syntax"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+dependencies = [
+ "swell-regexp",
+ "swell-unicode",
+]
+
+[[package]]
+name = "swell-unicode"
+version = "0.8.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
 
 [[package]]
 name = "untrusted"

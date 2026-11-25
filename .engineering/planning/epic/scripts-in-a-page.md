@@ -2,12 +2,15 @@
 format: aep.planning-md/3
 id: epic:scripts-in-a-page
 kind: epic
-status: draft
+status: active
 title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 38
+revision: 53
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
+- {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
 ---
 ## Context
 
@@ -114,8 +117,10 @@ Out, each with its reason:
 - External scripts (`src`): a fetch per script is a new request kind for `surf.net` (subresource,
   not navigation), its own story and its own security review; parser-blocking fetches also need
   the parser pause.
-- Timers and the event loop: no task queue exists in surf, and swell's job hooks and the microtask
-  checkpoint are slice 10, all pending (HOST-77 to HOST-84). Scripts run only while parsing, so
+- Timers and the event loop: no task queue exists in surf. swell's slice 10 is delivered at
+  `0.9.0` (HOST-77 to HOST-84 have a test, `conformance/host/requirements.txt:77-84 @ 0.9.0`), and
+  `story:swell-0-9-0` runs the microtask checkpoint after each script; timers and the task queue
+  stay out. Scripts run only while parsing, so
   D2 (`docs/plan/agent-plan-revision-1.md`: no mutation after parsing) still holds afterwards.
 - Events: `EventTarget`'s three members are generated and throw `NotSupportedError`; event
   handlers, `Event` and dispatch need the event loop, and an agent's action firing script is a
@@ -175,7 +180,8 @@ The form chosen (S1, option a): that git dependency, on a release tag. What chan
   the same change.
 - Which tag: page scripts run only on a tag that holds the fixes of "From the security review of
   2026-11-22". `0.2.0` may enter for tests of the engine without a page; the tag that runs a
-  page's script is named in that section when it exists.
+  page's script is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by
+  `story:swell-0-9-0`.
 
 Two things hold in this form: swell's `[profile.*] overflow-checks = true` (its root
 `Cargo.toml`) does not apply inside surf's build, because cargo reads profiles from the root
@@ -303,8 +309,8 @@ at `6a43e18`:
   its start, before each entry and inside a job (HOST-198), for the wall-clock bound; a
   checkpoint that did not empty the queue leaves its entries queued and charged, and the next
   checkpoint runs them (HOST-199); `Agent::clear_microtasks()` drops every queued entry unrun
-  and credits its charge (HOST-200). surf calls it when a limit ended a checkpoint, so that a
-  page that floods the queue cannot spend the next scripts' budgets. Dropping the agent with
+  and credits its charge (HOST-200). surf calls it when a limit ended a script or its checkpoint,
+  so that a page that floods the queue cannot spend the next scripts' budgets. Dropping the agent with
   entries queued calls nothing of the host.
 
 Read at `6a43e18` and not a requirement: `new_host_function` and `define_property_or_throw` are
@@ -478,7 +484,7 @@ story of those waves writes.
     and a wall-clock interrupt, writes each script's end, and the session shows the two examples
     of "Outcome" (`surf-agent look`, and the document's rows); `surf <url>` keeps running no
     script, tested; the `noscript` rule. Depends on 4, 5, 7, 9, 10,
-    `story:html-document-port`, and a swell tag with the review's fixes. Writes
+    `story:html-document-port`, and swell `0.9.0`, taken by `story:swell-0-9-0`. Writes
     `crates/surf/src/lib.rs`, `crates/session/`, `crates/page/src/lib.rs`,
     `conformance/src/target.rs`, `docs/agent-answer.md`, and only a test in
     `crates/surf-cli/tests/`. **Waits for
@@ -497,9 +503,8 @@ the slices 9, 10 and 11 beside each other (disjoint modules of `crates/script/sr
 
 ## Open decisions for the operator
 
-S1 to S4 and S7 are answered ("Decisions taken"). Two remain, each with its default, which is taken
-after 15 minutes without an answer (the organization folder's rule "A default proceeds"); none blocks
-`scripts-decisions` or `webidl-reader`.
+None is open: S1 to S4 and S7 are answered by the operator and S5 and S6 by the operator session
+("Decisions taken"). The options of S5 and S6 stay here as they were put.
 
 S5. How the session process gets restricted privileges and resource limits, under
 `#![forbid(unsafe_code)]` and with no third-party crate ("Security").
@@ -514,7 +519,7 @@ S5. How the session process gets restricted privileges and resource limits, unde
   the operator's word; seccomp and Landlock could follow in the same place.
 - c. None: the reduced environment and the bounds inside the process only. Cost: the review's
   second condition stays unmet, so no session runs a page's script.
-Default: a.
+Decided: a.
 
 S6. Which definitions of the HTML Standard are generated beside the DOM Standard's.
 - a. Four members: `Window`'s `document`, `window`, `self` and `Document`'s `title`, from the
@@ -529,7 +534,7 @@ S6. Which definitions of the HTML Standard are generated beside the DOM Standard
   `Document`'s named getter, which needs swell's slice 9 and stays a deviation.
 - c. No HTML IDL: a hand-written `Window` with `document` and a hand-written `title`. Cost: two
   members not generated, against S4's "generated from their Web IDL".
-Default: a.
+Decided: a.
 
 ## Out of scope
 
@@ -594,12 +599,40 @@ which belongs to the session working on swell, given requirements 1 to 10 of "Th
 - S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the operator session: "A: option, off by default". It was the default the epic named. By S7 the option exists on `surf-agent open` only, not on `surf`.
 - S4, the DOM of the first version: option b, the whole `Node`, `Element` and `Document` interfaces generated from their Web IDL. The operator, 2026-11-22 05:14 CET, relayed by the operator session: "B: full Web IDL interfaces". This is not the default the epic named (a).
 - S7, `surf <url>` and page scripts: option c, scripts run only in sessions of `surfd` (`surf-agent open --scripts`); `surf <url>` gets no script option until `surf` is a thin client of `surfd`, and nothing is built for it. The operator, 2026-11-22 05:48 CET, relayed by the operator session: "C: scripts only in surfd". It was not the default the epic named (a).
+- S5, privileges and limits of the session process: option a, `surfd` starts `surf-session` through `setpriv --no-new-privs` and `prlimit`, and a session with scripts is refused when either program is missing; `#![forbid(unsafe_code)]` stays in every crate. Decided by the operator session, 2026-11-24, about 11:00 CET: "S5 = A (`setpriv --no-new-privs` and `prlimit`, a session with scripts is refused when either is missing; `forbid(unsafe_code)` stays). Reason: it meets the review's second condition with no rule change. Record in the design note that seccomp and Landlock are absent and that B needs the owner's word." It was the default the epic named. The design note of `story:scripts-decisions` records both: no seccomp filter and no Landlock rule set in the first version, and option b only on the operator's word.
+- S6, the HTML Standard's definitions beside the DOM Standard's: option a, the four members `Window`'s `document`, `window`, `self` and `Document`'s `title`. Decided by the operator session, 2026-11-24, about 11:00 CET: "S6 = A (the four members). Reason: the first deliverable needs only these and B waits on swell's slice 9." It was the default the epic named.
+
+
+Decided by the coordinating agent on 2026-11-24, reversible, reported to the operator, after two
+reviews of `docs/design/scripts.md`:
+
+- The tag of swell (Q13 of the note): `story:scripts-engine-dependency` pins swell `0.8.0`.
+  `story:scripts-document-port`, which lets a page's scripts run in a session, runs on the swell
+  tag that holds requirement 11 (Q18 of the note): that tag is `0.9.0`, commit
+  `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0` before it. Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
+  until they are charged, the only bound on them is the session's address-space backstop.
+- Which sessions get which bound (Q11): no new privileges and no core file for every session;
+  the address-space, CPU and open-files bounds for a session opened with scripts only. Reason:
+  the decision on S5 binds a session with scripts, and a bound over a session's whole life
+  would end sessions without scripts that work today. A session keeps every document's tree
+  (`story:session-memory-bound`), so the address-space value is a chosen backstop, 4 GiB, until
+  that story is built; `story:scripts-document-port` ships with 2 GiB.
+- surf's limits are not lowered to cover a gap of swell; the gap is a requirement on swell
+  (requirement 11), handed to swell's session on 2026-11-24.
+- An unfixed finding of swell is described in this repository only as far as swell's own public
+  documents at the tag describe it; the measurement and the detail were handed to swell's
+  session and come into the note with the tag that closes the requirement.
+- The Web IDL reader's rules beyond the story's text, from two adversary passes: nested types
+  are bounded at 32 levels; an extended attribute that applies to a type is read onto the type
+  when written before an argument or a dictionary member and refused before any other member;
+  a name defined twice, a partial or a parent of the wrong kind, a cycle of parents and an
+  `includes` of the wrong kinds are refused.
 
 ## From the security review of 2026-11-22
 
 A security review of surf and swell of 2026-11-22 names two conditions for running page scripts. The operator forwarded it: "Fix Swell's resource limits before Surf runs untrusted JavaScript."
 
-- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is named here when it exists.
+- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0`.
 - Before a session process runs a script, its environment is reduced to what it needs (today it inherits the caller's environment but two variables of surf), its privileges of the operating system are restricted, and it has resource limits of its own. This is part of the candidate story `scripts-hostile-pages` or a story before it.
 
 ## The DOM from Web IDL
@@ -781,8 +814,8 @@ script wrote in its page line (example 1), with the option off by default. It ne
 candidate stories: `scripts-decisions`, `webidl-reader`, `scripts-engine-dependency`,
 `scripts-spec`, `session-process-hardening`, `webidl-bindings`, `html-script-hook`,
 `scripts-dom-reading`, `scripts-dom-mutation`, `scripts-dom-attributes` (example 2 comes in the same
-story) and `scripts-document-port`, with `story:html-document-port` and a swell tag that holds the
-review's fixes. After it, without blocking it: `scripts-dom-selectors`,
+story) and `scripts-document-port`, with `story:html-document-port` and swell `0.9.0`, the tag that
+holds the review's fixes, taken by `story:swell-0-9-0`. After it, without blocking it: `scripts-dom-selectors`,
 `scripts-html-conformance` and `scripts-hostile-pages`, which the epic's acceptance needs. Of the
 11, `scripts-decisions` and `webidl-reader` start now, three more after the note, and the rest
 wait on the generator, the wave stories of the parser and `story:html-document-port`.
@@ -845,3 +878,94 @@ On 2026-11-24, with its release 0.8.0, the engine's session read `testharness.js
 - `testharness.js` lines 1257 and 1260 call `Date.now()` in the busy wait of `fake_set_timeout`. With a host clock that does not advance, that loop ends only at the step budget. In 0.8.0 `Date` is not defined; it comes with the first wave of slice 4, which is not built yet.
 - surf: the clock hook `host_system_utc_epoch_nanoseconds` (HOST-125) answers a value that advances between two calls. A fixed clock, as a test might choose for a stable output, makes that busy wait run to the step budget; a test that fixes the clock advances it by a fixed amount per call.
 - The seven `Math` calls of the harness (`floor`, `min`, `max`, `abs` twice, `ceil`: `testharness.js` lines 1708 to 1710, 1783, 1812 and 3018, and `common.js` line 5) depend on no answer of the host.
+
+## Corrections of 2026-11-24
+
+The epic's text above was written on 2026-11-22. Where it and the tree differ, the tree and the
+stories win; the stories were drafted against `main` of 2026-11-24. The lines named are this
+file's.
+
+Where the tree moved:
+
+- `lock-check` has an allow-list already (`taskfiles/lock-allow.txt`: the packages of `ring`, each
+  by name, version, source and checksum; only `surf-tls` may depend on one). "The dependency rule"
+  describes the check before that list. The story `scripts-engine-dependency` extends the list: an
+  owner per allowed package and a line form for a git source, which has no checksum in the lock.
+- `AGENTS.md` names `ring` as the one exception to "no third-party crate" already; the sentence
+  "The dependency rule" rewrites is an older one.
+- The root `Cargo.toml` has `members = ["crates/*", ...]`: a new crate adds no line there, so the
+  candidates share no members line.
+- The lane `slow` exists (`Taskfile.yml`); "The DOM from Web IDL" calls it new.
+- swell `0.8.0` has six packages a host builds (`swell-regexp` is the sixth), not five.
+- `surf <url>` prints `title <id> "<title>"` with the title quoted (`docs/surf-command.md`).
+- Six of the seven `needs-script` cases are files of web-platform-tests, not of html5lib.
+- Three test-only counting allocators use `unsafe` (`AGENTS.md`), not one.
+- `html-document-port`, `html-tree-tables`, `html-parser-limits` and `agent-follow-links` are
+  implemented. `agent-surfd-session-limit`, `agent-surfd-idle-exit-race` and `agent-token-hash` are
+  active and not on `main`; they change `crates/surfd/src` too, and no story of this epic waits
+  for them.
+- A crate in the closure of `crates/surf` is locked in `conformance/Cargo.lock` as well, and
+  `conformance/tests/noticed.txt` follows (learned with `surf-cookie`, 2026-11-24).
+
+Where the stories differ from "Candidate stories, in dependency order":
+
+- There are fifteen stories, not the candidates' count: the function that parses a document and
+  runs its scripts is a story of its own, `scripts-parse-run`, so the stories on mutation and on
+  the document port can be built beside each other.
+- Candidate 4 writes `cli/surf-agent.yaml`. The binding form `ess-cli/2` takes one argument per
+  input field and an explicit `true` or `false` for a Boolean, so a bare `--scripts` is not a form
+  of it. `scripts-spec` declares the option with an `UNMAPPED` marker and a `BINDING_ONLY` entry,
+  and `scripts-document-port` gives it to the client.
+- The table that selects which members are generated lives in `webidl-bindings` alone; each later
+  slice names the members it turns from "throws" to "works".
+- `RLIMIT_NPROC` counts every process of the user, not the session's own: S5 a's `prlimit` call
+  does not set it blindly (question 11 of the design note).
+- `decision-blocker:script-end-record` blocks `scripts-spec` until the design note answers how the
+  specification records a script's end.
+- Candidates 12 and 13 are not disjoint (`Cargo.lock`, `crates/script/Cargo.toml`, the list of
+  who may depend on `surf-script`): `scripts-document-port` comes after
+  `scripts-html-conformance`. That list is closed and lives in the lock rule: nobody, then
+  `surf-html-conformance`, then `surf-session`; `crates/surf` gets no dependency on it.
+- `scripts-hostile-pages` needs no `crates/surf/tests` (S7). A session that ends at a bound of the
+  operating system is listed as died with the signal and the bound named
+  (`session-process-hardening`), not as a failure of the script.
+- `surf run` does not exist on `main` (`story:runner-run` is active); what the epic says about it
+  holds once that story is implemented.
+- Requirement 6 of "The gaps" asks for a test in the release profile, and "Answers of the script
+  engine's session" says surf tests its own profile: the gate runs the three host cases in surf's
+  test profile, and a run in the release profile is recorded outside the gate.
+- The values of questions 4, 5 and 11 of the design note are starting values; `scripts-parse-run`
+  and `scripts-document-port` measure them again.
+- Each story changes the public numbers it makes false (`README.md`, `docs/badges`, the gate
+  block's copy in `website/docs/how-it-is-built.md`) in its last commit, after it merged `main`,
+  from one gate log. `website/docs/status.md` and `website/docs/what-works.md` carry the test
+  count too and are changed the same way; a story records them as scope only where it changes
+  another sentence of theirs. These three paths are not in the stories' recorded scope: two units built at
+  once both change them, and the unit merged second repeats its numbers commit, as the cookie jar
+  and the agent definition units did on 2026-11-24.
+
+Where "The DOM from Web IDL" counts differently from the two files of 2026-11-24:
+
+- The interfaces returned by members hold 75 members and 5 constructors, not 68:
+  `ProcessingInstruction` has a constructor and 8 members.
+- `[Exposed]` appears 37 times, not 36 (one is on the member `AbortSignal.timeout`), and
+  `[LegacyUnenumerableNamedProperties]` twice (`HTMLCollection`, `NamedNodeMap`).
+- The DOM Standard's index holds the interface `NodeRange`; the Web IDL Standard's holds
+  `QuotaExceededError`, three typedefs and two callbacks beside `DOMException`.
+- `surf-webidl` is not "standard library only": it depends by path on `surf-html`, the
+  repository's own parser, to take the IDL index out of the vendored pages. It still has no
+  third-party crate and ships nothing.
+- The selection is `crates/webidl/selection.txt` of `webidl-bindings`: 225 member rows and 7
+  constructor rows. Questions 8 and 12 of the design note moved to that story and question 9 to
+  `scripts-dom-selectors`.
+
+From swell's tree at tag `0.8.0`, read on 2026-11-24:
+
+- The security review's first condition (parsing and compilation charged before they allocate)
+  holds with exceptions that swell lists as left open; the second holds for key enumeration and
+  string keys, and property lookup has no test of its own. The design note names the tag surf
+  takes and what it leaves open.
+- A host depends on the crate `swell` alone, enters through `Agent::new(host, limits, seeds)` and
+  implements the trait `Host`. Not in `0.8.0`: the host requirements HOST-112 and HOST-114
+  (swell's slice 9), HOST-201 and HOST-203, the microtask checkpoint and the promise hooks
+  (slice 10).

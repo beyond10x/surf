@@ -17,12 +17,14 @@ that.
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system are
    allowed. Every outside package of the lock file is on the allow-list
-   `taskfiles/lock-allow.txt` (19 of its 51 packages), and the lock check fails on one that is
-   not. One exception: audited cryptographic primitives for TLS come from ring, which was
+   `taskfiles/lock-allow.txt` (25 of its 58 packages), and the lock check fails on one that is
+   not. Two exceptions. Audited cryptographic primitives for TLS come from ring, which was
    reviewed as a dependency in the rustls audit of Cure53, 2020
    ([the report](https://cure53.de/pentest-report_rustls.pdf)); surf uses ring 0.17.14. Only
    the crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
    checksum. The binaries built from `main` use it, and so do those of every release since `0.7.0`.
+   And one crate of the organization, the script engine swell, by a git dependency on a
+   release tag (`0.8.0`), used by `surf-script` alone; no binary uses `surf-script` yet.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
    counting allocators that measure what a fetch holds, what a parse allocates and what the
    TLS code allocates.
@@ -30,7 +32,7 @@ that.
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
    whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
-   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   the 221 scenarios; the gate runs each of the 31 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 

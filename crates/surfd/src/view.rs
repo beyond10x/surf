@@ -108,6 +108,7 @@ impl Raw {
                 .and_then(|text| surf_answer::parse(text).ok())
                 .and_then(|answer| answer.page)
                 .map(page_line),
+            signal: session.signal.clone(),
         }
     }
 }
@@ -660,6 +661,7 @@ mod tests {
             address: None,
             title: None,
             log_dropped: false,
+            signal: None,
         };
         Arc::new(Fixed(Mutex::new((
             Sessions {

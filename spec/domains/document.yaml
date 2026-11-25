@@ -126,6 +126,82 @@ types:
     naming:
       summary: Why a submission ended without a navigation.
 
+  # Minted when the record is written, as a form's identity is.
+  - name: surf.document.ScriptId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of the record of one script element's end.
+
+  # The closed list of ends of `docs/design/scripts.md`, Q7.
+  - name: surf.document.ScriptEnd
+    kind: enum
+    variants:
+      - name: Ran
+        summary: The script ran to its end.
+      - name: Threw
+        summary: The script threw and did not catch it, or its source did not parse.
+      - name: Refused
+        summary: swell refused a construct of a later delivery slice.
+      - name: Limit
+        summary: A limit ended the script; the reason names it.
+      - name: Faulted
+        summary: The engine found its own invariant broken.
+      - name: NotRun
+        summary: The script was not run; the reason says why.
+    naming:
+      summary: How one script element ended.
+
+  # The words of `docs/design/scripts.md`, Q1's line `reasons:` and Q4's column `outcome when
+  # reached`. Reached through `Limit` or `NotRun` only.
+  - name: surf.document.ScriptReason
+    kind: enum
+    variants:
+      - {name: Empty, summary: "empty"}
+      - {name: Src, summary: "src"}
+      - {name: Type, summary: "type"}
+      - {name: Module, summary: "module"}
+      - {name: Importmap, summary: "importmap"}
+      - {name: Speculationrules, summary: "speculationrules"}
+      - {name: Disconnected, summary: "disconnected"}
+      - {name: Nomodule, summary: "nomodule"}
+      - {name: Event, summary: "event"}
+      - {name: Svg, summary: "svg"}
+      - {name: Inserted, summary: "inserted"}
+      - {name: Eof, summary: "eof"}
+      - {name: StepsPerScript, summary: "steps-per-script"}
+      - {name: Memory, summary: "memory"}
+      - {name: SourceBytes, summary: "source-bytes"}
+      - {name: WallClock, summary: "wall-clock"}
+      - {name: Nodes, summary: "nodes"}
+      - {name: Depth, summary: "depth"}
+      - {name: Attributes, summary: "attributes"}
+      - {name: StoredBytes, summary: "stored-bytes"}
+      - {name: ScriptsPerDocument, summary: "scripts-per-document"}
+      - {name: StepsPerDocument, summary: "steps-per-document"}
+      - {name: Faulted, summary: "faulted"}
+    naming:
+      summary: Why a script was not run, or which limit ended it.
+
+  # The kind of what a script threw (`docs/design/scripts.md`, Q16): the constructor that made
+  # the error object, read through swell's `Agent::error_summary`, never its prototype or `name`,
+  # as one of swell 0.9.0's eight `ErrorKind` words; `Value` when the thrown value is no error
+  # object.
+  - name: surf.document.ScriptErrorKind
+    kind: enum
+    variants:
+      - {name: Error, summary: "Error"}
+      - {name: EvalError, summary: "EvalError"}
+      - {name: RangeError, summary: "RangeError"}
+      - {name: ReferenceError, summary: "ReferenceError"}
+      - {name: SyntaxError, summary: "SyntaxError"}
+      - {name: TypeError, summary: "TypeError"}
+      - {name: UriError, summary: "URIError"}
+      - {name: AggregateError, summary: "AggregateError"}
+      - {name: Value, summary: "a thrown value that is no error object"}
+    naming:
+      summary: The kind of what a script threw.
+
 entities:
   # The node tree is not modelled: it is built by the parser step of `crates/surf`, kept by
   # `Browser` per document and read only by the session process through
@@ -183,6 +259,16 @@ entities:
       - name: forms
         kind: owns
         target: surf.document.Form
+        cardinality: many
+        via: document_id
+      # The ends of the document's script elements, in the order they happened by `position`
+      # (`docs/design/scripts.md`, Q7): one per script element the parser reached in a document
+      # parsed with scripts, one closed by the end of the input included, and one per script
+      # element a script inserted; never two for one element; none for a document parsed without
+      # scripts. A record never outlives its document.
+      - name: scripts
+        kind: owns
+        target: surf.document.Script
         cardinality: many
         via: document_id
     lifecycle:
@@ -403,6 +489,51 @@ entities:
           from: [Started]
           to: Abandoned
 
+  # One script element's end (`docs/design/scripts.md`, Q7). Written once, while its document is
+  # `Parsing`, in the order the ends happened; never outlives its document. `reason` is set for
+  # `Limit` and `NotRun` only; `error_kind`, `message`, `line`, `column` and `dynamic` for
+  # `Threw` and `Refused` (Q16), and nothing else of the error is kept.
+  - name: surf.document.Script
+    naming:
+      summary: The end of one script element of a document.
+    identity:
+      name: script_id
+      type: surf.document.ScriptId
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      # The record's place among its document's records in the order they were written, from 1.
+      - name: position
+        type: Integer
+      - name: end
+        type: surf.document.ScriptEnd
+      - name: reason
+        type: Optional<surf.document.ScriptReason>
+      - name: error_kind
+        type: Optional<surf.document.ScriptErrorKind>
+      # Text from the page, untrusted: the error's own `message`, decoded from UTF-16 with
+      # unpaired surrogates replaced and cut to its first 1,024 characters (Unicode scalar
+      # values; `docs/design/scripts.md`, Q16). Absent for a thrown value that is no error object.
+      - name: message
+        type: Optional<String>
+      # Where the error was thrown or the first parse error lies, from swell's
+      # `Agent::last_entry_error_site`: the line and the column count from 1, the column in UTF-16
+      # code units.
+      - name: line
+        type: Optional<Integer>
+      - name: column
+        type: Optional<Integer>
+      # The line and column count in `eval` or `Function` code (swell's `ErrorSite::dynamic`).
+      - name: dynamic
+        type: Optional<Boolean>
+    # Its document: the relation `scripts` of `surf.document.Document` carries `document_id`.
+    lifecycle:
+      initial: Added
+      states:
+        - name: Added
+          summary: The record is a row of its document; it never changes.
+      terminal: [Added]
+
 errors:
   - name: surf.document.DocumentNotFound
     summary: No document has this identity.
@@ -464,6 +595,18 @@ errors:
       - name: state
         type: surf.document.Submission.State
 
+  - name: surf.document.InvalidScriptEnd
+    summary: The end carries a reason or an error that Q7 does not give it, so nothing is added.
+    fields:
+      - name: end
+        type: surf.document.ScriptEnd
+
+  - name: surf.document.InvalidScriptPosition
+    summary: The position, the line or the column is outside its range, so nothing is added; `position` names the end's position, whichever was outside.
+    fields:
+      - name: position
+        type: Integer
+
 commands:
   # Parsing takes time, so it is a command that starts it, one per actionable element, and one
   # that ends it (`AGENTS.md`, "Rules"; `docs/design/html-parser.md`, item 2). An HTML parser makes
@@ -503,6 +646,9 @@ commands:
   # The next four commands are the component's own steps: its parser step issues them, one
   # `AddForm` per form, one `AddElement` per actionable element and one `AddOption` per option of
   # a select, each in tree order, and then `FinishParsing`. No actor is granted them.
+  # `AddScriptEnd`, after `AddOption`, is a step of the same kind: in a document parsed with
+  # scripts the parser step is to issue one per script end, in the order the ends happened,
+  # before `FinishParsing` (`docs/design/scripts.md`, Q7).
   # `AddElement` refuses an unknown document and one already `Parsed` by guards over the row its
   # `document_id` names (`via:`), which ess 0.96.0 generates and synthesizes; the row-set form
   # (`when_related: {entity:, where:}`) of `docs/design/html-parser.md` item 2 kept it an
@@ -700,6 +846,138 @@ commands:
             select_id: input.select_id
             position: input.position
         summary: The option is a row of its select.
+
+  # The end of one script element of a document being parsed with scripts, refused as `AddForm`
+  # refuses (`docs/design/scripts.md`, Q7). The parser step of the document component is to
+  # issue it in the session process, as it issues `AddElement` and `AddForm`; no other process
+  # runs page script. No code issues it until `story:scripts-parse-run` and
+  # `story:scripts-document-port`. The event carries no page text, so no message reaches the
+  # live view's stream.
+  # A deliberate deviation from "prepare the script element" and "execute the script element"
+  # (Q1 and Q2): only inline classic scripts of parser-inserted HTML elements run; a script
+  # element a script inserts is not run (`NotRun`, `Inserted`), nor one the parser did not run
+  # for `Empty`, `Disconnected` or `Type` when a script later changes or moves it; modules,
+  # import maps and speculation rules are not run, an SVG `script` is not run, external scripts
+  # are not fetched (`Src`); Content Security Policy is not read (steps 22 and 23);
+  # `document.write`, `document.currentScript` and a script element's `load` and `error` events
+  # do not exist; the limits of Q4, which the standard does not place, end a script or keep it
+  # from running (`Limit`, and the `NotRun` reasons of Q4).
+  - name: surf.document.AddScriptEnd
+    naming:
+      wire: add-script-end
+      display: Add a script's end
+      summary: Record how one script element of a document being parsed ended.
+    refs: ["whatwg-html:prepare-the-script-element", "whatwg-html:execute-the-script-element"]
+    input:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: end
+        type: surf.document.ScriptEnd
+      - name: reason
+        type: Optional<surf.document.ScriptReason>
+      - name: error_kind
+        type: Optional<surf.document.ScriptErrorKind>
+      - name: message
+        type: Optional<String>
+      - name: line
+        type: Optional<Integer>
+      - name: column
+        type: Optional<Integer>
+      - name: dynamic
+        type: Optional<Boolean>
+    outcomes:
+      # Q7's closed list of ends is the rule: `Ran` and `Faulted` carry nothing; `Threw` has a
+      # kind, and a thrown value that is no error object (`Value`) no message (Q16); `Refused`
+      # has the `SyntaxError` of the refusal (Q16, "A refusal is read the same way"); `Limit` has
+      # one of Q4's eight limit words; `NotRun` has one of the seventeen not-run words of Q1 and
+      # Q4 (`WallClock` and `Memory` are in both lists). Only `Threw` and `Refused` carry an
+      # error kind, a message, a line, a column or `dynamic`, and a message keeps at most 1,024
+      # characters (Q16).
+      - name: invalid-end
+        when:
+          any:
+            - all:
+                - any: [end == Ran, end == Faulted]
+                - any: [defined(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]
+            - all:
+                - any: [end == Limit, end == NotRun]
+                - any: [missing(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]
+            - all:
+                - any: [end == Threw, end == Refused]
+                - any: [defined(reason), missing(error_kind)]
+            - all: [end == Limit, defined(reason), reason != StepsPerScript, reason != Memory, reason != SourceBytes, reason != WallClock, reason != Nodes, reason != Depth, reason != Attributes, reason != StoredBytes]
+            - all:
+                - end == NotRun
+                - defined(reason)
+                - any: [reason == StepsPerScript, reason == SourceBytes, reason == Nodes, reason == Depth, reason == Attributes, reason == StoredBytes]
+            - all: [end == Threw, defined(error_kind), error_kind == Value, defined(message)]
+            - all: [end == Refused, defined(error_kind), error_kind != SyntaxError]
+            - all: [defined(message), message.count > 1024]
+        error: surf.document.InvalidScriptEnd
+        payload:
+          surf.document.InvalidScriptEnd:
+            end: input.end
+        summary: The end carries a reason or an error Q7 does not give it; nothing is added.
+
+      # Q7 counts positions from 1; Q16 keeps a line and a column from 1 and below 2^32.
+      - name: invalid-position
+        when:
+          any:
+            - position < 1
+            - all: [defined(line), line < 1]
+            - all: [defined(line), line >= 4294967296]
+            - all: [defined(column), column < 1]
+            - all: [defined(column), column >= 4294967296]
+        error: surf.document.InvalidScriptPosition
+        payload:
+          surf.document.InvalidScriptPosition:
+            position: input.position
+        summary: The position, the line or the column is outside its range; nothing is added, and the error's `position` names the end's position, whichever was outside.
+
+      # no-such-document and already-parsed as `AddForm` has them.
+      - name: no-such-document
+        when_related: {via: input.document_id, exists: false}
+        error: surf.document.DocumentNotFound
+        payload:
+          surf.document.DocumentNotFound:
+            document_id: input.document_id
+        summary: No document has this identity; nothing is added.
+
+      - name: already-parsed
+        when_related: {via: input.document_id, predicate: state == Parsed}
+        error: surf.document.DocumentStateConflict
+        payload:
+          surf.document.DocumentStateConflict:
+            state: Parsed
+        summary: The document was already Parsed; nothing is added.
+
+      # A second end at one position of one document is not refused here: the session writes one
+      # end per position, and the refusal comes back when the specification language synthesizes
+      # it within the suite's time (`docs/design/scripts.md`, Q7).
+      - name: added
+        creates: surf.document.Script
+        instance: script_id
+        sets:
+          document_id: input.document_id
+          position: input.position
+          end: input.end
+          reason: input.reason
+          error_kind: input.error_kind
+          message: input.message
+          line: input.line
+          column: input.column
+          dynamic: input.dynamic
+        emits:
+          - surf.document.ScriptEndAdded
+        payload:
+          surf.document.ScriptEndAdded:
+            script_id: {generated: true}
+            document_id: input.document_id
+            position: input.position
+            end: input.end
+        summary: The script's end is a row of its document.
 
   - name: surf.document.FinishParsing
     naming:
@@ -1186,6 +1464,19 @@ events:
       - name: position
         type: Integer
 
+  # No page text: the message of a script's end stays on its record (`docs/design/scripts.md`,
+  # Q7).
+  - name: surf.document.ScriptEndAdded
+    fields:
+      - name: script_id
+        type: surf.document.ScriptId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: end
+        type: surf.document.ScriptEnd
+
   - name: surf.document.DocumentParsed
     fields:
       - name: document_id
@@ -1323,6 +1614,42 @@ views:
     naming:
       wire: elements
       display: Elements
+
+  # The ends of one document's scripts, in the order they ended (`docs/design/scripts.md`, Q7):
+  # every stored field of the record. Each entity of the domain has a view; without one no
+  # scenario sees the record.
+  - name: surf.document.Scripts
+    source: surf.document.Script
+    consistency: read_your_writes
+    params:
+      - name: document_id
+        type: surf.document.DocumentId
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - name: script_id
+        type: surf.document.ScriptId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: end
+        type: surf.document.ScriptEnd
+      - name: reason
+        type: Optional<surf.document.ScriptReason>
+      - name: error_kind
+        type: Optional<surf.document.ScriptErrorKind>
+      - name: message
+        type: Optional<String>
+      - name: line
+        type: Optional<Integer>
+      - name: column
+        type: Optional<Integer>
+      - name: dynamic
+        type: Optional<Boolean>
+    naming:
+      wire: scripts
+      display: Scripts
 
   # Every element of every document with its control state, in no order: the view a control
   # command's result is read back from, whichever document holds the element.

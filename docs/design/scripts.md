@@ -255,11 +255,14 @@ One agent per document (Q5). The agent's seven limits are fixed when it is creat
 `Agent::new`), so a limit of the document is held between two scripts: after each script surf
 adds `last_entry_steps()` to the document's total and counts the script, and a later script
 starts only while each total is under its limit. A DOM write over a parser limit ends its script
-through the agent's interrupt: the bindings note the limit's word in the host value, set the
-`InterruptHandle` (`crates/swell/src/host/agent.rs:359 @ 0.8.0`) and return; the entry ends in
-`Terminated(Interrupted)` at the engine's next read of the flag, the way an interrupt set by a
-hook ends `eval` (HOST-168, `conformance/host/requirements.txt:168 @ 0.8.0`), so a `try` in the
-script does not catch it, and the session records the noted word, not `wall-clock`.
+where it is reached: the bindings note the limit's word in the host value, set the
+`InterruptHandle` (`crates/swell/src/host/agent.rs:359 @ 0.8.0`) and read it at once with
+`Cx::charge_steps`, which ends the run in `Terminated(Interrupted)` (HOST-177,
+`conformance/host/requirements.txt:177 @ 0.8.0`) and clears the flag; the termination is sticky
+for the run (HOST-72), so no `catch` and no `finally` of the script runs after the limit. The
+session records the noted word, not `wall-clock`, whatever the entry answered, but for `limit:
+memory` and `faulted`, which keep their own word; the note is cleared and the interrupt withdrawn
+after the entry (`Runner::document_end`, `bindings::end_with_limit`).
 
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,
@@ -314,7 +317,7 @@ with the reason.
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:67` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:68` (`max_steps: 1 << 27`) | counts tree construction's scans after each token, not a script's writes; parsing stops as today (`stopped_by` `Steps`), and no later script element is reached |
 | `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
-| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; surf calls `collect()` (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); if the next script of that document ends `limit: memory` too, each later one: `not run: memory` |
+| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
 wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) bytes plus its
@@ -332,7 +335,9 @@ and `Cx::to_rust_string_lossy` (`crates/swell/src/host/mod.rs:504-513 @ 0.8.0`, 
 every argument (Web IDL's conversions may run script) before it copies any String out of the
 engine, or charges the copy with `Cx::charge_host_bytes` before it makes it and drops the
 `HostBytes` with the copy; no uncharged copy of surf's is alive while script runs.
-`story:webidl-bindings` holds the rule with a test.
+`story:webidl-bindings` holds the rule with a test. A `DOMException` holds its `name` and
+`message` as the engine's Strings, which its host data lists in `trace`: they are on swell's heap
+and charged there, and surf keeps no copy of them.
 
 A test gives limits of its own, as swell's tests do (`crates/swell/tests/support/host.rs:70-80 @
 0.8.0`): the values above are the session's.
@@ -375,12 +380,18 @@ is measured: `(reentry_depth + 1)` × 14,336 bytes, as much again per re-entry a
 plus 1 MiB for the frames below the first entry: 257 × 14,336 + 1,048,576 = 4,732,928 bytes, so
 the thread of a scripted document has 4,006,656 + 4,732,928 = 8,739,584 bytes for Q4's limits.
 `story:scripts-parse-run` measures the margin with a test that runs the deepest nesting the
-limits allow on a thread of exactly that size: a script whose source nests to `parser_nesting`,
-parsed inside a call that re-enters through a binding (a getter of a DOM wrapper that calls
-`eval`) `reentry_depth` times; the margin is then that test's need plus a fifth, as swell rounds
-its own. A stack that overflows ends the session: Rust's handler of the guard page prints a line
-to the standard error, which `surfd` closes, and aborts, so `surfd` reaps a `SIGABRT`, not a
-`SIGSEGV`:
+limits allow on a thread of exactly that size, with the first version's bindings and no binding
+made for the test: a call of a binding with a `DOMString` argument whose argument object's
+`toString` calls the same binding again, `reentry_depth` times, the innermost `toString` calling
+`eval` of a source nested to `parser_nesting`. A generated binding calls no script by itself;
+its conversion of the argument (`Cx::to_string`, `crates/swell/src/host/mod.rs:887-898 @ 0.8.0`)
+calls the object's `toString` (`crates/swell/src/ops/conversion.rs:132 @ 0.8.0`), and that call
+is a re-entry from a host function, checked against `reentry_depth`
+(`crates/swell/src/object/ecmascript_function.rs:147 @ 0.8.0`,
+`crates/swell/src/interp/mod.rs:9-16,129-130 @ 0.8.0`). The margin is then that test's need
+plus a fifth, as swell rounds its own. A stack that overflows ends the session: Rust's handler
+of the guard page prints a line to the standard error, which `surfd` closes, and aborts, so
+`surfd` reaps a `SIGABRT`, not a `SIGSEGV`:
 
 probe: (workstation) /usr/bin/prlimit --core=0:0 -- .out/probes/swell-limits/target/release/swell-limits-probe overflow -> thread '<unknown>' (...) has overflowed its stack; fatal runtime error: stack overflow, aborting; overflow: exit 134 signal ABRT
 
@@ -460,7 +471,7 @@ reached` among them:
   steps-per-document`, `not run: wall-clock`, `not run: memory`, `not run: faulted` (Q4 and the
   fault).
 
-The proposed YAML for `spec/domains/document.yaml` (types, entity, command, event):
+The proposed YAML for `spec/domains/document.yaml` (types, entity, command, event, view):
 
 ```yaml
 types:
@@ -578,6 +589,10 @@ entities:
         cardinality: many
         via: document_id
 
+errors:
+  - {name: surf.document.InvalidScriptEnd, fields: [{name: end, type: surf.document.ScriptEnd}]}
+  - {name: surf.document.InvalidScriptPosition, fields: [{name: position, type: Integer}]}
+
 commands:
   - name: surf.document.AddScriptEnd
     naming:
@@ -596,6 +611,30 @@ commands:
       - {name: column, type: Optional<Integer>}
       - {name: dynamic, type: Optional<Boolean>}
     outcomes:
+      # The closed list above is the rule; Q16 bounds the error's fields.
+      - name: invalid-end
+        when:
+          any:
+            - all: [{any: [end == Ran, end == Faulted]}, {any: [defined(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]}]
+            - all: [{any: [end == Limit, end == NotRun]}, {any: [missing(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]}]
+            - all: [{any: [end == Threw, end == Refused]}, {any: [defined(reason), missing(error_kind)]}]
+            - all: [end == Limit, defined(reason), reason != StepsPerScript, reason != Memory, reason != SourceBytes, reason != WallClock, reason != Nodes, reason != Depth, reason != Attributes, reason != StoredBytes]
+            - all: [end == NotRun, defined(reason), {any: [reason == StepsPerScript, reason == SourceBytes, reason == Nodes, reason == Depth, reason == Attributes, reason == StoredBytes]}]
+            - all: [end == Threw, defined(error_kind), error_kind == Value, defined(message)]
+            - all: [end == Refused, defined(error_kind), error_kind != SyntaxError]
+            - all: [defined(message), message.count > 1024]
+        error: surf.document.InvalidScriptEnd
+        payload: {surf.document.InvalidScriptEnd: {end: input.end}}
+      - name: invalid-position
+        when:
+          any:
+            - position < 1
+            - all: [defined(line), line < 1]
+            - all: [defined(line), line >= 4294967296]
+            - all: [defined(column), column < 1]
+            - all: [defined(column), column >= 4294967296]
+        error: surf.document.InvalidScriptPosition
+        payload: {surf.document.InvalidScriptPosition: {position: input.position}}
       # no-such-document and already-parsed as `AddForm` has them.
       - name: added
         creates: surf.document.Script
@@ -617,7 +656,45 @@ events:
       - {name: document_id, type: surf.document.DocumentId}
       - {name: position, type: Integer}
       - {name: end, type: surf.document.ScriptEnd}
+
+views:
+  - name: surf.document.Scripts
+    source: surf.document.Script
+    consistency: read_your_writes
+    params:
+      - {name: document_id, type: surf.document.DocumentId}
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - {name: script_id, type: surf.document.ScriptId}
+      - {name: document_id, type: surf.document.DocumentId}
+      - {name: position, type: Integer}
+      - {name: end, type: surf.document.ScriptEnd}
+      - {name: reason, type: Optional<surf.document.ScriptReason>}
+      - {name: error_kind, type: Optional<surf.document.ScriptErrorKind>}
+      - {name: message, type: Optional<String>}
+      - {name: line, type: Optional<Integer>}
+      - {name: column, type: Optional<Integer>}
+      - {name: dynamic, type: Optional<Boolean>}
+    naming:
+      wire: scripts
+      display: Scripts
 ```
+
+The view `surf.document.Scripts` reads every stored field of a document's records, in the order
+the scripts ended, as `surf.document.Elements` reads its elements: each entity of the domain has a
+view, and without one no scenario sees the record.
+
+The command refuses what this list and Q16 exclude, and adds nothing then: `invalid-end`, an end
+with a reason or an error the list does not give it (`Ran` and `Faulted` carry nothing, `Limit` a
+limit's word, `NotRun` a not-run word, `Threw` a kind and, for `value`, no message, `Refused` its
+`SyntaxError`; only `Threw` and `Refused` carry a kind, a message, a line, a column or `dynamic`;
+no message over 1,024 characters); `invalid-position`, a position below 1 or a line or column
+outside 1 to 2^32 - 1, whose error names the end's position whichever of the three was outside.
+The input's refusals answer before the document's existence and its state.
+A second end at one position of one document is not refused by the specification; the session
+writes one end per position, and the refusal comes back when the specification language
+synthesizes it within the suite's time.
 
 The command is the document component's, issued by its parser step in the session process
 (`surf-session`), as `AddElement` and `AddForm` are; no other process runs page script (S7). The
@@ -654,8 +731,8 @@ the pin of `spec/ess-inputs.yaml`), so the spelling is `surf-agent open --script
 `--scripts false` and no option are the default. A bare `--scripts` is not a form the binding
 takes. The option reaches the session as `arg anchors` does: the client sends `arg scripts
 "true"` in the `open` request on the socket (`crates/agent/src/wire.rs:32-45`), `surfd` passes the
-request on unchanged (`crates/surfd/src/daemon.rs:1154-1157`) after reading the argument from the
-decoded request (`daemon.rs:865-871`, for Q11), and the session takes it from there
+request on unchanged (`crates/surfd/src/daemon.rs:1337-1340`) after reading the argument from the
+decoded request (`daemon.rs:1045-1051`, for Q11), and the session takes it from there
 (`crates/session/src/process.rs:18-20`), never from its arguments or environment.
 `surf.agent.Session` records it (`scripts: Boolean`), one value per session, set by `open` and
 ending with it.
@@ -679,8 +756,9 @@ Settled: the five lines `cardinality:`, `owner:`, `written:`, `outlives its docu
 
 ## Q10. The session's environment
 
-`surfd` starts `surf-session` with its own environment less `SURF_TOKEN` and `SURF_SESSION`, plus
-`Config::session_env` (`crates/surfd/src/daemon.rs:1189-1200`, `:83`).
+On `29945f5`, `surfd` started `surf-session` with its own environment less `SURF_TOKEN` and
+`SURF_SESSION`, plus `Config::session_env`; it now starts it with that variable list alone
+(`crates/surfd/src/daemon.rs:1392-1408`, `:103`).
 
 probe: (workstation) git grep -n 'env::var\|var_os' -- 'crates/*/src/*.rs' 'crates/*/src/**/*.rs' -> crates/surfd/src/main.rs:36:    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
 
@@ -693,13 +771,13 @@ session links but the client's `cli.rs`, which the session does not call (it use
 `surf_agent::wire`).
 
 The allow-list is empty: `surfd` starts the session with `Command::env_clear()`, then adds
-`Config::session_env`, which the binary leaves empty (`daemon.rs:120`). Each variable the
+`Config::session_env`, which the binary leaves empty (`daemon.rs:151`). Each variable the
 standard library or the C library reads:
 
 - `RUST_MIN_STACK`: read by the standard library for the stack of a thread made without a size.
   Dropped: the session's threads keep the default, and the scripted parse names its stack (Q5).
 - `RUST_BACKTRACE`: read on a panic. Dropped: the session's standard error is closed
-  (`Stdio::null()`, `daemon.rs:1198`), so a backtrace goes nowhere.
+  (`Stdio::null()`, `daemon.rs:1406`), so a backtrace goes nowhere.
 - `LOCALDOMAIN`, `RES_OPTIONS`, `HOSTALIASES`: read by the C library's resolver, which
   `surf-fetch` reaches through `std::net::ToSocketAddrs` (`crates/fetch/src/lib.rs:78-80`).
   Dropped: a caller's variable would steer the session's name resolution; the session resolves
@@ -710,9 +788,14 @@ standard library or the C library reads:
   session reads one (the probe), the session starts no program, and `setpriv` and `prlimit` are
   started by absolute path (Q11).
 
-The tests still add theirs: `Config::session_env` is applied after `env_clear()`, so
-`crates/session/tests/common/mod.rs:535` (`XDG_RUNTIME_DIR`), `crates/surfd/tests/common/mod.rs:322`
-(`STAND_IN_DIR`) and `crates/view-fixture/src/main.rs:156` (`XDG_RUNTIME_DIR`) keep working.
+The tests that start `surfd` in process still add theirs: `Config::session_env` is applied
+after `env_clear()`, so `crates/session/tests/common/mod.rs:545` (`XDG_RUNTIME_DIR`),
+`crates/surfd/tests/common/mod.rs:322` (`STAND_IN_DIR`) and `crates/view-fixture/src/main.rs:156`
+(`XDG_RUNTIME_DIR`) keep working. The tests that run the built `surfd`, whose
+`Config::session_env` is empty, found the session by `XDG_RUNTIME_DIR` in its environment; they
+now find it by its socket path argument, a path under the case's runtime directory
+(`processes_among`, `crates/session/tests/common/mod.rs:127`), and the stand-in of
+`crates/surfd/tests` sets `STAND_IN_DIR` on itself when it has none.
 
 Settled: the empty allow-list and the decisions on the six variables, from the `probe:` line above run on `29945f5`.
 
@@ -776,7 +859,7 @@ The same `surf-session` started by hand under both programs answered `ready`, re
 1` and showed each limit in `/proc/<pid>/limits`, and ended with status 0.
 
 How a process ends at each bound, as `surfd` sees it when it reaps the session (the standard
-error, where Rust writes its line, is closed by `surfd`, `crates/surfd/src/daemon.rs:1198`):
+error, where Rust writes its line, is closed by `surfd`, `crates/surfd/src/daemon.rs:1406`):
 
 probe: (workstation) sh .out/probes/session-ends.sh -> cpu soft 1 hard 1, spin: exit 137 signal KILL; cpu soft 1 hard 2, spin: exit 152 signal XCPU; as 268435456, alloc: exit 134 signal ABRT; stderr: memory allocation of 33554432 bytes failed; nofile 16, files: exit 0; stdout: files: open number 14 failed: Too many open files (os error 24)
 
@@ -841,8 +924,8 @@ SIGABRT`.
 
 The backstop is real memory of the host, not a reservation: while requirement 11 is open, one
 page in one document can make a session hold it. `surfd` on `main` has no bound on the number of
-open sessions: it counts the session processes not yet reaped (`live`, `crates/surfd/src/daemon.rs:219-220`,
-`:1240`) only to wait for them when it stops (`:420`). So k scripted sessions on hostile pages can hold k × 4 GiB of
+open sessions: it counts the session processes not yet reaped (`live`, `crates/surfd/src/daemon.rs:358-359`,
+`:1450`) only to wait for them when it stops (`:575`). So k scripted sessions on hostile pages can hold k × 4 GiB of
 the host at once. A bound on the number of scripted sessions is a question for
 `story:scripts-document-port`.
 
@@ -867,7 +950,7 @@ engine (Q5 gives it: the agent is dropped at the end of the parse).
 How long a command may run: `surfd` waits 60 s for a session's answer and then answers `did
 refused session-timeout` (`SESSION_ANSWER_TIMEOUT`, `crates/surfd/src/daemon.rs:34`); it goes on
 reading a late answer for 600 s and then kills the session with `SIGKILL`
-(`LATE_ANSWER_TIMEOUT`, `daemon.rs:36-39`; `Process::kill`, `:269-277`). That is the first bound
+(`LATE_ANSWER_TIMEOUT`, `daemon.rs:36-39`; `Process::kill`, `:424-432`). That is the first bound
 on one command, 660 s of wall time at most, and inside it Q4's 5 s of wall clock per document
 bounds the scripts of a document. The CPU bound is the backstop over a session's whole life:
 3,600 s soft and 3,601 s hard, chosen: 720 documents whose scripts each run to the 5 s wall clock
@@ -897,28 +980,39 @@ address-space, CPU and open-files bounds. A session without scripts gets what ca
 that works today: no new privileges and no core file. When either program is missing at `surfd`'s
 start, a session without scripts starts as today, without either program, and an `open` that
 asks for scripts is refused. `surfd` learns the option from the `open` request it already decodes
-(`route`, `crates/surfd/src/daemon.rs:865-871`), reading `arg scripts` before it starts the
+(`route`, `crates/surfd/src/daemon.rs:1045-1051`), reading `arg scripts` before it starts the
 process; the request is still passed on unchanged.
 
 The answers, each line literal:
 
-- `open` with `--scripts true` while a program is missing: the action line `did refused
+- `open` with `--scripts true` while a program is missing, or when the start through both ended
+  by an exit before the session wrote its first byte: the action line `did refused
   scripts-unavailable`, exit status 3 (like `session-died`, the cause is outside the request), and
-  a new row of the table in `docs/agent-answer.md` ("`setpriv` or `prlimit` is missing, and a
-  session with scripts runs only under both").
-- A session that ended by a signal that names a bound: the head reads `died`, the action `did
-  refused session-died`, as today, and the answer gains the note line `note ended: signal
-  SIGXCPU bound cpu` (the form `note ended: signal <NAME> bound <word>`; `SIGXCPU` names `cpu`,
-  `SIGXFSZ` would name `fsize`).
-- A session that ended by a signal that names no bound (an allocation over the address space or a
-  stack overflow, both `SIGABRT`): the same head and action, and the note line `note ended:
-  signal SIGABRT` (the form `note ended: signal <NAME>`).
+  a new row of the table in `docs/agent-answer.md` ("`setpriv` or `prlimit` is missing, or the
+  start through them (`setpriv`, `prlimit`, the session program) ended by an exit, not a
+  signal, before the session wrote its first byte, and a session with scripts runs only under
+  both").
+- A session `surfd` started with the CPU bound (a session with scripts) that ended by
+  `SIGXCPU`, the signal of that bound: the head reads `died`, the action `did refused
+  session-died`, as today, and the answer gains the note line `note ended: signal SIGXCPU bound
+  cpu` (the form `note ended: signal <NAME> bound <word>`). The bound's word is there when
+  `surfd` set that bound for the session and the signal is the one the bound sends, and never
+  otherwise: a session without the CPU bound that ended by `SIGXCPU` reads `note ended: signal
+  SIGXCPU`, and `surfd` sets no file-size bound, so no line names one. The line cannot tell who
+  sent the signal.
+- A session that ended by another signal (an allocation over the address space or a stack
+  overflow, both `SIGABRT`): the same head and action, and the note line `note ended: signal
+  SIGABRT` (the form `note ended: signal <NAME>`). A session ended by a signal `surfd` did not
+  send, `SIGKILL` from another process included (the kernel's out-of-memory killer sends it),
+  answers `note ended: signal SIGKILL`.
 - A session that `surfd` killed itself (the `killed` flag of its process, set by `Process::kill`,
-  `crates/surfd/src/daemon.rs:265`, `:275`; after the late read of 600 s, or at its stop) keeps
-  today's answer: the command that waited was answered `did refused session-timeout` after 60 s
-  (`docs/agent-answer.md:178`), and a later command reads the head `died` and the action `did
-  refused session-died` (`daemon.rs:1407-1409`: a killed process is listed `died`; `:853`). No `note
-  ended` line is written for it.
+  `crates/surfd/src/daemon.rs:420`, `:430`; after the late read of 600 s, at its stop, or
+  after any other kill the `note ended` item of `docs/agent-answer.md` lists) keeps today's
+  answer: after the late read the command that waited was answered `did refused
+  session-timeout` after 60 s (`docs/agent-answer.md:178`), and a later command reads the head
+  `died` and the action `did refused session-died` (`daemon.rs:1690-1692`: a killed process is
+  listed `died`; `:1020`). No `note ended` line is written for it, unless the session had
+  already ended by a signal `surfd` did not send when `surfd` came to kill it.
 - A session that ended with a status and no signal: no `note ended` line.
 
 The live view lists the session as died with the signal. `story:session-process-hardening`
@@ -1093,7 +1187,10 @@ The most kept: the message is decoded from UTF-16, unpaired surrogates replaced,
 first 1,024 characters (Unicode scalar values), the bound the answer gives a field's value
 (`docs/agent-answer.md:304`); the cut is marked by the answer's quoting rules, not stored. The
 line and column are integers below 2^32. Nothing else of the error is read: no `stack`, no
-`name`, no own property but `message`.
+`name`, no own property but `message`. A `DOMException` the script did not catch, made by the
+bindings or by `new DOMException(...)`, is recorded with kind `Error` and the message `<name>:
+<message>` (`NotSupportedError: Node.appendChild is not supported: ...`), read from the
+exception's own data without running script and cut to the same 1,024 characters.
 
 How they reach an answer: through the record of Q7 (`error_kind`, `message`, `line`, `column`,
 `dynamic`) and the `scripts` lines of Q7, where the message is quoted as untrusted page text and
@@ -1108,9 +1205,21 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   nomodule content attribute and its type is "classic", then return" (snapshot
   `546d834701d171e3b164da8463d62878deb1e954`, "Last Updated 23 November 2026").
 - "cargo reads profiles from the root workspace only", so surf sets `overflow-checks = true` for
-  swell's packages (epic, "The dependency rule"): confirmed. The Cargo Book, "Profiles": "Cargo
-  only looks at the profile settings in the Cargo.toml manifest at the root of the workspace.
-  Profile settings defined in dependencies will be ignored." (fetched 2026-11-24, sha256 above).
+  swell's packages (epic, "The dependency rule"): confirmed for the manifests, corrected for
+  config files. cargo reads no profile from a dependency's manifest. The Cargo Book, "Profiles":
+  "Cargo only looks at the profile settings in the Cargo.toml manifest at the root of the
+  workspace. Profile settings defined in dependencies will be ignored." (fetched 2026-11-24,
+  sha256 above). A cargo config file overrides the root manifest's profiles (The Cargo Book,
+  "Configuration", `[profile]`: it "can be used to globally change profile settings, and
+  override settings specified in Cargo.toml"), so `task lock-check` also reads the tree's
+  `.cargo/config.toml`; a config file above the tree, `--config` and `CARGO_PROFILE_*` are
+  outside what a check of the tree sees (`story:scripts-engine-dependency`, fix round 1). The
+  check also refuses, in the tree's config files, any rustflags and a line holding `overflow`
+  other than `overflow-checks = true`, and, in `Taskfile.yml` and the files under `taskfiles/`
+  and `.github/workflows/`, a line naming overflow checks in either spelling or rustflags with
+  an argument file. It ends there: a setting reached through another file, a `rustc` or
+  wrapper named in a config file, an ancestor's config file and the environment of whoever
+  starts the build are held by review (fix rounds 2 and 3).
   swell's root `Cargo.toml` sets `overflow-checks = true` in `dev`, `release`, `test` and `bench`
   (`Cargo.toml:10-20 @ 0.8.0`), which surf's build does not read; surf's dev and test profiles
   check overflow by default, and its release profile sets it for the six swell packages
@@ -1131,7 +1240,10 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   union `(DOMString or DOMString)`; the reader reads the whole union `(TrustedType or DOMString)`
   as `DOMString`. No value a script can make is a `TrustedHTML`, `TrustedScript` or
   `TrustedScriptURL` (none is generated), so every value converts as the union would convert it;
-  it stays a named deviation in the selection.
+  it stays a named deviation in the selection. A deviation of every `DOMString` argument of the
+  bindings, named once in the head of `selection.txt`: a lone surrogate reaches the slice as
+  U+FFFD, because the tree holds Rust strings, where Web IDL's `DOMString` keeps every code unit.
+  `DOMException`'s `name` and `message` reach no slice and keep every code unit.
 
 Settled: each of the four statements confirmed or corrected with its citation: HTML Standard 4.12.1.1 step 21 (snapshot `546d834701d171e3b164da8463d62878deb1e954`), The Cargo Book "Profiles" (fetched 2026-11-24), Apache License 2.0 section 4(d) with `NOTICE:1-2 @ 0.8.0`, and Trusted Types (Editor's Draft 18 November 2026) with DOM Standard 4.9 (snapshot `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`).
 

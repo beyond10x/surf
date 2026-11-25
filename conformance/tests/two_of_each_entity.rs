@@ -20,8 +20,9 @@ use surf_conformance::{
     SurfTarget, Unanswered, each_planted, listed_suite, not_noticed, note_noticed, run, whole_suite,
 };
 use surf_ports::{
-    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
-    document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
+    NavigatorPorts, NetPorts, RendererPorts, ScriptIdentity, ShellPorts, add_script_end,
+    agent_port, commit_navigation, document_port, navigator_port, net_port, renderer_port,
+    shell_port, traverse_history,
 };
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -35,14 +36,16 @@ use surf_types::agent::{
 };
 use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
-    NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage, TabStorage, TryContext,
-    WindowStorage,
+    NavigationStorage, RequestStorage, ScriptStorage, SessionStorage, SubmissionStorage,
+    TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::document::{
-    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
-    SubmissionSnapshot,
+    AddScriptEnd, AddScriptEndOutcome, Check, CheckOutcome, DocumentId, DocumentSnapshot,
+    ElementId, ElementSnapshot, FormId, FormSnapshot, ListOptionSnapshot, OptionId, ScriptId,
+    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -71,6 +74,7 @@ enum Entity {
     Action,
     Option,
     Submission,
+    Script,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +179,7 @@ planted_storage!(
     SubmissionId,
     Entity::Submission
 );
+planted_storage!(ScriptStorage, ScriptSnapshot, ScriptId, Entity::Script);
 
 /// The obligations of the `agent` and `document` components, handed through to the ports the
 /// defect is planted in.
@@ -219,6 +224,26 @@ planted_obligation!(
     SelectOption,
     SelectOptionOutcome
 );
+
+/// A script's end, met over the planted storage and identities themselves, as the generated
+/// behaviours meet the other commands.
+impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior for Planted<P> {
+    fn add_script_end(
+        &mut self,
+        input: AddScriptEnd,
+    ) -> Result<AddScriptEndOutcome, UnmetObligation> {
+        add_script_end(self, input)
+    }
+}
+
+impl<P: ScriptIdentity> ScriptIdentity for Planted<P> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        if self.same(Entity::Script) {
+            return Ok(ScriptId(same()));
+        }
+        self.inner.assign_script_id()
+    }
+}
 
 /// The `navigator` component's obligations, met over the planted storage itself: they read and
 /// write a tab's entries through it, as the component's generated behaviours do.
@@ -436,6 +461,7 @@ fn one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity() {
         Defect::SameIdentity(Entity::Element),
         Defect::SameIdentity(Entity::Frame),
         Defect::SameIdentity(Entity::Action),
+        Defect::SameIdentity(Entity::Script),
     ]);
 }
 
@@ -453,5 +479,6 @@ fn a_view_cut_to_its_first_row_is_noticed_for_each_entity() {
         Defect::FirstRowOnly(Entity::Action),
         Defect::FirstRowOnly(Entity::Option),
         Defect::FirstRowOnly(Entity::Submission),
+        Defect::FirstRowOnly(Entity::Script),
     ]);
 }

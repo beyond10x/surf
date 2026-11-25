@@ -39,27 +39,35 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 44 scenario(s), valid
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+surf v1 — 9 file(s), 57 scenario(s), valid
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b are current
-Summary [   1.685s] 39 tests run: 39 passed, 0 skipped
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
+Summary [   1.685s] 63 tests run: 63 passed, 0 skipped
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 3.3 s of its budget of 120 s
-the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
+the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
-Cargo.lock: 51 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 25 test directories, 193 test files, one test binary each
+Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
+test-layout: 26 test directories, 223 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+webidl-check: the 18 sources of crates/script/src/bindings.rs match its header
+webidl-check: Cargo.lock holds surf-html without dependencies and surf-webidl with surf-html alone, both of the workspace, so it decides no byte of crates/script/src/bindings.rs
+webidl-check: self-test: the locks of the nine forms of a dependency outside the workspace fail, each naming its copy
+webidl-check: self-test: one changed byte of selection.txt fails naming it
+webidl-check: every byte of crates/script/src/bindings.rs matches the sha256 in its header
+webidl-check: self-test: a copy of bindings.rs with one byte after the header changed fails naming it
+webidl-check: self-test: a copy of bindings.rs with a //! line of the header rewritten fails naming it
+webidl-check: self-test: a copy of bindings.rs with an inner attribute inserted before the digest line fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1504 tests: 1504 passed, 0 failed, 0 ignored (cargo-nextest 1502, doc tests 2)
+1723 tests: 1720 passed, 0 failed, 3 ignored (cargo-nextest 1721, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -67,7 +75,7 @@ agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debu
 sh-echo: Summary [  10.326s] 51 tests run: 51 passed, 115 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  71 passed (18.3s)
+  72 passed (18.3s)
 page step: 18.7 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
@@ -80,7 +88,7 @@ doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-test
 four steps: 36.1 s (test step 11.1 s, tls test step 3.0 s, conformance step 3.3 s, page step 18.7 s)
 ```
 
-It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 221 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that every package in the lock file from outside the repository is on its allow-list, then
 builds and tests, the TLS crates in a step of their own, checks that every event name of the
@@ -94,7 +102,26 @@ tests each step also prints, the agent tasks' rows after their counts, npm's and
 own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `91f7ff1`,
 the Web IDL reader's branch, that `task check-runner` ended in 67 s, at a load of 34.40 at its
 start and 52.88 at its end; its test line counts the reader's tests as they stand after it
-(80, where that run had 72). The page tests' line, `71 passed (18.3s)`, has its slowest test
+(80, where that run had 72). Its page tests' line counts the tests of
+`story:session-process-hardening` as they stand after it, from `task view-test` on its tip
+(72, where that run had 71). Its lock-check line counts the packages of
+`story:scripts-engine-dependency` as they stand after it, from `task lock-check` on its tip (58
+packages, 25 from outside, where that run had 51 and 19). Its specification, suite,
+conformance, test and test-layout lines count the scenarios and tests of `story:scripts-spec`
+as they stand after it, from `task validate`, `task suite`, `task conform`, `task
+conform-rust`, `task conform-totals`, `task test` and `task test-layout` on its tip (57
+authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 tests of the conformance
+crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files; where
+`story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). Its
+conformance and test-layout lines, and the two digests, are those of
+`story:script-error-kind-aggregate` on its tip, from `task conform-rust`, `task conform-totals`
+and `task test-layout` (63 tests of the conformance crate and 207 test files, where
+`story:scripts-spec`'s tip had 54 and 206). Its test, test-layout and webidl-check lines are
+those of `story:webidl-bindings` on its tip, from `task test`, `task test-layout` and `task
+webidl-check` in the gate run on `5dcedfb` (1723 tests, 3 of them ignored, and 223 test files,
+where `story:script-error-kind-aggregate`'s tip had 1619 and 207; the webidl-check lines are new
+with it). The times are that run's. That run's page tests' line, `72 passed
+(18.3s)`, has its slowest test
 (`an entry over 1 MiB`) at 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed
 (12.7s)`, its slowest test (`adversary: an action streamed while the detail loads after a
 reset is not lost`) at 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of
@@ -111,9 +138,10 @@ load average of 110 to 140, and the 38 of before took 15.8 s.
 
 Third-party crates are used in two places: the scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance), with a lock of its
-own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
-root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
-is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
+own, and `surf-tls`, whose `ring` and the packages it needs are 19 of the 25 outside packages
+of the root lock; the other six are the packages of swell, the organization's script engine,
+which `surf-script` alone takes by a git dependency on a release tag. Each is on the
+allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
 built with `surf-tls` and so with ring, and so is every binary of every release since `0.7.0`.
 
 ## Build from source

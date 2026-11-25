@@ -7,6 +7,45 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-25
+
+### Added
+
+- When a session process ends by a signal that `surfd` did not send, the answers of that
+  session name it: after `did refused session-died` comes the line `note ended: signal <name>`,
+  such as `note ended: signal SIGABRT` or `note ended: signal SIGKILL`, in the answer to the
+  call that was waiting and to the later calls while `surfd` lists the session. An `open` whose
+  session dies so before it is ready or while it answers prints the same three lines and exits
+  3. A session that ended with an exit status has no such line, and neither has one that
+  `surfd` killed itself. ` bound cpu` follows the name only after `SIGXCPU` for a session that
+  `surfd` started with its CPU time bound, which only a session with scripts has; `surf-agent`
+  opens none yet.
+- The live view names that signal: a session summary in `/api/sessions`,
+  `/api/sessions/<id>` and the `session` event of `/events` has the member `signal`, the
+  signal's name or `null`, and the page shows it beside the state of the selected session, as
+  `died (SIGKILL)`.
+- The answer format has the refusal reason `scripts-unavailable`, exit status 3, for an `open`
+  that asks `surfd` for page scripts when `/usr/bin/setpriv` or `/usr/bin/prlimit` is not an
+  executable file at `surfd`'s start, or when the start through them ended by an exit: a session
+  with scripts runs only under both, with at most 4 GiB of address space, 3,600 s of CPU time
+  and 64 open files. `surf-agent` sends no such `open` yet. `surf-agent help --for-agent` lists
+  the reason and the `note ended` line.
+
+### Changed
+
+- `surfd` starts each session process with an empty environment: no variable of `surfd`'s own
+  reaches it. Release `0.8.0` passed it `surfd`'s environment without `SURF_TOKEN` and
+  `SURF_SESSION`. The session reads no environment variable, so it loads and answers as before.
+- When `/usr/bin/setpriv` and `/usr/bin/prlimit` (both of util-linux) are executable files at
+  `surfd`'s start, `surfd` starts each session through them: with no new privileges
+  (`setpriv --no-new-privs`: no program the session could start gains privileges from a
+  set-user-ID file) and with no core file (`prlimit --core=0:0`). Its CPU time, address space
+  and open files stay those of `surfd`. Without either program a session starts as in release
+  `0.8.0`, with the empty environment: the host needs neither for a session `surf-agent` opens.
+- `surf-agent open --scripts`, in any spelling and with any value, is refused with
+  `--scripts is not accepted: surf runs no page script yet`, the usage and exit status 2, and
+  starts no `surfd` and no session. surf still runs no page script.
+
 ## [0.8.0] - 2026-11-24
 
 ### Added

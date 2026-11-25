@@ -16,6 +16,7 @@ arrange:
         window_id: 5a7c1e00-0000-4000-8000-000000000042
         tab_id: 5a7c1e00-0000-4000-8000-000000000043
         holder: 5a7c1e00-0000-4000-8000-000000000041
+        scripts: false
       state: Open
 
 timeline:

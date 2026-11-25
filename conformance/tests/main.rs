@@ -3,6 +3,9 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary;
+mod adversary_2;
+mod adversary_3;
 mod adversary_noticed;
 mod planted_defect;
 mod review2_planted_defects;

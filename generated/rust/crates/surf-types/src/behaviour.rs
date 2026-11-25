@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+// contract digest a8bb2ff5574d285e12f296eab75213256cac446ad01b23b9d6c58aea817d842c
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -125,6 +125,24 @@ pub trait ListOptionStorage {
     /// Every stored instance, in the order the store keeps them: the order a generated query
     /// answers an unordered view in.
     fn list(&self) -> Vec<crate::document::ListOptionSnapshot>;
+}
+
+/// Where `surf.document.Script` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `script_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait ScriptStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::document::ScriptId) -> Option<crate::document::ScriptSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::document::ScriptSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::document::ScriptId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::ScriptSnapshot>;
 }
 
 /// Where `surf.document.Submission` is stored — a port the implementor provides.
@@ -636,6 +654,7 @@ where
             status: None,
             media_type: None,
             failure_reason: None,
+            scripts: input.scripts.clone(),
         };
         let answer = crate::agent::OpenSessionOutcome::Opened { session_opened: crate::agent::SessionOpened { session_id: identity.clone(), window_id: input.window_id.clone(), tab_id: input.tab_id.clone() } };
         SessionStorage::put(&mut self.ports, crate::agent::AnySession::Open(crate::agent::Session::new(data)).snapshot());
@@ -914,6 +933,12 @@ where
         let answer = crate::document::AddOptionOutcome::Added { option_added: crate::document::OptionAdded { option_id: identity.clone(), select_id: input.select_id.clone(), position: input.position.clone() } };
         ListOptionStorage::put(&mut self.ports, crate::document::AnyListOption::Added(crate::document::ListOption::new(data)).snapshot());
         return Ok(answer);
+    }
+}
+
+impl<P: crate::document::obligations::AddScriptEndBehavior> crate::document::obligations::AddScriptEndBehavior for Generated<P> {
+    fn add_script_end(&mut self, input: crate::document::AddScriptEnd) -> Result<crate::document::AddScriptEndOutcome, UnmetObligation> {
+        crate::document::obligations::AddScriptEndBehavior::add_script_end(&mut self.ports, input)
     }
 }
 
@@ -1489,6 +1514,7 @@ where
                 status: held.data.status,
                 media_type: held.data.media_type,
                 failure_reason: held.data.failure_reason,
+                scripts: held.data.scripts,
             })
             .collect())
     }
@@ -1617,6 +1643,35 @@ where
                 selected: held.data.selected,
                 disabled: held.data.disabled,
                 hidden: held.data.hidden,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Scripts`, generated: every row is one the specification fully determines from the stored `surf.document.Script`s.
+impl<P> crate::document::obligations::ScriptsQuery for Generated<P>
+where
+    P: ScriptStorage,
+{
+    fn scripts(&self, param_0: crate::document::DocumentId) -> Result<Vec<crate::document::Scripts>, UnmetObligation> {
+        let mut admitted = ScriptStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.data.document_id).map(|value| &value.0).map(|value| value.0.clone()), Some(&param_0).map(|value| &value.0).map(|value| value.0.clone())) == Some(true));
+        // `order_by:`, stably: rows equal on every key keep the port's order.
+        admitted.sort_by(|left, right| number_order(&Some(&left.data.position).map(|value| value.to_string()).unwrap_or_default(), &Some(&right.data.position).map(|value| value.to_string()).unwrap_or_default()));
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Scripts {
+                script_id: held.data.script_id,
+                document_id: held.data.document_id,
+                position: held.data.position,
+                end: held.data.end,
+                reason: held.data.reason,
+                error_kind: held.data.error_kind,
+                message: held.data.message,
+                line: held.data.line,
+                column: held.data.column,
+                dynamic: held.data.dynamic,
             })
             .collect())
     }

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:12:39Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-reader",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes on the crate by a reviewer who did not write it, 2026-11-24",
+    "reference": "first: 1 must (700 nested sequences overflowed the stack), 2 shoulds, 3 notes, 11 tests merged; second, on the fixed unit: no must, 4 shoulds, 4 notes, one test taken over; five fix rounds by the implementor"
+  }
+}

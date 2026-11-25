@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+// contract digest a8bb2ff5574d285e12f296eab75213256cac446ad01b23b9d6c58aea817d842c
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -120,6 +120,119 @@ pub enum ParseLimit {
     StoredBytes,
     /// `Steps`.
     Steps,
+}
+
+/// The states of `surf.document.Script`, as runtime values.
+///
+/// Synthesised from the lifecycle, so the two cannot disagree. Which *moves* are legal is not
+/// carried here — it is carried by `Script<S>`, where an undeclared move does not compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptState {
+    /// `Added`.
+    Added,
+}
+
+/// ScriptEnd — `surf.document.ScriptEnd`: one of a closed set of names.
+///
+/// How one script element ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptEnd {
+    /// `Ran`.
+    Ran,
+    /// `Threw`.
+    Threw,
+    /// `Refused`.
+    Refused,
+    /// `Limit`.
+    Limit,
+    /// `Faulted`.
+    Faulted,
+    /// `NotRun`.
+    NotRun,
+}
+
+/// ScriptErrorKind — `surf.document.ScriptErrorKind`: one of a closed set of names.
+///
+/// The kind of what a script threw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptErrorKind {
+    /// `Error`.
+    Error,
+    /// `EvalError`.
+    EvalError,
+    /// `RangeError`.
+    RangeError,
+    /// `ReferenceError`.
+    ReferenceError,
+    /// `SyntaxError`.
+    SyntaxError,
+    /// `TypeError`.
+    TypeError,
+    /// `UriError`.
+    UriError,
+    /// `AggregateError`.
+    AggregateError,
+    /// `Value`.
+    Value,
+}
+
+/// ScriptId — `surf.document.ScriptId`: a distinct wrapper around `Uuid`.
+///
+/// The identity of the record of one script element's end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptId(pub crate::primitives::Uuid);
+
+/// ScriptReason — `surf.document.ScriptReason`: one of a closed set of names.
+///
+/// Why a script was not run, or which limit ended it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptReason {
+    /// `Empty`.
+    Empty,
+    /// `Src`.
+    Src,
+    /// `Type`.
+    Type,
+    /// `Module`.
+    Module,
+    /// `Importmap`.
+    Importmap,
+    /// `Speculationrules`.
+    Speculationrules,
+    /// `Disconnected`.
+    Disconnected,
+    /// `Nomodule`.
+    Nomodule,
+    /// `Event`.
+    Event,
+    /// `Svg`.
+    Svg,
+    /// `Inserted`.
+    Inserted,
+    /// `Eof`.
+    Eof,
+    /// `StepsPerScript`.
+    StepsPerScript,
+    /// `Memory`.
+    Memory,
+    /// `SourceBytes`.
+    SourceBytes,
+    /// `WallClock`.
+    WallClock,
+    /// `Nodes`.
+    Nodes,
+    /// `Depth`.
+    Depth,
+    /// `Attributes`.
+    Attributes,
+    /// `StoredBytes`.
+    StoredBytes,
+    /// `ScriptsPerDocument`.
+    ScriptsPerDocument,
+    /// `StepsPerDocument`.
+    StepsPerDocument,
+    /// `Faulted`.
+    Faulted,
 }
 
 /// The states of `surf.document.Submission`, as runtime values.
@@ -776,6 +889,152 @@ impl AnyListOption {
     }
 }
 
+/// What Script — `surf.document.Script` — holds, apart from where it is in its lifecycle.
+///
+/// The identity and every declared field. The state is deliberately not one: inside the domain it
+/// is carried by the type parameter of [`Script<S>`], and at a boundary by [`ScriptSnapshot::state`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptData {
+    /// The identity: `script_id` — `surf.document.ScriptId`.
+    pub script_id: ScriptId,
+    /// `document_id` — `surf.document.DocumentId`.
+    ///
+    /// Carries `scripts`: `surf.document.Document` owns many `surf.document.Script`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+    /// `reason` — `Optional<surf.document.ScriptReason>`.
+    pub reason: Option<ScriptReason>,
+    /// `error_kind` — `Optional<surf.document.ScriptErrorKind>`.
+    pub error_kind: Option<ScriptErrorKind>,
+    /// `message` — `Optional<String>`.
+    pub message: Option<String>,
+    /// `line` — `Optional<Integer>`.
+    pub line: Option<i64>,
+    /// `column` — `Optional<Integer>`.
+    pub column: Option<i64>,
+    /// `dynamic` — `Optional<Boolean>`.
+    pub dynamic: Option<bool>,
+}
+
+/// The states of `surf.document.Script`, at the type level.
+///
+/// One marker type per declared state, sealed: a state the lifecycle does not declare cannot
+/// implement [`Marker`](script_state::Marker), so [`Script<S>`](Script) can only ever rest in a real state.
+pub mod script_state {
+    /// Closes [`Marker`] over the declared states.
+    mod sealed {
+        /// Implemented only by the marker types beside this module.
+        pub trait Sealed {}
+        impl Sealed for super::Added {}
+    }
+
+    /// A declared state of `Script`, as a type.
+    pub trait Marker: sealed::Sealed {
+        /// The same state, as the runtime value.
+        const STATE: super::ScriptState;
+    }
+
+    /// `Added`. Where a new instance starts.
+    pub struct Added;
+
+    impl Marker for Added {
+        const STATE: super::ScriptState = super::ScriptState::Added;
+    }
+}
+
+/// Script — `surf.document.Script` — with its lifecycle state carried by the type.
+///
+/// The one constructor rests in `Added`, and the only way to change `S` is a method generated from
+/// a declared transition. A move the specification does not declare is therefore not an error
+/// case: it does not compile. Where the state is data — wire, storage — use [`ScriptSnapshot`]
+/// and [`ScriptSnapshot::refine`].
+pub struct Script<S: script_state::Marker> {
+    data: ScriptData,
+    state: core::marker::PhantomData<S>,
+}
+
+impl<S: script_state::Marker> Script<S> {
+    /// The state this instance rests in, as the runtime value.
+    pub fn state(&self) -> ScriptState {
+        S::STATE
+    }
+
+    /// What it holds.
+    pub fn data(&self) -> &ScriptData {
+        &self.data
+    }
+
+    /// Hands the data back, giving up the typed state.
+    pub fn into_data(self) -> ScriptData {
+        self.data
+    }
+}
+
+impl Script<script_state::Added> {
+    /// A new instance, resting in `Added` — the only state the lifecycle starts one in.
+    pub fn new(data: ScriptData) -> Self {
+        Self {
+            data,
+            state: core::marker::PhantomData,
+        }
+    }
+}
+
+/// `surf.document.Script` as it crosses a boundary: the state as a value beside the data.
+///
+/// Wire and storage know states only at runtime; [`ScriptSnapshot::refine`] is the one door back
+/// into the typed lifecycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptSnapshot {
+    /// Where the instance is in its lifecycle.
+    pub state: ScriptState,
+    /// What it holds.
+    pub data: ScriptData,
+}
+
+/// An `Script` in whichever declared state it was found.
+pub enum AnyScript {
+    /// Resting in `Added`.
+    Added(Script<script_state::Added>),
+}
+
+impl ScriptSnapshot {
+    /// Refines the runtime state into the typed one.
+    ///
+    /// Total: every declared state has an arm, and an undeclared state cannot reach here because
+    /// `ScriptState` cannot spell one.
+    pub fn refine(self) -> AnyScript {
+        match self.state {
+            ScriptState::Added => AnyScript::Added(Script {
+                data: self.data,
+                state: core::marker::PhantomData,
+            }),
+        }
+    }
+}
+
+impl AnyScript {
+    /// The state, as the runtime value.
+    pub fn state(&self) -> ScriptState {
+        match self {
+            Self::Added(_) => ScriptState::Added,
+        }
+    }
+
+    /// Back to the boundary shape.
+    pub fn snapshot(self) -> ScriptSnapshot {
+        match self {
+            Self::Added(instance) => ScriptSnapshot {
+                state: ScriptState::Added,
+                data: instance.into_data(),
+            },
+        }
+    }
+}
+
 /// What Submission — `surf.document.Submission` — holds, apart from where it is in its lifecycle.
 ///
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
@@ -1171,6 +1430,77 @@ pub enum AddOptionOutcome {
     Added {
         /// The `surf.document.OptionAdded` this outcome publishes.
         option_added: OptionAdded,
+    },
+}
+
+/// Add a script's end — the input of `surf.document.AddScriptEnd`.
+///
+/// Record how one script element of a document being parsed ended.
+///
+/// Everything it can result in is [`AddScriptEndOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddScriptEnd {
+    /// `document_id` — `surf.document.DocumentId`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+    /// `reason` — `Optional<surf.document.ScriptReason>`.
+    pub reason: Option<ScriptReason>,
+    /// `error_kind` — `Optional<surf.document.ScriptErrorKind>`.
+    pub error_kind: Option<ScriptErrorKind>,
+    /// `message` — `Optional<String>`.
+    pub message: Option<String>,
+    /// `line` — `Optional<Integer>`.
+    pub line: Option<i64>,
+    /// `column` — `Optional<Integer>`.
+    pub column: Option<i64>,
+    /// `dynamic` — `Optional<Boolean>`.
+    pub dynamic: Option<bool>,
+}
+
+/// Everything `surf.document.AddScriptEnd` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddScriptEndOutcome {
+    /// `invalid-end` — when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`.
+    ///
+    /// The end carries a reason or an error Q7 does not give it; nothing is added.
+    InvalidEnd {
+        /// Why it was refused: `surf.document.InvalidScriptEnd`.
+        error: InvalidScriptEnd,
+    },
+    /// `invalid-position` — when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`.
+    ///
+    /// The position, the line or the column is outside its range; nothing is added, and the error's `position` names the end's position, whichever was outside.
+    InvalidPosition {
+        /// Why it was refused: `surf.document.InvalidScriptPosition`.
+        error: InvalidScriptPosition,
+    },
+    /// `no-such-document` — when no `surf.document.Document` carries the identity `input.document_id` names.
+    ///
+    /// No document has this identity; nothing is added.
+    NoSuchDocument {
+        /// Why it was refused: `surf.document.DocumentNotFound`.
+        error: DocumentNotFound,
+    },
+    /// `already-parsed` — when the `surf.document.Document` that `input.document_id` names satisfies `state == Parsed`.
+    ///
+    /// The document was already Parsed; nothing is added.
+    AlreadyParsed {
+        /// Why it was refused: `surf.document.DocumentStateConflict`.
+        error: DocumentStateConflict,
+    },
+    /// `added` — otherwise.
+    ///
+    /// The script's end is a row of its document.
+    Added {
+        /// The `surf.document.ScriptEndAdded` this outcome publishes.
+        script_end_added: ScriptEndAdded,
     },
 }
 
@@ -1641,6 +1971,19 @@ pub struct ParsingStarted {
     pub body: Vec<u8>,
 }
 
+/// ScriptEndAdded — the event `surf.document.ScriptEndAdded`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptEndAdded {
+    /// `script_id` — `surf.document.ScriptId`.
+    pub script_id: ScriptId,
+    /// `document_id` — `surf.document.DocumentId`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+}
+
 /// SubmissionAbandoned — the event `surf.document.SubmissionAbandoned`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmissionAbandoned {
@@ -1727,6 +2070,24 @@ pub struct DocumentStateConflict {
 pub struct ElementNotFound {
     /// `element_id` — `surf.document.ElementId`.
     pub element_id: ElementId,
+}
+
+/// The declared error `surf.document.InvalidScriptEnd`.
+///
+/// The end carries a reason or an error that Q7 does not give it, so nothing is added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidScriptEnd {
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+}
+
+/// The declared error `surf.document.InvalidScriptPosition`.
+///
+/// The position, the line or the column is outside its range, so nothing is added; `position` names the end's position, whichever was outside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidScriptPosition {
+    /// `position` — `Integer`.
+    pub position: i64,
 }
 
 /// The declared error `surf.document.OptionNotFound`.
@@ -1899,6 +2260,35 @@ pub struct Options {
     pub hidden: bool,
 }
 
+/// Scripts — one row of the view `surf.document.Scripts`.
+///
+/// Projects `surf.document.Script` at `read_your_writes` consistency, containing instances where `document_id == param.document_id`.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scripts {
+    /// `script_id` — `surf.document.ScriptId`.
+    pub script_id: ScriptId,
+    /// `document_id` — `surf.document.DocumentId`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+    /// `reason` — `Optional<surf.document.ScriptReason>`.
+    pub reason: Option<ScriptReason>,
+    /// `error_kind` — `Optional<surf.document.ScriptErrorKind>`.
+    pub error_kind: Option<ScriptErrorKind>,
+    /// `message` — `Optional<String>`.
+    pub message: Option<String>,
+    /// `line` — `Optional<Integer>`.
+    pub line: Option<i64>,
+    /// `column` — `Optional<Integer>`.
+    pub column: Option<i64>,
+    /// `dynamic` — `Optional<Boolean>`.
+    pub dynamic: Option<bool>,
+}
+
 /// Submissions — one row of the view `surf.document.Submissions`.
 ///
 /// Projects `surf.document.Submission` at `read_your_writes` consistency.
@@ -1962,6 +2352,19 @@ pub mod obligations {
         ///
         /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn add_option(&mut self, input: super::AddOption) -> Result<super::AddOptionOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.document.AddScriptEnd` — an implementation obligation.
+    ///
+    /// Why it is not generated: kept an obligation by the guard path `message.count`, in `invalid-end`.
+    ///
+    /// Contract: given `surf.document.AddScriptEnd` input, decide and enact exactly one outcome. Selection precedence: on commands with `when_related:`, check `existing_instance` then `exists: false` before input-guarded refusals; choose the first declared input refusal whose guard holds; then check addressed-row existence (`unknown_instance`, and `existing_instance` on commands without `when_related:`); then the held state (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch moves from a state the row does not hold; then choose the present `when_related:` predicate refusal whose predicate and optional input guard hold; then accepting and external branches in declaration order. An accepting branch that moves nothing answers in every state. Related-presence predicates do not precede input-guarded refusals. Declared outcomes (declaration order, not selection precedence): `invalid-end` when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`, error `surf.document.InvalidScriptEnd`; `invalid-position` when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`, error `surf.document.InvalidScriptPosition`; `no-such-document` when no `surf.document.Document` carries the identity `input.document_id` names, error `surf.document.DocumentNotFound`; `already-parsed` when the `surf.document.Document` that `input.document_id` names satisfies `state == Parsed`, error `surf.document.DocumentStateConflict`; `added` otherwise, creates `surf.document.Script`, emits `surf.document.ScriptEndAdded`.
+    pub trait AddScriptEndBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.document.AddScriptEnd`.
+        ///
+        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
+        /// implementation never returns it.
+        fn add_script_end(&mut self, input: super::AddScriptEnd) -> Result<super::AddScriptEndOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `surf.document.Check` — an implementation obligation.
@@ -2100,6 +2503,17 @@ pub mod obligations {
         fn options(&self) -> Result<Vec<super::Options>, crate::obligation::UnmetObligation>;
     }
 
+    /// The query `surf.document.Scripts` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
+    pub trait ScriptsQuery {
+        /// Serves `surf.document.Scripts` rows at the view's declared consistency.
+        ///
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
+        fn scripts(&self, document_id: crate::document::DocumentId) -> Result<Vec<super::Scripts>, crate::obligation::UnmetObligation>;
+    }
+
     /// The query `surf.document.Submissions` — generated.
     ///
     /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
@@ -2116,6 +2530,12 @@ pub mod obligations {
     /// Each method returns the typed refusal naming what is owed — never a panic, never a guessed
     /// value — so a workspace built on this stub compiles and reports its own gaps.
     pub struct Unimplemented;
+
+    impl AddScriptEndBehavior for Unimplemented {
+        fn add_script_end(&mut self, _input: super::AddScriptEnd) -> Result<super::AddScriptEndOutcome, crate::obligation::UnmetObligation> {
+            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "surf.document.AddScriptEnd" })
+        }
+    }
 
     impl CheckBehavior for Unimplemented {
         fn check(&mut self, _input: super::Check) -> Result<super::CheckOutcome, crate::obligation::UnmetObligation> {

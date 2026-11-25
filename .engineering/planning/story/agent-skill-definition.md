@@ -25,7 +25,7 @@ scope:
   path: crates/agent/tests
 - confidence: cited
   path: taskfiles/release-smoke.sh
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
@@ -300,4 +300,7 @@ differs from the text above, beside "Decisions after the review":
   public numbers (badges, `website/docs/`).
 - Tests at the merge: `surf-agent` 77 (61 before the unit), the gate's test step 1424.
 
-The hand-over to `agentplugins` (a `SKILL.md` that points to the command) is not filed yet.
+The hand-over to `agentplugins` is filed: the draft `story:surf-plugin` in that repository's
+planning store (its pull request 116, merged on 2026-11-24 as `1daf9936`). It holds no plugin
+file and no catalog change; the plugin (a `SKILL.md` that points to the command) is built when
+a session takes that repository.

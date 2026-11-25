@@ -1,0 +1,480 @@
+# Every reason word of `docs/design/scripts.md`, Q7's closed list of ends, once under each end
+# Q7 gives it: the eight `limit:` words and the seventeen `not run:` words, 25 records of one
+# document in the order they were written. Each is `added` and is read back from
+# `surf.document.Scripts` with its end and its reason, so a system that stores two reasons as
+# one value, or a reason under the other end, fails here. Written by the adversary of
+# `story:scripts-spec`: `document-records-script-ends` writes two of the 23 reasons.
+type: ess-scenario/6
+domain: surf.document
+scenario: adversary-script-ends-every-reason
+summary: A document being parsed records each of the 25 limit and not-run ends of Q7 once, and reads each back with its reason.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  - at: 2026-01-07T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/every-reason
+      body: PHNjcmlwdD4=
+      navigation_id: 5c41e7d0-0000-4000-8000-000000000a01
+      tab_id: 5c41e7d0-0000-4000-8000-000000000a02
+    outcome: started
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-07T09:00:01Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Limit
+      reason: StepsPerScript
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 1
+          end: Limit
+
+  - at: 2026-01-07T09:00:02Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 2
+      end: Limit
+      reason: Memory
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 2
+          end: Limit
+
+  - at: 2026-01-07T09:00:03Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 3
+      end: Limit
+      reason: SourceBytes
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 3
+          end: Limit
+
+  - at: 2026-01-07T09:00:04Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 4
+      end: Limit
+      reason: WallClock
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 4
+          end: Limit
+
+  - at: 2026-01-07T09:00:05Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 5
+      end: Limit
+      reason: Nodes
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 5
+          end: Limit
+
+  - at: 2026-01-07T09:00:06Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 6
+      end: Limit
+      reason: Depth
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 6
+          end: Limit
+
+  - at: 2026-01-07T09:00:07Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 7
+      end: Limit
+      reason: Attributes
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 7
+          end: Limit
+
+  - at: 2026-01-07T09:00:08Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 8
+      end: Limit
+      reason: StoredBytes
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 8
+          end: Limit
+
+  - at: 2026-01-07T09:00:09Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 9
+      end: NotRun
+      reason: Empty
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 9
+          end: NotRun
+
+  - at: 2026-01-07T09:00:10Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 10
+      end: NotRun
+      reason: Src
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 10
+          end: NotRun
+
+  - at: 2026-01-07T09:00:11Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 11
+      end: NotRun
+      reason: Type
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 11
+          end: NotRun
+
+  - at: 2026-01-07T09:00:12Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 12
+      end: NotRun
+      reason: Module
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 12
+          end: NotRun
+
+  - at: 2026-01-07T09:00:13Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 13
+      end: NotRun
+      reason: Importmap
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 13
+          end: NotRun
+
+  - at: 2026-01-07T09:00:14Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 14
+      end: NotRun
+      reason: Speculationrules
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 14
+          end: NotRun
+
+  - at: 2026-01-07T09:00:15Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 15
+      end: NotRun
+      reason: Disconnected
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 15
+          end: NotRun
+
+  - at: 2026-01-07T09:00:16Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 16
+      end: NotRun
+      reason: Nomodule
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 16
+          end: NotRun
+
+  - at: 2026-01-07T09:00:17Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 17
+      end: NotRun
+      reason: Event
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 17
+          end: NotRun
+
+  - at: 2026-01-07T09:00:18Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 18
+      end: NotRun
+      reason: Svg
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 18
+          end: NotRun
+
+  - at: 2026-01-07T09:00:19Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 19
+      end: NotRun
+      reason: Inserted
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 19
+          end: NotRun
+
+  - at: 2026-01-07T09:00:20Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 20
+      end: NotRun
+      reason: Eof
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 20
+          end: NotRun
+
+  - at: 2026-01-07T09:00:21Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 21
+      end: NotRun
+      reason: ScriptsPerDocument
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 21
+          end: NotRun
+
+  - at: 2026-01-07T09:00:22Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 22
+      end: NotRun
+      reason: StepsPerDocument
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 22
+          end: NotRun
+
+  - at: 2026-01-07T09:00:23Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 23
+      end: NotRun
+      reason: WallClock
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 23
+          end: NotRun
+
+  - at: 2026-01-07T09:00:24Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 24
+      end: NotRun
+      reason: Memory
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 24
+          end: NotRun
+
+  - at: 2026-01-07T09:00:25Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 25
+      end: NotRun
+      reason: Faulted
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 25
+          end: NotRun
+
+assert:
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 25, at_most: 25}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 1, end: Limit, reason: StepsPerScript, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 2, end: Limit, reason: Memory, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 3, end: Limit, reason: SourceBytes, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 4, end: Limit, reason: WallClock, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 5, end: Limit, reason: Nodes, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 6, end: Limit, reason: Depth, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 7, end: Limit, reason: Attributes, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 8, end: Limit, reason: StoredBytes, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 9, end: NotRun, reason: Empty, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 10, end: NotRun, reason: Src, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 11, end: NotRun, reason: Type, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 12, end: NotRun, reason: Module, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 13, end: NotRun, reason: Importmap, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 14, end: NotRun, reason: Speculationrules, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 15, end: NotRun, reason: Disconnected, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 16, end: NotRun, reason: Nomodule, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 17, end: NotRun, reason: Event, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 18, end: NotRun, reason: Svg, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 19, end: NotRun, reason: Inserted, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 20, end: NotRun, reason: Eof, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 21, end: NotRun, reason: ScriptsPerDocument, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 22, end: NotRun, reason: StepsPerDocument, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 23, end: NotRun, reason: WallClock, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 24, end: NotRun, reason: Memory, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 25, end: NotRun, reason: Faulted, error_kind: null, message: null, line: null, column: null, dynamic: null}

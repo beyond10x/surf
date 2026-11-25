@@ -107,7 +107,7 @@ types:
   - name: surf.agent.OpenCall
     kind: struct
     naming:
-      summary: The input of `open`, the address to load first if one is given, the form to print it in, and a file of extra trust anchors.
+      summary: The input of `open`, the address to load first if one is given, the form to print it in, a file of extra trust anchors, and whether the session runs its pages' scripts.
     fields:
       - name: url
         type: Optional<surf.url.Url>
@@ -117,6 +117,14 @@ types:
         type: Optional<Integer>
       - name: ca_file
         type: Optional<String>
+      # Whether the session runs its pages' inline classic scripts (`docs/design/scripts.md`);
+      # absent is false. Only `open` takes it (S3, S7). The client refuses it until
+      # `story:scripts-document-port` (the marker at the argument in `cli/surf-agent.yaml`); from
+      # then it reaches the session as `ca_file`'s anchors do: in the `open` request, which
+      # `surfd` passes to the session process unchanged (`docs/design/scripts.md`, Q7).
+      # `surf.agent.Session` records it.
+      - name: scripts
+        type: Optional<Boolean>
 
   - name: surf.agent.LookCall
     kind: struct
@@ -311,6 +319,11 @@ entities:
         type: Optional<surf.net.MediaType>
       - name: failure_reason
         type: Optional<surf.net.FailureReason>
+      # Whether the session runs its pages' inline classic scripts: `OpenCall.scripts`, false
+      # when absent, set by `OpenSession` and ending with the session (`docs/design/scripts.md`,
+      # Q7).
+      - name: scripts
+        type: Boolean
     relations:
       # The shell holds the window. A closed session leaves it Open: nothing closes a window yet.
       # UNMAPPED: closing the session's window with the session. What would settle it: a command
@@ -485,6 +498,9 @@ commands:
         type: surf.shell.WindowId
       - name: tab_id
         type: surf.shell.TabId
+      # `OpenCall.scripts`, false when the call left it absent.
+      - name: scripts
+        type: Boolean
     outcomes:
       - name: opened
         creates: surf.agent.Session
@@ -493,6 +509,7 @@ commands:
           window_id: input.window_id
           tab_id: input.tab_id
           holder: input.session_id
+          scripts: input.scripts
         emits:
           - surf.agent.SessionOpened
         payload:
@@ -1295,6 +1312,8 @@ views:
         type: Optional<surf.net.MediaType>
       - name: failure_reason
         type: Optional<surf.net.FailureReason>
+      - name: scripts
+        type: Boolean
     naming:
       wire: sessions
       display: Sessions

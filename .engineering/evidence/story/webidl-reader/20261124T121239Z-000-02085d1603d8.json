@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:12:39Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-reader",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on fbcf768, the tip of impl/webidl-reader, through the pool on the build node, 2026-11-24 12:54 CET",
+    "reference": "exit 0 in 60 s; 1504 tests passed (80 of them in surf-webidl); 552 TLS tests passed; 203 of 203 scenarios; test-layout 25 directories, 193 files"
+  }
+}

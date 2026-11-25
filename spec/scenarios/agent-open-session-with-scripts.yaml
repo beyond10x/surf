@@ -1,0 +1,28 @@
+# `surf-agent open --scripts true` (`docs/design/scripts.md`, Q7): the session process opens
+# the session with `scripts` true, and the session records it for its life; `Sessions` shows
+# it.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-open-session-with-scripts
+summary: A session opened with scripts true is Open and records scripts true.
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5c41e7d0-0000-4000-8000-000000000401
+      window_id: 5c41e7d0-0000-4000-8000-000000000402
+      tab_id: 5c41e7d0-0000-4000-8000-000000000403
+      scripts: true
+    outcome: opened
+    events:
+      - event: surf.agent.SessionOpened
+        payload:
+          session_id: 5c41e7d0-0000-4000-8000-000000000401
+          window_id: 5c41e7d0-0000-4000-8000-000000000402
+          tab_id: 5c41e7d0-0000-4000-8000-000000000403
+
+assert:
+  - view: surf.agent.Sessions
+    contains: {session_id: 5c41e7d0-0000-4000-8000-000000000401, state: Open, scripts: true}

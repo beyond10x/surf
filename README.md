@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 203 of 203 scenarios](docs/badges/conformance.svg)
-![tests: 2056 passed](docs/badges/tests.svg)
+![conformance: 221 of 221 scenarios](docs/badges/conformance.svg)
+![tests: 2272 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -43,7 +43,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.8.0 target=x86_64-unknown-linux-musl
+$ version=0.9.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -245,13 +245,13 @@ there instead.
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
    are allowed. Every outside package of the lock file is on the allow-list
-   `taskfiles/lock-allow.txt` (19 of its 51 packages), and the lock check fails on one that is
-   not. One exception:
-   audited cryptographic primitives for TLS come from ring, which was reviewed as a dependency
-   in the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>); surf
-   uses ring 0.17.14. Only the
-   crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
-   checksum.
+   `taskfiles/lock-allow.txt` (25 of its 58 packages), and the lock check fails on one that is
+   not. Two exceptions. Audited cryptographic primitives for TLS come from ring, which was
+   reviewed as a dependency in the rustls audit of Cure53, 2020
+   (<https://cure53.de/pentest-report_rustls.pdf>); surf uses ring 0.17.14. Only the crate
+   `surf-tls` may depend on it, and the checks pin its packages by name, version and checksum.
+   And one crate of the organization, the script engine swell, by a git dependency on a
+   release tag (`0.8.0`), used by `surf-script` alone; no binary uses `surf-script` yet.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
    counting allocators that measure what a fetch holds, what a parse allocates and what the
    TLS code allocates.
@@ -259,7 +259,7 @@ there instead.
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
    whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
-   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   the 221 scenarios; the gate runs each of the 31 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
@@ -280,10 +280,21 @@ there instead.
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
   check revocation: a revoked certificate that has not expired loads.
-- **203 specified scenarios**, each passing twice: once against the specification's own
+- **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,056 tests** (1,504, and 552 of the TLS crates in a step of their own), built with
-  warnings treated as errors, and 71 tests of the live view's page in a browser.
+- **2,275 tests** (1,723, and 552 of the TLS crates in a step of their own): 2,272 pass, and 3
+  of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
+  as errors, and 72 tests of the live view's page in a browser.
+
+New with the hardened start of a session process, shipped in release `0.9.0`:
+
+- **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
+  environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
+  the session through them, with no new privileges and no core file; without them it starts
+  the session directly.
+- **A session that died says how.** When a session process ends by a signal `surfd` did not
+  send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
+  and the live view shows the signal beside `died`.
 
 New with the cookie jar and the agent definition, shipped in release `0.8.0`:
 
@@ -529,7 +540,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The hardened start of a session process followed, and release `0.9.0` follows it: `surfd` starts each session with an empty environment and, where `/usr/bin/setpriv` and `/usr/bin/prlimit` exist, with no new privileges and no core file, and an answer names the signal a session died by. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -545,6 +556,7 @@ Round 2 delivered following links, filling and submitting forms, going back and 
 `surf` and an agent session's `go`, `open`, `follow` and `press` load `https:`, and a session
 takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
 session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
+The hardened start of a session process followed; release `0.9.0` ships it.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -583,27 +595,35 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 44 scenario(s), valid
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+surf v1 — 9 file(s), 57 scenario(s), valid
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b are current
-Summary [   1.685s] 39 tests run: 39 passed, 0 skipped
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
+Summary [   1.685s] 63 tests run: 63 passed, 0 skipped
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 3.3 s of its budget of 120 s
-the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
+the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
-Cargo.lock: 51 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 25 test directories, 193 test files, one test binary each
+Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
+test-layout: 26 test directories, 223 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+webidl-check: the 18 sources of crates/script/src/bindings.rs match its header
+webidl-check: Cargo.lock holds surf-html without dependencies and surf-webidl with surf-html alone, both of the workspace, so it decides no byte of crates/script/src/bindings.rs
+webidl-check: self-test: the locks of the nine forms of a dependency outside the workspace fail, each naming its copy
+webidl-check: self-test: one changed byte of selection.txt fails naming it
+webidl-check: every byte of crates/script/src/bindings.rs matches the sha256 in its header
+webidl-check: self-test: a copy of bindings.rs with one byte after the header changed fails naming it
+webidl-check: self-test: a copy of bindings.rs with a //! line of the header rewritten fails naming it
+webidl-check: self-test: a copy of bindings.rs with an inner attribute inserted before the digest line fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1504 tests: 1504 passed, 0 failed, 0 ignored (cargo-nextest 1502, doc tests 2)
+1723 tests: 1720 passed, 0 failed, 3 ignored (cargo-nextest 1721, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -611,7 +631,7 @@ agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debu
 sh-echo: Summary [  10.326s] 51 tests run: 51 passed, 115 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  71 passed (18.3s)
+  72 passed (18.3s)
 page step: 18.7 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
@@ -624,7 +644,7 @@ doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-test
 four steps: 36.1 s (test step 11.1 s, tls test step 3.0 s, conformance step 3.3 s, page step 18.7 s)
 ```
 
-It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 221 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that every package in the lock file from outside the repository is on its allow-list, then
 builds and tests, the TLS crates in a step of their own, checks that every event name of the
@@ -638,7 +658,25 @@ tasks' rows after their counts, npm's and Playwright's own lines and the rows of
 conformance counts. It is the run of 2026-11-24 on `91f7ff1`, the Web IDL reader's branch,
 that `task check-runner` ended in 67 s, at a load of 34.40 at its start and 52.88 at its end;
 its test line counts the reader's tests as they stand after it (80, where that run had 72).
-The page tests' line, `71 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
+Its page tests' line counts the tests of `story:session-process-hardening` as they stand
+after it, from `task view-test` on its tip (72, where that run had 71). Its lock-check line
+counts the packages of `story:scripts-engine-dependency` as they stand after it, from `task
+lock-check` on its tip (58 packages, 25 from outside, where that run had 51 and 19). Its
+specification, suite, conformance, test and test-layout lines count the scenarios and tests of
+`story:scripts-spec` as they stand after it, from `task validate`, `task suite`, `task
+conform`, `task conform-rust`, `task conform-totals`, `task test` and `task test-layout` on its
+tip (57 authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 tests of the
+conformance crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files;
+where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). Its
+conformance and test-layout lines, and the two digests, are those of
+`story:script-error-kind-aggregate` on its tip, from `task conform-rust`, `task conform-totals`
+and `task test-layout` (63 tests of the conformance crate and 207 test files, where
+`story:scripts-spec`'s tip had 54 and 206). Its test, test-layout and webidl-check lines are
+those of `story:webidl-bindings` on its tip, from `task test`, `task test-layout` and `task
+webidl-check` in the gate run on `5dcedfb` (1723 tests, 3 of them ignored, and 223 test files,
+where `story:script-error-kind-aggregate`'s tip had 1619 and 207; the webidl-check lines are new
+with it). The times are that run's.
+That run's page tests' line, `72 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at
 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of 2026-11-24 on `eb97549`,
@@ -657,8 +695,10 @@ The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. Third-party crates are used in two places: the scenario runner
 in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose `ring` and the
-packages it needs are the 19 outside packages of the root lock, each on the allow-list
-`taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
+packages it needs are 19 of the 25 outside packages of the root lock; the other six are the
+packages of swell, the organization's script engine, which `surf-script` alone takes by a git
+dependency on a release tag. Each is on the allow-list `taskfiles/lock-allow.txt`; the lock
+check fails on one that is not. Nothing that ships depends
 on the scenario runner. Every binary built from `main` is built with `surf-tls` and so with
 ring, and so is every binary of every release since `0.7.0`.
 

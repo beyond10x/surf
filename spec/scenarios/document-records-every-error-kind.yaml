@@ -1,0 +1,187 @@
+# Every kind of what a script threw (`docs/design/scripts.md`, Q7 and Q16): one `Threw` end of
+# each of the eight `ErrorKind` words and `Value`, each read back from `surf.document.Scripts`
+# by its word, so that no two kinds can be stored as one. `URIError` is the word of `UriError`.
+# A thrown value that is no error object (`Value`) has no message. `AggregateError` comes once
+# more without a message, as swell 0.9.0 ends `throw new AggregateError([])`.
+type: ess-scenario/6
+domain: surf.document
+scenario: document-records-every-error-kind
+summary: A document records a Threw end of each of the nine error kinds, and an AggregateError once more without a message, and reads each back by its word.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/kinds
+      body: PHNjcmlwdD4=
+      navigation_id: 5c41e7d0-0000-4000-8000-000000000d01
+      tab_id: 5c41e7d0-0000-4000-8000-000000000d02
+    outcome: started
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Threw
+      error_kind: Error
+      message: "a Error"
+      line: 1
+      column: 11
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 2
+      end: Threw
+      error_kind: EvalError
+      message: "a EvalError"
+      line: 2
+      column: 12
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 3
+      end: Threw
+      error_kind: RangeError
+      message: "a RangeError"
+      line: 3
+      column: 13
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 4
+      end: Threw
+      error_kind: ReferenceError
+      message: "a ReferenceError"
+      line: 4
+      column: 14
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 5
+      end: Threw
+      error_kind: SyntaxError
+      message: "a SyntaxError"
+      line: 5
+      column: 15
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 6
+      end: Threw
+      error_kind: TypeError
+      message: "a TypeError"
+      line: 6
+      column: 16
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 7
+      end: Threw
+      error_kind: UriError
+      message: "a UriError"
+      line: 7
+      column: 17
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:08Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 8
+      end: Threw
+      error_kind: Value
+      line: 8
+      column: 18
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:09Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 9
+      end: Threw
+      error_kind: AggregateError
+      message: "a AggregateError"
+      line: 9
+      column: 19
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:10Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 10
+      end: Threw
+      error_kind: AggregateError
+      line: 10
+      column: 20
+      dynamic: false
+    outcome: added
+
+assert:
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 10, at_most: 10}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 1, end: Threw, reason: null, error_kind: Error, message: "a Error", line: 1, column: 11, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 2, end: Threw, reason: null, error_kind: EvalError, message: "a EvalError", line: 2, column: 12, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 3, end: Threw, reason: null, error_kind: RangeError, message: "a RangeError", line: 3, column: 13, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 4, end: Threw, reason: null, error_kind: ReferenceError, message: "a ReferenceError", line: 4, column: 14, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 5, end: Threw, reason: null, error_kind: SyntaxError, message: "a SyntaxError", line: 5, column: 15, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 6, end: Threw, reason: null, error_kind: TypeError, message: "a TypeError", line: 6, column: 16, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 7, end: Threw, reason: null, error_kind: UriError, message: "a UriError", line: 7, column: 17, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 8, end: Threw, reason: null, error_kind: Value, message: null, line: 8, column: 18, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 9, end: Threw, reason: null, error_kind: AggregateError, message: "a AggregateError", line: 9, column: 19, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 10, end: Threw, reason: null, error_kind: AggregateError, message: null, line: 10, column: 20, dynamic: false}

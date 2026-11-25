@@ -1,3 +1,21 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "generated/rust/crates/*"]
+
+[profile.release.package.swell]
+overflow-checks = true
+
+[profile.release.package.swell-compiler]
+overflow-checks = true
+
+[profile.release.package.swell-num]
+overflow-checks = true
+
+[profile.release.package.swell-regexp]
+overflow-checks = true
+
+[profile.release.package.swell-syntax]
+overflow-checks = true
+
+[profile.release.package.swell-unicode]
+overflow-checks = true

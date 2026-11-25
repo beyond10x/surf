@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:12:39Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-reader",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 859118d (the merge of impl/webidl-reader at fbcf768), 2026-11-24, ended 13:09 CET",
+    "reference": "check 45390022111 success, Shared source gates 45390022947 success, Documentation validation 45390022279 success, Documentation site 45390594058 success"
+  }
+}

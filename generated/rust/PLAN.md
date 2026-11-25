@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+  contract digest a8bb2ff5574d285e12f296eab75213256cac446ad01b23b9d6c58aea817d842c
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-265 capabilities: **253 generated**, **8 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+278 capabilities: **265 generated**, **9 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -42,6 +42,11 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.document.Option.State` |
 | domain type | `surf.document.OptionId` |
 | domain type | `surf.document.ParseLimit` |
+| domain type | `surf.document.Script.State` |
+| domain type | `surf.document.ScriptEnd` |
+| domain type | `surf.document.ScriptErrorKind` |
+| domain type | `surf.document.ScriptId` |
+| domain type | `surf.document.ScriptReason` |
 | domain type | `surf.document.Submission.State` |
 | domain type | `surf.document.SubmissionEndReason` |
 | domain type | `surf.document.SubmissionId` |
@@ -67,6 +72,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | entity lifecycle | `surf.document.Element` |
 | entity lifecycle | `surf.document.Form` |
 | entity lifecycle | `surf.document.Option` |
+| entity lifecycle | `surf.document.Script` |
 | entity lifecycle | `surf.document.Submission` |
 | entity lifecycle | `surf.navigation.Navigation` |
 | entity lifecycle | `surf.net.Request` |
@@ -105,6 +111,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.document.AddForm` |
 | command contract | `surf.document.AddOption` |
 | command behaviour | `surf.document.AddOption` |
+| command contract | `surf.document.AddScriptEnd` |
 | command contract | `surf.document.Check` |
 | command contract | `surf.document.FinishParsing` |
 | command behaviour | `surf.document.FinishParsing` |
@@ -159,6 +166,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.document.OptionAdded` |
 | event type | `surf.document.OptionSelected` |
 | event type | `surf.document.ParsingStarted` |
+| event type | `surf.document.ScriptEndAdded` |
 | event type | `surf.document.SubmissionAbandoned` |
 | event type | `surf.document.SubmissionStarted` |
 | event type | `surf.document.ValueSet` |
@@ -185,6 +193,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.document.DocumentNotFound` |
 | error type | `surf.document.DocumentStateConflict` |
 | error type | `surf.document.ElementNotFound` |
+| error type | `surf.document.InvalidScriptEnd` |
+| error type | `surf.document.InvalidScriptPosition` |
 | error type | `surf.document.OptionNotFound` |
 | error type | `surf.document.SubmissionNotFound` |
 | error type | `surf.document.SubmissionStateConflict` |
@@ -214,6 +224,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | view query | `surf.document.Forms` |
 | view type | `surf.document.Options` |
 | view query | `surf.document.Options` |
+| view type | `surf.document.Scripts` |
+| view query | `surf.document.Scripts` |
 | view type | `surf.document.Submissions` |
 | view query | `surf.document.Submissions` |
 | view type | `surf.navigation.Navigations` |
@@ -284,6 +296,7 @@ What the specification fully determines is generated; what it cannot determine i
 | command behaviour | `surf.agent.NoteNavigationEnded` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationEnded` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationFailed` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationFailed` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.document.AddScriptEnd` | kept an obligation by the guard path `message.count`, in `invalid-end` | given `surf.document.AddScriptEnd` input, decide and enact exactly one outcome. Selection precedence: on commands with `when_related:`, check `existing_instance` then `exists: false` before input-guarded refusals; choose the first declared input refusal whose guard holds; then check addressed-row existence (`unknown_instance`, and `existing_instance` on commands without `when_related:`); then the held state (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch moves from a state the row does not hold; then choose the present `when_related:` predicate refusal whose predicate and optional input guard hold; then accepting and external branches in declaration order. An accepting branch that moves nothing answers in every state. Related-presence predicates do not precede input-guarded refusals. Declared outcomes (declaration order, not selection precedence): `invalid-end` when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`, error `surf.document.InvalidScriptEnd`; `invalid-position` when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`, error `surf.document.InvalidScriptPosition`; `no-such-document` when no `surf.document.Document` carries the identity `input.document_id` names, error `surf.document.DocumentNotFound`; `already-parsed` when the `surf.document.Document` that `input.document_id` names satisfies `state == Parsed`, error `surf.document.DocumentStateConflict`; `added` otherwise, creates `surf.document.Script`, emits `surf.document.ScriptEndAdded` |
 | command behaviour | `surf.document.Check` | kept an obligation by effects on filtered rows (`affects:`), in `radio-checked` | given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and radio_group == subject.radio_group)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet` |
 | command behaviour | `surf.document.SelectOption` | kept an obligation by effects on filtered rows (`affects:`), in `selected` | given `surf.document.SelectOption` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-option` for an identity no record carries, error `surf.document.OptionNotFound`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `selected` otherwise, updates `surf.document.Option`, changes, beside its subject, every `surf.document.Option` where `select_id == subject.select_id`, setting `selected`, emits `surf.document.OptionSelected` |
 | command behaviour | `surf.navigation.CommitNavigation` | kept an obligation by effects on filtered rows (`affects:`), in `traversed` | given `surf.navigation.CommitNavigation` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-navigation` for an identity no record carries, error `surf.navigation.NavigationNotFound`; `traversed` when the existing subject's stored fields satisfy `handling == traverse`, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == forward)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and next == subject.entry_id)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_next)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_id)`, setting `standing`, emits `surf.navigation.NavigationCommitted`; `committed` otherwise, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and (standing == forward or standing == later))`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, `next`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and handling == traverse and state == Started)`, moving it along `cancel` (a row resting outside its `from` states is left as it is), emits `surf.navigation.NavigationCommitted`; `wrong-state` from a state no declared move starts in, error `surf.navigation.NavigationStateConflict` |

@@ -108,7 +108,13 @@ fn case_06_a_session_killed_with_sigkill_is_listed_died() {
     signal_kill(pid);
     let answer = look(&dir, &killed);
     assert_eq!(answer.status, 3, "{answer:?}");
-    assert_eq!(answer.text, refusal(&killed.id, "died", "session-died"));
+    assert_eq!(
+        answer.text,
+        format!(
+            "{}note ended: signal SIGKILL\n",
+            refusal(&killed.id, "died", "session-died")
+        )
+    );
     assert!(
         daemon.wait_sessions(ALLOWED, |s| s.get(&killed.id).is_some_and(
             |session| session.state == State::Died && session.ended.is_some()

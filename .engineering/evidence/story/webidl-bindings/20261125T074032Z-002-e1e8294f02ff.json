@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T07:40:32Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-bindings",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "four passes of the security review on the unit by a reviewer who did not write it, 2026-11-24 and 2026-11-25",
+    "reference": "pass 1 on 60404cd: 23 cases, 8 red, two musts; pass 2 on 8dac713: 20 cases, 7 red, two musts; pass 3 on f2d0ec1: 15 cases, 3 red, no must; pass 4 on 6cfdfe9: 9 new cases and one rewritten, 3 red, no must; every red case green at 5dcedfb (210 tests of surf-webidl and surf-script run, 210 passed, 3 skipped)"
+  }
+}

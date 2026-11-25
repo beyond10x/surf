@@ -29,17 +29,23 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
   could also spec it, implement it our own." Scope, decided by the operator on 2026-11-20 (option C):
   - No third-party crates in anything that ships. The Rust standard library and the operating
     system are allowed.
-  - One exception: audited cryptographic primitives (ciphers, hashes, key exchange, signature
-    verification) come from a third-party crate, because hand-written ones leak keys through
-    timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring 0.17.14"), used by
-    `surf-tls` alone and allowed by `taskfiles/lock-allow.txt`. The TLS protocol code on top of
-    it is written here.
+  - Two exceptions. `taskfiles/lock-allow.txt` names each of their packages by name,
+    version, source and checksum (`none` for a package from git), and
+    `taskfiles/lock-owners.txt` names the crates of this repository that may depend on
+    each (`task lock-check`).
+    - Audited cryptographic primitives (ciphers, hashes, key exchange, signature
+      verification) come from a third-party crate, because hand-written ones leak keys
+      through timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring
+      0.17.14"), used by `surf-tls` alone. The TLS protocol code on top of it is written
+      here.
+    - One crate of the organization, the script engine swell, by a git dependency on a
+      release tag, used by `surf-script` alone (`docs/design/scripts.md`, Q15).
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
     `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
-    `Cargo.lock` proves the rest: every package in it from outside this repository is one of
-    the 19 packages of ring on `taskfiles/lock-allow.txt`, matched on name, version, source and
-    checksum, and no crate of this repository but `surf-tls` depends on one (`task
+    `Cargo.lock` proves the rest: every package in it from outside this repository is on
+    `taskfiles/lock-allow.txt`, matched on name, version, source and checksum, and no crate
+    of this repository depends on one but those `taskfiles/lock-owners.txt` names (`task
     lock-check`).
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
@@ -164,7 +170,13 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
+  writes them); `taskfiles/webidl.yml` the tasks `webidl-check` (a step of `check`: the
+  digests in the header of `crates/script/src/bindings.rs`), `webidl-slow` (a step of `slow`)
+  and `webidl-html-cut` (`SNAPSHOT=<file>`, never a step of `check` or `slow`, and it fetches
+  nothing: it cuts the blocks of Web IDL out of a snapshot of the HTML Standard and compares
+  them with `crates/webidl/data/whatwg/html-idl.html` byte for byte; it trusts a snapshot
+  file a person fetched from the address `SOURCE` names, and refuses one whose sha256 is not
+  `SOURCE`'s `snapshot-sha256`). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
   and `task conform-rust` call it, each on a copy of its own of nextest's report, and `task
   view-test` on the JUnit report Playwright writes for it alone. Four tasks of the root
   `Taskfile.yml` run a script of their own, so that their tests run it with `sh` and start no
@@ -184,6 +196,11 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
+- `rustfmt.toml`: the one configuration of `rustfmt`, `edition = "2024"`, the edition every
+  crate names, so `cargo fmt` formats as without it. The generator of the DOM bindings names
+  it with `--config-path`, so no `rustfmt.toml` above the checkout and none of a user's
+  configuration directory changes the bytes of `crates/script/src/bindings.rs`; its sha256 is
+  in that file's header.
 - `spec/scenarios/*.yaml`: forty-four authored scenario files (`ess-scenario/6`), for what
   synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
@@ -296,7 +313,7 @@ above, and the list of standards itself was written from memory.
   (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
   `surf-agent-tasks`, `surf-answer`, `surf-cookie`, `surf-html-conformance`, `surf-page`,
   `surf-page-text`,
-  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-script`, `surf-secret`, `surf-session`,
   `surf-url`, `surf-view`, `surf-webidl` and `surf-test-process`, and the binaries of
   `surf-agent`, `surf-cli`,
   `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
@@ -345,6 +362,10 @@ above, and the list of standards itself was written from memory.
     `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). Since
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
+  - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
+    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
+    swell and `surf-secret`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
+    reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -574,7 +595,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.8.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.9.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Since
     `story:agent-skill-definition` `surf-agent help --for-agent`, those words and nothing else,
     prints a definition for agents and asks no session for anything (`src/help.rs`,
@@ -620,8 +641,9 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 52 tests (4 unit tests of `src/view.rs`,
-    `adversary_controls` 1, `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 10) run a stand-in session
+    from the directory of its own executable. Its 89 tests (4 unit tests of `src/view.rs`,
+    `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link` 3, `built` 14,
+    `hardening` 17, `in_process` 14, `log` 6, `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -744,8 +766,8 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 70 tests
-    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 17, `prototype` 8,
+    alone: such a frame waits until the queue is empty and is then written alone. 71 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 18, `prototype` 8,
     `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
@@ -997,12 +1019,16 @@ above, and the list of standards itself was written from memory.
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
   - `crates/webidl` (`surf-webidl`, tooling, not shipped: a library only, and no crate depends
     on it): reads the Web IDL of the DOM Standard and of the Web IDL Standard into a model.
-    `data/whatwg/` holds both pages unchanged, each a commit snapshot (`dom.html`, commit
-    `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`, Last Updated 15 November 2026; `webidl.html`,
-    commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last Updated 14 November 2026; CC BY
-    4.0), with a `SOURCE` file naming each file's address, commit, date, licence, copyright,
-    index lines and sha256; `data/.gitattributes` (`* -text`); the two pages are never
-    edited. `read_page` parses a page with `surf-html` and takes the text of every `pre`
+    `data/whatwg/` holds three files of commit snapshots (CC BY 4.0): two pages copied
+    unchanged (`dom.html`, commit `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`, Last Updated 15
+    November 2026; `webidl.html`, commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last
+    Updated 14 November 2026) and one cut, `html-idl.html`: the 213 blocks of Web IDL of the
+    HTML Standard's snapshot (commit `546d834701d171e3b164da8463d62878deb1e954`, Last Updated
+    23 November 2026), byte for byte, not the page, which `task webidl-html-cut` makes again
+    from a snapshot file and compares. A `SOURCE` file names each file's address, commit,
+    date, licence, copyright, index lines or the cut's rule, and sha256; `data/.gitattributes`
+    (`* -text`); none of the three is edited by hand. `read_page` parses a page with
+    `surf-html` and takes the text of every `pre`
     element after the `h2` whose `id` is `idl-index`, up to the next `h2` (each page has one
     such `pre`: 673 lines of the DOM, 57 of Web IDL); `read` lexes and parses such a text.
     Every construct it does not know fails as `<file>:<line>: refused: <construct>`, the line
@@ -1173,15 +1199,16 @@ above, and the list of standards itself was written from memory.
     `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 71 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 72 cases, 23 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
   `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
   `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
   `crates/view-fixture/pages/adversary-now/`), 4 in `tests/acceptance.spec.mjs` (the page
   part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`), 1 in
   `tests/adversary-budget.spec.mjs`, 5 in `tests/controls.spec.mjs` (cases 3 to 7 of
-  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`) and 6 in
-  `tests/adversary-controls.spec.mjs` (each over a page server of its own). Node and
+  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`), 6 in
+  `tests/adversary-controls.spec.mjs` (each over a page server of its own) and 1 in
+  `tests/adversary-signal.spec.mjs`. Node and
   Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
@@ -1515,8 +1542,10 @@ the others were written to a scratch directory and not compiled:
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
   round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
-  panel, release `0.7.0` TLS 1.3 and `https:`, and release `0.8.0` the cookie jar and
-  `surf-agent help --for-agent` (the releases are listed at
+  panel, release `0.7.0` TLS 1.3 and `https:`, release `0.8.0` the cookie jar and
+  `surf-agent help --for-agent`, and release `0.9.0` the hardened start of a session process
+  (`story:session-process-hardening`: an empty environment, no new privileges, the `note
+  ended` line) (the releases are listed at
   https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". Round 3 of `docs/plan/agent-waves.md`
@@ -1705,6 +1734,17 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   planted defect of `conformance/` over the whole suite and compares the list it writes,
   `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
   `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
+  Its step `webidl-slow` (`taskfiles/webidl.yml`) builds and runs the binary `bindings` of
+  `surf-webidl` and compares what it writes with `crates/script/src/bindings.rs` byte for
+  byte; it needs no `openssl`. No list of files triggers it: `webidl-check` holds what decides
+  those bytes (the digests in the header, among them `crates/html/Cargo.toml` and
+  `rustfmt.toml`; and `Cargo.lock`, read and no manifest, holds one `surf-html` without source
+  and dependencies and one `surf-webidl` without source depending on `surf-html` alone, so
+  the lock decides nothing; `task lock-check` and every `--locked` build hold the lock to the
+  manifests), and a test of `surf-webidl` compares what `surf-html` reads of the pages with
+  the header. A digest line recomputed by hand passes `webidl-check`; this byte compare is the
+  check against that. It stays
+  the full regeneration with a byte compare, run by hand like the other steps of `task slow`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
   within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
   `.out/page-step.seconds`, builds `surf-agent`, `surf-session` and `surf-view-fixture`, and
@@ -1815,7 +1855,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
   Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`), and
   the setup step `surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt`
-  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 29 planted
+  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 31 planted
   defects written to …` or `… are current`), all untimed. The timed part: its tests under
   cargo-nextest with the root's `.config/nextest.toml` (a test still running after 60 s is
   ended and fails), into `.out/conform-rust-test.log`, the planted-defect tests included (it
@@ -1848,26 +1888,23 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
-- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`.
-  It fails, one line per finding, when the root `Cargo.lock` holds a package with a `source`
-  line (one from a registry or a git repository) that matches no line of
-  `taskfiles/lock-allow.txt` on name, version, source and checksum (`Cargo.lock: <name>
-  <version> from <source>: not on the allow-list`, with the listed line when the name is
-  listed); when a crate of this repository other than `surf-tls` depends on a listed package
-  (`Cargo.lock: <package> depends on <allowed>; only surf-tls may`); when a listed line is in
-  no package (`taskfiles/lock-allow.txt: <name> <version> is in no package of Cargo.lock`);
-  when a line of the lock is in no form cargo writes (`Cargo.lock:<n>: not in the form cargo
-  writes: <line>`); and when the lock is missing. The check refuses a lock that cargo would
-  accept in another spelling (keys without spaces, a comment after `[[package]]`, a
-  dependency array on one line, literal strings, `[metadata]`, `[[patch.unused]]`, the
-  `replace = "…"` line cargo writes for `[replace]`); it still reads such a lock for the
-  other findings, so its packages are named too. Else it prints `Cargo.lock: <n> package(s),
-  19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
-  (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
-  sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
-  path dependency outside the repository has no `source` line and is not caught. The tests of
-  `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
-  (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
+- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt
+  taskfiles/lock-owners.txt Cargo.toml`. The script's head states each rule, its findings
+  and where the check ends: every package of the root `Cargo.lock` with a `source` line
+  matches a line of `taskfiles/lock-allow.txt` on name, version, source and checksum; a crate of
+  this repository depends on a listed package or on `surf-script` only by a line of
+  `taskfiles/lock-owners.txt`; each package from git has `overflow-checks = true` in the root
+  manifest's release profile, and no cargo config file of the tree and no file that starts a
+  build turns it off; the lock is read only in the form cargo writes. Else it prints
+  `Cargo.lock: <n> package(s), <m> from outside this repository, each on the allow-list`:
+  58 and 25 today (`story:scripts-engine-dependency`; 51 and 19 before it). The list holds
+  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.8.0
+  (`docs/design/scripts.md`, Q13 and Q15), one line `<name> <version> <source> <checksum>`
+  each, sorted. It does not read `conformance/Cargo.lock`. A path dependency outside the
+  repository has no `source` line and is not caught. The tests of
+  `crates/surf/tests/lock_check.rs` (36), `adversary.rs` (9), `adversary_2.rs` (6) and
+  `adversary_3.rs` (5) run that line with `sh` in their copies, without `task`;
+  `the_unchanged_lock_passes` holds the task to the line with
   `task --color=false --dry --verbose lock-check`, which prints it on standard error
   (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
@@ -2484,14 +2521,14 @@ the root workspace (14 in its first commit, 4 in the review fix), so `task test`
 `579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
 `#[test]` lines of the diff; the gate on `main` counted the same 579 since.
 
-`REFUSALS_MAX` in `Taskfile.yml` is 56. `task suite` fails above it. Lower it when a refusal goes
+`REFUSALS_MAX` in `Taskfile.yml` is 57. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
 same 28 lines; the gate after wave 9 printed `28 refusal(s)`, and `task suite` after wave 10
 too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`;
 after round 2, 56 lines with ess 0.97.4: the 48 and the 8 of `story:agent-history-spec`, both
-listed last).
+listed last; after `story:scripts-spec`, 57 lines with ess 0.97.4).
 Twenty-two of the 28 are `ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second
@@ -2558,6 +2595,12 @@ The 8 refusals `story:agent-history-spec` added (48 to 56), with cause:
   `navigation-traverse-refused-at-end`, `navigation-traverse-refused-for-post-entry`,
   `navigation-traverse-commits-without-entry`, `navigation-commits-at-response-url`,
   `page-load-commits-and-parses` and the five `adversary-history-*` files.
+
+The 1 refusal `story:scripts-spec` added (56 to 57), with cause:
+
+- `ESS-SYNTH-014` × 1: `AddScriptEnd/added`. The view `Scripts` declares an order, and the
+  guards of `AddScriptEnd` leave synthesis one record, as `AddElement/added` above.
+  `document-records-script-ends` covers it: six records, read back in order.
 
 One note is printed with them: the specification declares actors and no component is served over
 a network, so no `<command>/grant/denied` scenario is generated.

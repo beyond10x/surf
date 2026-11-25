@@ -1,0 +1,278 @@
+# The Web IDL selection of surf's generated DOM: which definitions the binary `bindings` of
+# surf-webidl generates into crates/script/src/bindings.rs, and the slice of each of their
+# members (story:webidl-bindings, decisions 1 to 6). A member enters or leaves the bindings only
+# by a change of this file.
+#
+# Grammar, one line each, read by surf_webidl::Selection:
+#
+#   # <text>                                 a comment; an empty line is nothing
+#   definitions: <name> <name> ...           the definitions generated, once, before any row
+#   global: <name>                           the one of them that is the global object, once
+#   <interface> <member> <slice> [<note>]    a row: one per member and one per constructor
+#
+# <member> is the member's name, `constructor` for a constructor, `iterable` for `iterable<T>`
+# (one row of `reading`, not counted as a member). <slice> is one of reading, attributes,
+# mutation, selectors, throws, exception. <note> is one or more clauses separated by "; ":
+#
+#   setter: <slice>        the setter of a writable attribute belongs to that slice
+#   reason: <words>        why a member of throws throws; every row of throws has one
+#   deviation: <words>     where the member deviates from its standard
+#
+# A row names an interface of `definitions:` and a member the reader's model holds for it (a
+# member of a mixin it includes counts on it); one row per member.
+#
+# Deviation of every DOMString argument: a lone surrogate reaches the slice as U+FFFD (Rust strings).
+
+definitions: EventTarget Node Element Document CharacterData Text Comment ProcessingInstruction DocumentType DocumentFragment NodeList HTMLCollection DOMException Window
+global: Window
+
+EventTarget constructor throws reason: events
+EventTarget addEventListener throws reason: events
+EventTarget removeEventListener throws reason: events
+EventTarget dispatchEvent throws reason: events
+
+Node ELEMENT_NODE reading
+Node ATTRIBUTE_NODE reading
+Node TEXT_NODE reading
+Node CDATA_SECTION_NODE reading
+Node ENTITY_REFERENCE_NODE reading
+Node ENTITY_NODE reading
+Node PROCESSING_INSTRUCTION_NODE reading
+Node COMMENT_NODE reading
+Node DOCUMENT_NODE reading
+Node DOCUMENT_TYPE_NODE reading
+Node DOCUMENT_FRAGMENT_NODE reading
+Node NOTATION_NODE reading
+Node nodeType reading
+Node nodeName reading
+Node baseURI reading
+Node isConnected reading
+Node ownerDocument reading
+Node getRootNode reading
+Node parentNode reading
+Node parentElement reading
+Node hasChildNodes reading
+Node childNodes reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Node firstChild reading
+Node lastChild reading
+Node previousSibling reading
+Node nextSibling reading
+Node nodeValue reading setter: mutation
+Node textContent reading setter: mutation
+Node normalize mutation
+Node cloneNode mutation
+Node isEqualNode reading
+Node isSameNode reading
+Node DOCUMENT_POSITION_DISCONNECTED reading
+Node DOCUMENT_POSITION_PRECEDING reading
+Node DOCUMENT_POSITION_FOLLOWING reading
+Node DOCUMENT_POSITION_CONTAINS reading
+Node DOCUMENT_POSITION_CONTAINED_BY reading
+Node DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC reading
+Node compareDocumentPosition reading
+Node contains reading
+Node lookupPrefix reading
+Node lookupNamespaceURI reading
+Node isDefaultNamespace reading
+Node insertBefore mutation
+Node appendChild mutation
+Node replaceChild mutation
+Node removeChild mutation
+
+Element namespaceURI reading
+Element prefix reading
+Element localName reading
+Element tagName reading
+Element id attributes
+Element className attributes
+Element classList throws reason: token lists
+Element slot attributes
+Element hasAttributes attributes
+Element attributes throws reason: attribute nodes
+Element getAttributeNames attributes
+Element getAttribute attributes
+Element getAttributeNS attributes
+Element setAttribute attributes deviation: (TrustedType or DOMString) read as DOMString
+Element setAttributeNS attributes deviation: (TrustedType or DOMString) read as DOMString
+Element removeAttribute attributes
+Element removeAttributeNS attributes
+Element toggleAttribute attributes
+Element hasAttribute attributes
+Element hasAttributeNS attributes
+Element getAttributeNode throws reason: attribute nodes
+Element getAttributeNodeNS throws reason: attribute nodes
+Element setAttributeNode throws reason: attribute nodes
+Element setAttributeNodeNS throws reason: attribute nodes
+Element removeAttributeNode throws reason: attribute nodes
+Element attachShadow throws reason: shadow trees
+Element shadowRoot reading
+Element customElementRegistry throws reason: custom elements
+Element closest selectors
+Element matches selectors
+Element webkitMatchesSelector selectors
+Element getElementsByTagName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Element getElementsByTagNameNS reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Element getElementsByClassName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Element insertAdjacentElement mutation
+Element insertAdjacentText mutation
+Element children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Element firstElementChild reading
+Element lastElementChild reading
+Element childElementCount reading
+Element prepend mutation
+Element append mutation
+Element replaceChildren mutation
+Element moveBefore mutation
+Element querySelector selectors
+Element querySelectorAll selectors
+Element previousElementSibling reading
+Element nextElementSibling reading
+Element before mutation
+Element after mutation
+Element replaceWith mutation
+Element remove mutation
+Element assignedSlot reading
+
+Document constructor throws reason: documents made by script
+Document implementation throws reason: DOMImplementation is not generated
+Document URL reading
+Document documentURI reading
+Document compatMode reading
+Document characterSet reading
+Document charset reading
+Document inputEncoding reading
+Document contentType reading
+Document doctype reading
+Document documentElement reading
+Document getElementsByTagName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Document getElementsByTagNameNS reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Document getElementsByClassName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
+Document createElement mutation deviation: an element's wrapper is an Element
+Document createElementNS mutation deviation: an element's wrapper is an Element
+Document createDocumentFragment mutation
+Document createTextNode mutation
+Document createCDATASection mutation
+Document createComment mutation
+Document createProcessingInstruction mutation
+Document importNode mutation
+Document adoptNode mutation
+Document createAttribute throws reason: attribute nodes
+Document createAttributeNS throws reason: attribute nodes
+Document createEvent throws reason: events
+Document createRange throws reason: ranges
+Document createNodeIterator throws reason: traversal
+Document createTreeWalker throws reason: traversal
+Document getElementById reading
+Document customElementRegistry throws reason: custom elements
+Document children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Document firstElementChild reading
+Document lastElementChild reading
+Document childElementCount reading
+Document prepend mutation
+Document append mutation
+Document replaceChildren mutation
+Document moveBefore mutation
+Document querySelector selectors
+Document querySelectorAll selectors
+Document createExpression throws reason: XPath
+Document createNSResolver throws reason: XPath
+Document evaluate throws reason: XPath
+Document title reading setter: mutation
+
+CharacterData data reading setter: mutation
+CharacterData length reading
+CharacterData substringData reading
+CharacterData appendData mutation
+CharacterData insertData mutation
+CharacterData deleteData mutation
+CharacterData replaceData mutation
+CharacterData previousElementSibling reading
+CharacterData nextElementSibling reading
+CharacterData before mutation
+CharacterData after mutation
+CharacterData replaceWith mutation
+CharacterData remove mutation
+
+Text constructor mutation
+Text splitText mutation
+Text wholeText reading
+Text assignedSlot reading
+
+Comment constructor mutation
+
+ProcessingInstruction constructor mutation
+ProcessingInstruction target reading
+ProcessingInstruction hasAttributes throws reason: attributes of a processing instruction
+ProcessingInstruction getAttributeNames throws reason: attributes of a processing instruction
+ProcessingInstruction getAttribute throws reason: attributes of a processing instruction
+ProcessingInstruction setAttribute throws reason: attributes of a processing instruction
+ProcessingInstruction removeAttribute throws reason: attributes of a processing instruction
+ProcessingInstruction toggleAttribute throws reason: attributes of a processing instruction
+ProcessingInstruction hasAttribute throws reason: attributes of a processing instruction
+
+DocumentType name reading
+DocumentType publicId reading
+DocumentType systemId reading
+DocumentType before mutation
+DocumentType after mutation
+DocumentType replaceWith mutation
+DocumentType remove mutation
+
+DocumentFragment constructor mutation
+DocumentFragment getElementById reading
+DocumentFragment children reading
+DocumentFragment firstElementChild reading
+DocumentFragment lastElementChild reading
+DocumentFragment childElementCount reading
+DocumentFragment prepend mutation
+DocumentFragment append mutation
+DocumentFragment replaceChildren mutation
+DocumentFragment moveBefore mutation
+DocumentFragment querySelector selectors
+DocumentFragment querySelectorAll selectors
+
+NodeList item reading
+NodeList length reading
+NodeList iterable reading
+
+HTMLCollection length reading
+HTMLCollection item reading
+HTMLCollection namedItem reading
+
+DOMException constructor exception
+DOMException name exception
+DOMException message exception
+DOMException code exception
+DOMException INDEX_SIZE_ERR exception
+DOMException DOMSTRING_SIZE_ERR exception
+DOMException HIERARCHY_REQUEST_ERR exception
+DOMException WRONG_DOCUMENT_ERR exception
+DOMException INVALID_CHARACTER_ERR exception
+DOMException NO_DATA_ALLOWED_ERR exception
+DOMException NO_MODIFICATION_ALLOWED_ERR exception
+DOMException NOT_FOUND_ERR exception
+DOMException NOT_SUPPORTED_ERR exception
+DOMException INUSE_ATTRIBUTE_ERR exception
+DOMException INVALID_STATE_ERR exception
+DOMException SYNTAX_ERR exception
+DOMException INVALID_MODIFICATION_ERR exception
+DOMException NAMESPACE_ERR exception
+DOMException INVALID_ACCESS_ERR exception
+DOMException VALIDATION_ERR exception
+DOMException TYPE_MISMATCH_ERR exception
+DOMException SECURITY_ERR exception
+DOMException NETWORK_ERR exception
+DOMException ABORT_ERR exception
+DOMException URL_MISMATCH_ERR exception
+DOMException QUOTA_EXCEEDED_ERR exception
+DOMException TIMEOUT_ERR exception
+DOMException INVALID_NODE_TYPE_ERR exception
+DOMException DATA_CLONE_ERR exception
+
+Window window reading deviation: the global this is the Window, no WindowProxy
+Window self reading deviation: the global this is the Window, no WindowProxy
+Window document reading
+# Window.event (DOM Standard, a legacy attribute): outside the dispatch of an event its value
+# is undefined, and surf dispatches no event, so it reads undefined: the standard's value, not a
+# deviation. [Replaceable] holds for it as for self.
+Window event reading

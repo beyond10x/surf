@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+// contract digest a8bb2ff5574d285e12f296eab75213256cac446ad01b23b9d6c58aea817d842c
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -54,6 +54,8 @@ pub enum SystemEvent {
     OptionSelected(surf_types::document::OptionSelected),
     /// `surf.document.ParsingStarted`.
     ParsingStarted(surf_types::document::ParsingStarted),
+    /// `surf.document.ScriptEndAdded`.
+    ScriptEndAdded(surf_types::document::ScriptEndAdded),
     /// `surf.document.SubmissionAbandoned`.
     SubmissionAbandoned(surf_types::document::SubmissionAbandoned),
     /// `surf.document.SubmissionStarted`.
@@ -107,6 +109,7 @@ impl SystemEvent {
             Self::OptionAdded(_) => "surf.document.OptionAdded",
             Self::OptionSelected(_) => "surf.document.OptionSelected",
             Self::ParsingStarted(_) => "surf.document.ParsingStarted",
+            Self::ScriptEndAdded(_) => "surf.document.ScriptEndAdded",
             Self::SubmissionAbandoned(_) => "surf.document.SubmissionAbandoned",
             Self::SubmissionStarted(_) => "surf.document.SubmissionStarted",
             Self::ValueSet(_) => "surf.document.ValueSet",
@@ -153,6 +156,7 @@ impl From<document::PublishedEvent> for SystemEvent {
             document::PublishedEvent::OptionAdded(event) => Self::OptionAdded(event),
             document::PublishedEvent::OptionSelected(event) => Self::OptionSelected(event),
             document::PublishedEvent::ParsingStarted(event) => Self::ParsingStarted(event),
+            document::PublishedEvent::ScriptEndAdded(event) => Self::ScriptEndAdded(event),
             document::PublishedEvent::SubmissionAbandoned(event) => Self::SubmissionAbandoned(event),
             document::PublishedEvent::SubmissionStarted(event) => Self::SubmissionStarted(event),
             document::PublishedEvent::ValueSet(event) => Self::ValueSet(event),
@@ -570,7 +574,7 @@ impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Render
 impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
 where
     AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::GoBackBehavior + surf_types::agent::obligations::GoForwardBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
-    DocumentBehaviors: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
+    DocumentBehaviors: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::AddScriptEndBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::ScriptsQuery + surf_types::document::obligations::SubmissionsQuery,
     NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::StartTraversalBehavior + surf_types::navigation::obligations::TraverseHistoryBehavior + surf_types::navigation::obligations::NavigationsQuery,
     NetBehaviors: surf_types::net::obligations::DeliverResponseBehavior + surf_types::net::obligations::FailRequestBehavior + surf_types::net::obligations::FetchBehavior + surf_types::net::obligations::RequestsQuery,
     RendererBehaviors: surf_types::render::obligations::PaintFrameBehavior + surf_types::render::obligations::FramesQuery,
@@ -704,6 +708,7 @@ where
             SystemEvent::OptionAdded(_) => {}
             SystemEvent::OptionSelected(_) => {}
             SystemEvent::ParsingStarted(_) => {}
+            SystemEvent::ScriptEndAdded(_) => {}
             SystemEvent::SubmissionAbandoned(_) => {}
             SystemEvent::SubmissionStarted(_) => {}
             SystemEvent::ValueSet(_) => {}
