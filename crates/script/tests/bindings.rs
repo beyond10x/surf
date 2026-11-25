@@ -21,7 +21,8 @@ use surf_script::bindings::{
     wrapper_node,
 };
 use surf_script::{
-    Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptHost, dom, run_document,
+    Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, ScriptHost, dom,
+    run_document,
 };
 use swell::{BINDINGS_REALM_HEAP_BYTES, Completion, Cx, HostCall, Limits, PropertyKey, Value};
 
@@ -121,6 +122,20 @@ impl Attributes for TestAttributes {
             .lock()
             .expect("the record")
             .push((qualified_name, value));
+        Ok(())
+    }
+
+    fn set_element_id(
+        &mut self,
+        _cx: &mut DomCx<'_, '_>,
+        _this: NodeId,
+        value: String,
+    ) -> DomResult<()> {
+        self.0
+            .0
+            .lock()
+            .expect("the record")
+            .push(("id".to_string(), value));
         Ok(())
     }
 }
@@ -574,6 +589,61 @@ fn trusted_type_as_domstring() {
     assert_eq!(handed.taken(), [("a".to_string(), "x".to_string())]);
 }
 
+/// A named deviation (should 7 of the review, ruled): a lone surrogate in a `DOMString`
+/// argument reaches the slice as U+FFFD, since the tree holds Rust strings (the head of
+/// `selection.txt`, `docs/design/scripts.md` Q17). Pinned for an attribute's setter and an
+/// operation.
+#[test]
+fn a_lone_surrogate_reaches_the_slice_as_u_fffd() {
+    let record = Record::default();
+    let handed = record.clone();
+    with_document(limits(), test_document(Writes::None, record), |runner| {
+        ran(
+            runner,
+            r#"el.id = "a\uD800b"; el.setAttribute("\uDC00", "c\uDBFF");"#,
+        );
+    });
+    assert_eq!(
+        handed.taken(),
+        [
+            ("id".to_string(), "a\u{FFFD}b".to_string()),
+            ("\u{FFFD}".to_string(), "c\u{FFFD}".to_string()),
+        ]
+    );
+}
+
+/// Note 11 of the review, as ruled: an uncaught `DOMException` ends the script `threw Error`
+/// with the message `<name>: <message>`, read from the exception's own data without running
+/// script and cut to 1,024 characters: one the bindings threw, and two a script made.
+#[test]
+fn an_uncaught_dom_exception_names_its_name_and_message() {
+    let ends = with_document(limits(), surf_document, |runner| {
+        [
+            runner.evaluate("this.document;"),
+            runner.evaluate(r#"throw new DOMException("m", "SyntaxError");"#),
+            runner.evaluate(
+                r#"var s = ""; for (var i = 0; i < 2000; i++) { s += "x"; }
+                   throw new DOMException(s, "E");"#,
+            ),
+        ]
+    });
+    let long = format!("E: {}", "x".repeat(1_021));
+    let expected = [
+        "NotSupportedError: Window.document is not supported",
+        "SyntaxError: m",
+        long.as_str(),
+    ];
+    for (end, message) in ends.iter().zip(expected) {
+        match end {
+            ScriptEnd::Threw(error) => {
+                assert_eq!(error.kind, ScriptErrorKind::Error, "{end}");
+                assert_eq!(error.message.as_deref(), Some(message), "{end}");
+            }
+            other => panic!("not a throw: {other}"),
+        }
+    }
+}
+
 /// The record of the document, read between two scripts.
 fn recorded(runner: &mut Runner) -> (Option<Limit>, usize) {
     let host: &ScriptHost = runner.agent_and_realm().0.host();
@@ -598,6 +668,34 @@ fn limit_end() {
                 "the record cleared, the tree unchanged"
             );
             assert_eq!(runner.evaluate("1"), ScriptEnd::Ran);
+        },
+    );
+}
+
+/// Decision 9 as ruled in fix round 1: a limit ends the script where it is reached; no
+/// `catch` and no `finally` of the page runs after it, the interrupt flag is clear after the
+/// entry and the record is cleared, and the next script runs.
+#[test]
+fn no_catch_and_no_finally_runs_after_a_limit() {
+    with_document(
+        limits(),
+        test_document(Writes::LimitNodes, Record::default()),
+        |runner| {
+            let end = runner.evaluate(&format!(
+                "{PRELUDE}G.ran = [];
+                 try {{ document.createElement(\"p\"); G.ran.push(\"after\"); }}
+                 catch (e) {{ G.ran.push(\"catch\"); }}
+                 finally {{ G.ran.push(\"finally\"); }}
+                 G.ran.push(\"end\");"
+            ));
+            assert_eq!(end, ScriptEnd::Limit(Reason::Nodes), "{end}");
+            let flag = runner.agent_and_realm().0.interrupt_handle().is_set();
+            assert!(!flag, "the interrupt flag after the entry");
+            assert_eq!(recorded(runner).0, None, "the record cleared");
+            let after = runner.evaluate(
+                "if (G.ran.length !== 0) { throw new Error(\"ran: \" + G.ran.join(\" \")); }",
+            );
+            assert_eq!(after, ScriptEnd::Ran, "{after}");
         },
     );
 }

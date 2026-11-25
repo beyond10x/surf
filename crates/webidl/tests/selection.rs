@@ -228,6 +228,79 @@ fn outside_definition_refused() {
     );
 }
 
+/// `[LegacyUnforgeable]` on a member of an interface that is not the global is refused naming
+/// the row: the bindings put such a member on the global object only, where Web IDL puts it on
+/// each instance. On the global's own member it is generated.
+#[test]
+fn legacy_unforgeable_off_the_global_is_refused() {
+    let idl = "interface EventTarget {};\n\
+               interface Node : EventTarget {\n\
+               \x20 [LegacyUnforgeable] readonly attribute unsigned short nodeType;\n\
+               };\n\
+               interface Window : EventTarget {\n\
+               \x20 [LegacyUnforgeable] readonly attribute unsigned short length;\n\
+               };\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let off = "definitions: EventTarget Node Window DOMException\nglobal: Window\n\
+               Node nodeType reading\n";
+    let selection = Selection::read(off, "s.txt").expect("reads");
+    let error = generate(&model, &selection, &[]).expect_err("Node.nodeType");
+    assert_eq!(
+        error.to_string(),
+        "s.txt:3: `Node nodeType`: `[LegacyUnforgeable]` off the global interface: the \
+         bindings put such a member on the global object only, and Web IDL puts it on each \
+         instance"
+    );
+    let on = "definitions: EventTarget Node Window DOMException\nglobal: Window\n\
+              Window length reading\n";
+    let selection = Selection::read(on, "s.txt").expect("reads");
+    let text = generate(&model, &selection, &[]).expect("generates");
+    assert!(text.contains("name: \"length\""), "Window.length generated");
+}
+
+/// The rule of the generator's names: `-` is written `_`, a keyword with a raw form is raw, and
+/// `self` gets a `_` at its end (no raw `self` exists).
+#[test]
+fn argument_names_follow_the_rule_of_rust_identifiers() {
+    let idl = "interface EventTarget {};\n\
+               interface Node : EventTarget {\n\
+               \x20 undefined foo(DOMString my-arg, DOMString self, DOMString type);\n\
+               };\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let text = "definitions: EventTarget Node DOMException\nglobal: Node\nNode foo mutation\n";
+    let selection = Selection::read(text, "s.txt").expect("reads");
+    let text = generate(&model, &selection, &[]).expect("generates");
+    assert!(
+        text.contains("my_arg: String, self_: String, r#type: String"),
+        "{}",
+        text.lines()
+            .filter(|line| line.contains("fn node_foo("))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+/// Two arguments of one member whose names give the same Rust identifier are refused naming
+/// the row.
+#[test]
+fn two_arguments_with_one_rust_name_are_refused() {
+    let idl = "interface EventTarget {};\n\
+               interface Node : EventTarget {\n\
+               \x20 undefined foo(DOMString my-arg, DOMString my_arg);\n\
+               };\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let text = "definitions: EventTarget Node DOMException\nglobal: Node\nNode foo mutation\n";
+    let selection = Selection::read(text, "s.txt").expect("reads");
+    let error = generate(&model, &selection, &[]).expect_err("my_arg twice");
+    assert_eq!(
+        error.to_string(),
+        "s.txt:3: `Node foo`: the arguments `my-arg` and `my_arg` are both written `my_arg`"
+    );
+}
+
 /// The model of the bindings, the only test that reads the cut of the HTML Standard.
 #[test]
 fn rows_match_the_model() {
