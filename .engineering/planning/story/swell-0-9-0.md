@@ -32,6 +32,8 @@ scope:
 - confidence: cited
   path: crates/script/tests/adversary_checkpoint.rs
 - confidence: cited
+  path: crates/script/tests/adversary_checkpoint_2.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/engine.rs
@@ -57,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 26
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
@@ -627,6 +629,26 @@ process that ran on `0.9.0`.
     - Whether `HOST-216` means a host accessor too is swell's to rule and to fix. surf's rule
       above does not wait for a swell tag and stays when one comes.
 
+15. What the review of the unit's second tip found, as rules. Each narrows decision 14 and wins
+    where the two differ.
+    - No script inherits an interrupt. After every script's end, whatever its end word, the
+      runner withdraws a set interrupt in one place before it returns, and no way out of a
+      script returns around it (a limit, `faulted`, `not run`, a parse error). The end word of
+      a limit stays what swell or the bindings answered. A clock that ran out is known by the
+      clock and not by the flag: the next script of the document is `not run: wall-clock` when
+      the clock ran out, and runs when the flag was set while the clock had not run out.
+    - Where the checkpoint reads the flag at `0.10.0`: at its start and before it takes each
+      job off the queue; after a job's function answered when that function is a script
+      function, and not when it is a host function. The design note and the runner's comments
+      say so with the lines of the tag.
+    - Two checks of decision 14 never decide an end alone at `0.10.0`: the check before the
+      read of a thrown value, and the flag half of the check before the checkpoint. They stay
+      as the second line: they decide when a later tag changes where the engine reads the
+      flag, and the first keeps the rule that no text is read after an interrupt. The note
+      and the two comments name them so.
+    - The clear of the queue after `limit: wall-clock` and the four changes of the first fix
+      round that no test held are each held by a test.
+
 ## Change
 
 - `crates/script/Cargo.toml`, `Cargo.lock`, `taskfiles/lock-allow.txt`: decision 1, in the first
@@ -845,6 +867,19 @@ process that ran on `0.9.0`.
        message.
     f. `new (async function () {}).constructor("…")` and the async generator form end as Q4's
        row says for `Function` in a session.
+
+13. The second review's rules (decision 15), in the modules `adversary_checkpoint_2` and
+    `run_end` of `crates/script/tests`.
+    a. A script that ends `limit: steps-per-script` with the interrupt set is followed by a
+       script of the same document that runs; the flag is not set when the next script starts.
+    b. A script that ends `limit: wall-clock` by the rule of decision 14 leaves no job for a
+       later script.
+    c. A clock that ran out before its thread set the flag runs no job of the script, and ends
+       the script after its last job.
+    d. A host function as the last job of a checkpoint leaves the flag set when the checkpoint
+       returns; the runner ends the script at the wall clock.
+    e. With the one withdrawal removed, the case of a fails; with the clear after
+       `limit: wall-clock` removed, the case of b fails.
 
 ## Out of scope
 
