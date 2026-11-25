@@ -3,7 +3,10 @@
 //! random sequences of the public writes; and the document's mode for the doctypes of the
 //! parser's quirks tables.
 
-use surf_html::{Namespace, NodeData, NodeId, ParseOptions, Tree, parse_document};
+use surf_html::{
+    Context, Namespace, NodeData, NodeId, ParseOptions, QuirksMode, Tree, parse_document,
+    parse_fragment,
+};
 
 /// A fixed-seed generator of the test's own (no dependency).
 struct Lcg(u64);
@@ -202,4 +205,110 @@ fn an_empty_fragment_inserted_leaves_the_counter() {
         writes,
         "the counter moved with no child list changed"
     );
+}
+
+fn mode(input: &str) -> QuirksMode {
+    parse_document(input, &ParseOptions::default()).quirks_mode()
+}
+
+/// The mode for the doctypes of the parser's quirks tables (HTML 13.2.6.4.1), a doctype after a
+/// comment, a second doctype, a fragment, a tree's clone (brief 14).
+#[test]
+fn the_mode_of_each_quirks_table() {
+    let cases = [
+        ("", QuirksMode::Quirks),
+        ("<!DOCTYPE html>", QuirksMode::NoQuirks),
+        (
+            "<!DOCTYPE html SYSTEM \"about:legacy-compat\">",
+            QuirksMode::NoQuirks,
+        ),
+        ("<!DOCTYPE>", QuirksMode::Quirks),
+        ("<!DOCTYPE htm>", QuirksMode::Quirks),
+        ("<!--c--><!DOCTYPE html>", QuirksMode::NoQuirks),
+        (
+            "<!--c--><!DOCTYPE html PUBLIC \"HTML\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html><!DOCTYPE html PUBLIC \"-//W3O//DTD W3 HTML Strict 3.0//EN//\">",
+            QuirksMode::NoQuirks,
+        ),
+        ("<p><!DOCTYPE html>", QuirksMode::Quirks),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3O//DTD W3 HTML Strict 3.0//EN//\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-/W3C/DTD HTML 4.0 Transitional/EN\">",
+            QuirksMode::Quirks,
+        ),
+        ("<!DOCTYPE html PUBLIC \"html\">", QuirksMode::Quirks),
+        (
+            "<!DOCTYPE html SYSTEM \"http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//w3c//dtd html 3.2//en\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">",
+            QuirksMode::Quirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\" \"http://www.w3.org/TR/html4/frameset.dtd\">",
+            QuirksMode::LimitedQuirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">",
+            QuirksMode::LimitedQuirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Frameset//EN\">",
+            QuirksMode::LimitedQuirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\">",
+            QuirksMode::LimitedQuirks,
+        ),
+        (
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\">",
+            QuirksMode::NoQuirks,
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (input, expected) in cases {
+        let got = mode(input);
+        if got != expected {
+            wrong.push(format!("{input}: {got:?}, expected {expected:?}"));
+        }
+    }
+    let tree = parse_document("<p>", &ParseOptions::default());
+    if tree.clone().quirks_mode() != QuirksMode::Quirks {
+        wrong.push("a clone of a quirks tree".to_string());
+    }
+    let context = Context {
+        namespace: Namespace::Html,
+        local_name: "body".to_string(),
+    };
+    for input in ["<!DOCTYPE html PUBLIC \"HTML\"><p>", "x"] {
+        let fragment = parse_fragment(input, &context, &ParseOptions::default());
+        if fragment.quirks_mode() != QuirksMode::NoQuirks {
+            wrong.push(format!("fragment {input}: {:?}", fragment.quirks_mode()));
+        }
+    }
+    let quirks = parse_document("<p>x</p>", &ParseOptions::default());
+    let standard = parse_document("<!DOCTYPE html><p>x</p>", &ParseOptions::default());
+    if quirks == standard {
+        wrong.push("trees with other doctypes compare equal".to_string());
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
