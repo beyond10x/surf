@@ -664,6 +664,27 @@ fn slice_field(slice: Slice) -> &'static str {
     }
 }
 
+/// Whether the getter of an attribute marked `[SameObject]` that answers `ret` on a `this` of
+/// that kind answers the same object at each read: a collection of a node, which the wrapper
+/// hook keeps ([`same_object_getter`]), and a node, whose wrapper is one per node. Every other
+/// return form is refused until it is named here with how it is held.
+fn same_object_held(ret: &Return, this: This) -> bool {
+    match ret {
+        Return::Collection(_) => this == This::Node,
+        Return::Node => true,
+        Return::Undefined
+        | Return::Boolean
+        | Return::Unsigned16
+        | Return::Unsigned32
+        | Return::String
+        | Return::Units
+        | Return::NullableString
+        | Return::NullableNode
+        | Return::Strings
+        | Return::Window => false,
+    }
+}
+
 /// The getter of an attribute marked `[SameObject]` that returns a `NodeList` or an
 /// `HTMLCollection` (`collection`), the key `key` of the enum `SameObject`: one object per node
 /// and member, as long as the wrapper hook keeps it. After the brand check and its one step,
@@ -1433,15 +1454,23 @@ impl Generator<'_> {
                                 setter: false,
                             };
                             if has_attribute(&member, "SameObject")
-                                && matches!(method.ret, Return::Collection(_))
-                                && this != This::Node
+                                && !same_object_held(&method.ret, this)
                             {
                                 return Err(self.refuse(
                                     row,
-                                    "`[SameObject]` on a collection attribute of an interface \
-                                     whose `this` is no node: the wrapper hook keeps an object \
-                                     per node only"
-                                        .to_string(),
+                                    format!(
+                                        "`[SameObject]` on an attribute whose object the \
+                                         generator does not hold, `{}` of a `this` that is {}: \
+                                         it holds a collection of a node (the wrapper hook \
+                                         keeps an object per node) and a node (one wrapper \
+                                         per node)",
+                                        type_text(ty),
+                                        if this == This::Node {
+                                            "a node"
+                                        } else {
+                                            "no node"
+                                        },
+                                    ),
                                 ));
                             }
                             let body = match &method.ret {

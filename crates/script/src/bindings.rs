@@ -50,7 +50,7 @@
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! b778e08c9eaa9b4b41193562cd31bb2c19b2a43c82a8782a77dcb09dda91bb1a  crates/webidl/src/generate.rs
+//! bd7ad49af55281f3d8b2722b1a34a4465ed8b119a9359a1344392fb7afc69a96  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 6c6ba35daca2300e75b3a92cf741532c37e1b1a37df3919b0d7a1316f3148537
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: b3e8bca9cb811c43b39ae4f4c418ddc04f86cb3cc51ca232928619da86ded18d
 
 use std::cell::Cell;
 
