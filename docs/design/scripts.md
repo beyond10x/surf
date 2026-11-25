@@ -469,11 +469,11 @@ The story names HOST-126 to HOST-128 as the time-zone hooks; at the tag HOST-126
 the clock's answer and HOST-127 and HOST-128 are the time zone
 (`docs/design/host-interface.md:1933-1939 @ 0.8.0`).
 
-The eight ids of the probe below are `pending slice 4` at the tag, and `Date` and all of `Math`
-but `max` do not exist in 0.8.0 (`CHANGELOG.md:112-113 @ 0.8.0`): the clock, the time zone and
+At `0.8.0` the eight ids of the probe below were `pending slice 4`, and `Date` and all of `Math`
+but `max` did not exist in it (`CHANGELOG.md:112-113 @ 0.8.0`): the clock, the time zone and
 `random_seed` are written now, because the trait requires the clock (`hooks.rs:305-308 @
-0.8.0`) and `Agent::new` takes both seeds, and a script first reaches them once surf takes a tag
-with slice 4. `hash_key` is in use at 0.8.0 already: every hash map of the engine is keyed by it
+0.8.0`) and `Agent::new` takes both seeds, and a script reached none of them before the first
+story of slice 4 (the clock it reaches with `Date` since `0.9.0`, below). `hash_key` is in use at 0.8.0 already: every hash map of the engine is keyed by it
 (HOST-145, held by a test), so the order of its maps differs from session to session and is
 fixed in a test.
 
