@@ -45,6 +45,13 @@ impl Default for DocumentInfo {
     }
 }
 
+/// The copies of character data that `data`, `nodeValue` and `textContent` of a character
+/// data node made on this thread, the runner's (a count for tests, as
+/// `crate::bindings::uncharged_copies` is for the copies of arguments).
+pub fn data_copies() -> usize {
+    reads::data_copies()
+}
+
 /// surf's slices and wrapper hook for a document with `info`.
 pub fn slices(info: DocumentInfo) -> Slices {
     Slices {

@@ -609,6 +609,57 @@ fn code_of(source: &str) -> String {
         .join("\n")
 }
 
+/// No walk of the module of reads copies a child list: the code of `reads.rs`, cut into its
+/// functions, holds `.to_vec()`, `.collect`, `extend(` or `Vec::from(` only in the three that
+/// answer a list or compare attribute lists, each charged before its copy: `element_children`
+/// and `children` (a step a child) and `shallow_equal` (the attribute map, which the compare's
+/// caller charged for both lists).
+#[test]
+fn no_walk_of_the_reads_copies_a_child_list() {
+    const ANSWERS: [&str; 3] = ["element_children", "shallow_equal", "children"];
+    const COPIES: [&str; 4] = [".to_vec()", ".collect", "extend(", "Vec::from("];
+    let code = code_of(include_str!("../src/dom/reads.rs"));
+    let mut functions: Vec<(String, String)> = Vec::new();
+    for line in code.lines() {
+        let head = line.trim_start();
+        let head = head.strip_prefix("pub(super) ").unwrap_or(head);
+        let head = head.strip_prefix("pub ").unwrap_or(head);
+        if let Some(rest) = head.strip_prefix("fn ") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            functions.push((name, String::new()));
+        }
+        if let Some((_, body)) = functions.last_mut() {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    assert!(
+        functions.len() > 50,
+        "reads.rs cut into {} functions",
+        functions.len()
+    );
+    for name in ANSWERS {
+        assert!(
+            functions.iter().any(|(function, _)| function == name),
+            "reads.rs holds no function `{name}`"
+        );
+    }
+    let copying: Vec<String> = functions
+        .iter()
+        .filter(|(name, _)| !ANSWERS.contains(&name.as_str()))
+        .flat_map(|(name, body)| {
+            COPIES
+                .iter()
+                .filter(|copy| body.contains(*copy))
+                .map(move |copy| format!("`{name}` holds `{copy}`"))
+        })
+        .collect();
+    assert!(copying.is_empty(), "{copying:#?}");
+}
+
 /// A String argument is charged before it is copied out of the engine: in the one copy
 /// function of the bindings, `Copies::copy`, the length is read (`string_length(`, which copies
 /// nothing) and charged (`charge_steps(`) before the first `to_utf16`. A source test: a call

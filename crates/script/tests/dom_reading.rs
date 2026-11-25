@@ -22,7 +22,7 @@ use surf_html::{
     parse_document_with_hook,
 };
 use surf_script::bindings::{
-    DomCx, DomEnd, DomException, DomResult, Mutation, NOT_REFRESHED, Slices,
+    COLLECTION_NODE_STEPS, DomCx, DomEnd, DomException, DomResult, Mutation, NOT_REFRESHED, Slices,
 };
 use surf_script::dom::{self, DocumentInfo};
 use surf_script::{
@@ -1564,6 +1564,21 @@ fn parent_of(count: usize, child: &str) -> String {
     format!("<p id=\"p\">{}</p>", child.repeat(count))
 }
 
+/// The first read of `childNodes` copies the child list for a step a child, before the copy,
+/// beside the collection's [`COLLECTION_NODE_STEPS`] a node: on a list one child longer the
+/// same script costs exactly that much more.
+#[test]
+fn a_first_child_nodes_read_charges_a_step_a_child() {
+    let first_read = |count: usize| walk_steps(count, "<b></b>", "p.childNodes;");
+    let (longer, shorter) = (first_read(1_000), first_read(999));
+    eprintln!("childNodes, first read: 1,000 children {longer} steps, 999 children {shorter}");
+    assert_eq!(
+        longer - shorter,
+        1 + COLLECTION_NODE_STEPS,
+        "{longer} against {shorter}"
+    );
+}
+
 /// The steps of `walk` over `count` children made of `child`.
 fn walk_steps(count: usize, child: &str, walk: &str) -> u64 {
     with_page(limits(), parent_of(count, child), info(), |runner| {
@@ -2246,11 +2261,17 @@ fn a_name_past_string_length_is_a_range_error() {
 
 /// `data` and `nodeValue` past `string_length` throw before the copy: the data's bytes are
 /// charged first, one step per 16, before its code units are counted against the limit, so the
-/// read of 64,000 bytes costs 3,936 steps more than the read of 1,025. The script catches the
-/// error and reads on: the same wrapper answers, and the parent's collection reads as before.
+/// read of 64,000 bytes costs 3,936 steps more than the read of 1,025, and neither read copies
+/// the data (`dom::data_copies` does not rise, while a read within the limit raises it by one).
+/// The script catches the error and reads on: the same wrapper answers, and the parent's
+/// collection reads as before.
 #[test]
 fn data_past_string_length_throws_before_the_copy() {
-    let page = format!("<p>{}</p><p>{}</p>", "a".repeat(1_025), "a".repeat(64_000));
+    let page = format!(
+        "<p>{}</p><p>c</p><p>{}</p>",
+        "a".repeat(1_025),
+        "a".repeat(64_000)
+    );
     with_page(short_strings(), page, info(), |runner| {
         ran(
             runner,
@@ -2268,13 +2289,25 @@ fn data_past_string_length_throws_before_the_copy() {
                    check(kids.length === 1 && kids[0] === a, "the collection after");"##,
             ),
         );
+        let before = dom::data_copies();
         let short = steps(runner, "try { a.data; } catch (e) {}");
         let long = steps(runner, "try { b.data; } catch (e) {}");
-        eprintln!("data past string_length: 1,025 bytes {short} steps, 64,000 bytes {long}");
+        let copies_past = dom::data_copies() - before;
+        ran(
+            runner,
+            r#"check(body.childNodes[1].firstChild.data === "c", "within");"#,
+        );
+        let copies_within = dom::data_copies() - before - copies_past;
+        eprintln!(
+            "data past string_length: 1,025 bytes {short} steps, 64,000 bytes {long}; copies \
+             past the limit {copies_past}, within it {copies_within}"
+        );
         assert!(
             (short + 3_930..short + 3_945).contains(&long),
             "{long} against {short}"
         );
+        assert_eq!(copies_past, 0, "a read past string_length copied the data");
+        assert_eq!(copies_within, 1, "a read within string_length is one copy");
     });
 }
 

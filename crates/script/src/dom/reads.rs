@@ -4,6 +4,7 @@
 //! or charges before its loop for everything the loop reads; its doc comment says what it
 //! charges. The members get nodes, text and attribute values from here only.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use surf_html::{Namespace, NodeData, NodeId, QuirksMode, Tree};
@@ -220,6 +221,23 @@ fn system_id_of(data: &NodeData) -> &str {
     }
 }
 
+thread_local! {
+    /// The copies of character data [`copied`] made on this thread.
+    static DATA_COPIES: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The copies of character data that [`copied`] made on this thread, the runner's: a test reads
+/// it before and after a call to see whether the call copied the data.
+pub(super) fn data_copies() -> usize {
+    DATA_COPIES.with(Cell::get)
+}
+
+/// A copy of `data`, counted in [`data_copies`].
+fn counted_copy(data: &str) -> String {
+    DATA_COPIES.with(|count| count.set(count.get().saturating_add(1)));
+    data.to_string()
+}
+
 /// The character data of `node` as `data`, `nodeValue` and `textContent` answer it, `None` for
 /// a node without: one step per 16 bytes, before the data is measured against the agent's
 /// `string_length` (past it the `RangeError`) and copied.
@@ -233,7 +251,7 @@ pub(super) fn copied(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<S
     if longer_than(data, limit) {
         return Err(DomEnd::StringLength);
     }
-    Ok(Some(data.to_string()))
+    Ok(Some(counted_copy(data)))
 }
 
 /// A String a member builds from pieces (`textContent`, `wholeText`, `title`), held to the
