@@ -63,6 +63,13 @@ enum Plant {
     ThrewAggregateRefused,
     /// `Refused` with `AggregateError` is added, as `Refused` with `SyntaxError` is.
     RefusedAggregateAdded,
+    /// `Threw` with `AggregateError` and no message is answered `invalid-end`: an
+    /// `AggregateError` taken to need a message. swell 0.9.0's `new AggregateError([])` sets no
+    /// message (`story:swell-0-9-0`, decision 4: it ends `threw AggregateError 1:1`).
+    ThrewAggregateWithoutMessageRefused,
+    /// A record of `AggregateError` with no message is stored with the message
+    /// `AggregateError`: the kind's name written where swell gave none.
+    AggregateMessageInvented,
 }
 
 /// The `document` component's ports with one [`Plant`].
@@ -82,6 +89,9 @@ impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior f
         let aggregate = input.error_kind == Some(ScriptErrorKind::AggregateError);
         let refuse = match self.plant {
             Plant::ThrewAggregateRefused => aggregate && input.end == ScriptEnd::Threw,
+            Plant::ThrewAggregateWithoutMessageRefused => {
+                aggregate && input.end == ScriptEnd::Threw && input.message.is_none()
+            }
             _ => false,
         };
         if refuse {
@@ -117,6 +127,9 @@ impl<P: ScriptStorage> ScriptStorage for Planted<P> {
             Plant::AggregateStoredAs(kind) if aggregate => data.error_kind = Some(kind),
             Plant::StoredAsAggregate(kind) if data.error_kind == Some(kind) => {
                 data.error_kind = Some(ScriptErrorKind::AggregateError);
+            }
+            Plant::AggregateMessageInvented if aggregate && data.message.is_none() => {
+                data.message = Some("AggregateError".to_owned());
             }
             _ => {}
         }
@@ -405,4 +418,31 @@ fn adversary3_refused_aggregate_error_added_is_noticed() {
     let suite = script_end_suite();
     let missed = unnoticed_by(&suite, &[Plant::RefusedAggregateAdded], EXCLUDED);
     assert!(missed.is_empty(), "{missed:?}");
+}
+
+/// `Threw` with `AggregateError` and no message refused. The record swell 0.9.0 gives for
+/// `throw new AggregateError([])` has no message; a scenario that adds one fails this plant.
+#[test]
+fn adversary3_threw_aggregate_error_without_message_refused_is_noticed() {
+    let suite = script_end_suite();
+    let (total, failed) = not_passed(&suite, Plant::ThrewAggregateWithoutMessageRefused);
+    assert!(total > 0, "the narrowed suite holds no scenario");
+    assert!(
+        !failed.is_empty(),
+        "Threw AggregateError without a message answered invalid-end passes all {total} \
+         scenarios that issue AddScriptEnd"
+    );
+}
+
+/// A record of `AggregateError` without a message stored with the message `AggregateError`.
+#[test]
+fn adversary3_aggregate_error_message_invented_is_noticed() {
+    let suite = script_end_suite();
+    let (total, failed) = not_passed(&suite, Plant::AggregateMessageInvented);
+    assert!(total > 0, "the narrowed suite holds no scenario");
+    assert!(
+        !failed.is_empty(),
+        "an AggregateError without a message stored with the message \"AggregateError\" passes \
+         all {total} scenarios that issue AddScriptEnd"
+    );
 }
