@@ -1454,6 +1454,24 @@ check(document.lookupNamespaceURI(null) === HTML, "the document: its element's n
     );
 }
 
+/// `baseURI` charges a long `href` three times, one step per 64 bytes each: the walk that
+/// reads the `base` element's attributes, the parse, and the String it answers.
+#[test]
+fn base_uri_charges_its_href() {
+    let spent = |bytes: usize| {
+        let page = format!(
+            "<base href=\"https://example.com/{}\"><p></p>",
+            "a".repeat(bytes)
+        );
+        with_page(limits(), page, info(), |runner| {
+            steps(runner, "document.baseURI;")
+        })
+    };
+    let (long, short) = (spent(64_000), spent(64));
+    eprintln!("baseURI of a href of 64,000 bytes: {long} steps, of 64 bytes: {short}");
+    assert!(long >= short + 2_990, "{long} against {short}");
+}
+
 /// The three deviations of `baseURI` are named in the note of its row.
 #[test]
 fn the_deviations_of_base_uri_are_in_its_note() {
