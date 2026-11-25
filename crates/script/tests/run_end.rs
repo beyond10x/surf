@@ -1,9 +1,11 @@
-//! An interrupt that is set when a script ends is the script's end: the runner asks before it
-//! reads a thrown value and before the checkpoint, and again after a checkpoint that emptied
-//! the queue. A test slice's `Window.document` getter, once armed by `getElementById`, sets the
-//! agent's interrupt at the end of a script or of a job, where the wall clock's thread sets it
-//! when its bound passes there; a getter's answer is followed by no read of the flag, so it is
-//! still set when the run answers.
+//! An interrupt that is set when a script ends is the script's end: the runner asks whether
+//! the wall clock ran out or the interrupt is set before it reads a thrown value and before
+//! the checkpoint, and again after a checkpoint that emptied the queue. A test slice's
+//! `Window.document` getter, once armed by `getElementById`, sets the agent's interrupt. swell
+//! reads the flag at the next call, loop jump or return and after a function called from Rust,
+//! so a throw right after the getter ends the run with the flag still set, while a script that
+//! runs on to its end, or a job whose function answers, has it taken by swell. A clock that
+//! ran out is the runner's own question: a bound of 0 makes it so at the first script's end.
 
 use std::cell::Cell;
 use std::time::Duration;
@@ -14,7 +16,7 @@ use surf_script::bindings::{
     Attributes, DomCx, DomEnd, DomException, DomResult, Interface, Mutation, Reading, Selectors,
     Slices, TheWindow, Wrap, end_with_limit, new_wrapper, wrapper_node,
 };
-use surf_script::{Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, run_document};
+use surf_script::{Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, run, run_document};
 use swell::{Completion, Limits, Value};
 
 /// What the next read of `Window.document` does.
@@ -151,8 +153,9 @@ fn ends(source: &str) -> (ScriptEnd, bool, ScriptEnd) {
     .expect("a runner with the bindings")
 }
 
-/// A script that ended normally with an empty queue while the interrupt is set ends
-/// `limit: wall-clock`, and the flag is withdrawn: the next script runs.
+/// A script whose last statement sets the interrupt and that then ends normally with an empty
+/// queue ends `limit: wall-clock` (swell's read at the script's return takes the flag), and no
+/// flag is left: the next script runs.
 #[test]
 fn a_normal_end_with_the_interrupt_set_ends_at_the_wall_clock() {
     let end = ends("var G = this; G.document.getElementById(\"set\"); G.document;");
@@ -200,11 +203,11 @@ fn a_recorded_limit_and_a_throw_end_at_the_limit_and_run_no_job() {
     );
 }
 
-/// A script that ran and whose one job set the interrupt and then threw: the checkpoint
-/// emptied the queue and answered normally with the flag still set, and the script ends
-/// `limit: wall-clock` with the flag withdrawn, so the next script runs.
+/// A script that ran and whose one job set the interrupt and then threw: swell reads the flag
+/// after the job's function answered, the checkpoint ends there and the script ends
+/// `limit: wall-clock`; no flag is left, so the next script runs.
 #[test]
-fn a_job_that_leaves_the_interrupt_set_ends_the_script_at_the_wall_clock() {
+fn a_job_that_sets_the_interrupt_and_throws_ends_the_script_at_the_wall_clock() {
     let end = ends(
         "var G = this; Promise.resolve().then(function () { \
          G.document.getElementById(\"throw\"); G.document; });",
@@ -212,5 +215,25 @@ fn a_job_that_leaves_the_interrupt_set_ends_the_script_at_the_wall_clock() {
     assert_eq!(
         end,
         (ScriptEnd::Limit(Reason::WallClock), false, ScriptEnd::Ran)
+    );
+}
+
+/// A wall-clock bound of 0: the clock ran out when the first script ends, whether or not its
+/// thread set the interrupt yet. The script, which ran to its end and queued one job, ends
+/// `limit: wall-clock` with no checkpoint run, and the next script is `not run: wall-clock`.
+#[test]
+fn a_clock_that_ran_out_at_a_normal_end_ends_the_script_at_the_wall_clock() {
+    let mut limits = limits();
+    limits.wall_clock = Duration::ZERO;
+    let ends = run(limits, Mode::Test, |runner| {
+        [runner.evaluate(JOB), runner.evaluate("1")]
+    })
+    .expect("a runner");
+    assert_eq!(
+        ends,
+        [
+            ScriptEnd::Limit(Reason::WallClock),
+            ScriptEnd::NotRun(Reason::WallClock)
+        ]
     );
 }

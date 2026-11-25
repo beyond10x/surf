@@ -328,17 +328,20 @@ in `Terminated(Interrupted)`, at the start of every outermost entry, at each cha
 in the interpreter's own checks (`crates/swell/src/host/agent.rs:965-993 @ 0.10.0`,
 `crates/swell/src/interp/budget.rs:34-41 @ 0.10.0`). If so, the script ends `limit: wall-clock`,
 or with the limit the bindings recorded (the rule above); no text of a thrown value is read, no
-checkpoint runs, the queue is cleared and the flag withdrawn. The flag can be set at that point:
-the wall clock's thread sets it at any instant, and a getter of the bindings that sets it and
-then answers or throws is followed by no read of it (the tests of
-`crates/script/tests/run_end.rs`). The read of a thrown `DOMException`'s text is a run of engine
-calls, and the first takes a flag set after the question: that read answers that the run ended,
-and the script ends as above, not with a record without a message (`Runner::exception_text`).
-After a checkpoint that emptied the queue the runner asks again, because the checkpoint reads the
-flag only before it takes a job off (`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`): a script
-whose run and jobs ended well while the clock ran out or a job left the flag set ends `limit:
-wall-clock`. The next script of the document is `not run: wall-clock` when the clock ran out (the
-table's row); a flag set while the clock had not run out leaves the next script to run.
+checkpoint runs, the queue is cleared and the flag withdrawn. A run that throws can answer with
+the flag set: a getter of the bindings that sets it, and then throws or is followed by a
+`throw`, meets no read of it (the tests of `crates/script/tests/run_end.rs`). A run that ends
+normally has the flag taken by swell's read at the script's return, and a job by the read after
+its function answered; at those ends, and at any end, the wall clock's thread can set the flag
+or the clock can run out after swell's last read, and the runner's question takes that case. The
+read of a thrown `DOMException`'s text is a run of engine calls, and the first takes a flag set
+after the question: that read answers that the run ended, and the script ends as above, not with
+a record without a message (`Runner::exception_text`). After a checkpoint that emptied the queue
+the runner asks again, because the checkpoint reads the flag only before it takes a job off
+(`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`): a script whose run and jobs ended well while
+the clock ran out before the runner returned ends `limit: wall-clock`. The next script of the
+document is `not run: wall-clock` when the clock ran out (the table's row); a flag set while the
+clock had not run out leaves the next script to run.
 
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,

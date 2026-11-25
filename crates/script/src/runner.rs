@@ -784,8 +784,8 @@ impl Runner {
     /// `refused`), and the script's end after it. Its steps, which `last_entry_steps()` reads
     /// for the whole checkpoint also after a termination (HOST-197), are added to the total.
     /// `Normal` leaves `end`, unless the wall clock ran out or the interrupt is set when it
-    /// answered: a job that set the flag and then threw leaves it set when no job follows,
-    /// because the checkpoint reads the flag only before an entry is taken off
+    /// answered, which the wall clock's thread can make so after the last job: the checkpoint
+    /// reads the flag only before an entry is taken off
     /// (`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`), and the end is then the run's
     /// ([`Runner::at_run_end`]). A termination is read as a script's is ([`terminated`]); the
     /// answer is then passed through [`Runner::document_end`], so a DOM limit a job recorded
