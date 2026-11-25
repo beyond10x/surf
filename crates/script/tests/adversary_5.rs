@@ -22,7 +22,7 @@ use swell::{Completion, Limits, Outcome, Value};
 
 const PAGE: &str = "<!DOCTYPE html><html><head></head><body><p>a</p></body></html>";
 
-const PRELUDE: &str = r#"
+pub(crate) const PRELUDE: &str = r#"
 var G = this;
 function check(holds, what) { if (!holds) { throw new Error(what); } }
 var document = G.document;
@@ -40,7 +40,7 @@ function churn(mib) {
 /// code units.
 const BUDGET: u64 = 4 << 20;
 
-fn limits(memory_bytes: u64, string_length: u64) -> RunnerLimits {
+pub(crate) fn limits(memory_bytes: u64, string_length: u64) -> RunnerLimits {
     RunnerLimits {
         engine: Limits {
             steps_per_entry: 200_000_000,
@@ -88,10 +88,16 @@ impl Reading for TestReading {
 
     fn document_get_element_by_id(
         &mut self,
-        _cx: &mut DomCx<'_, '_>,
+        cx: &mut DomCx<'_, '_>,
         _this: NodeId,
         element_id: String,
     ) -> DomResult<Option<NodeId>> {
+        // The fourth pass: the interrupt set by the slice that throws, as a watchdog may set
+        // it between the throw and the record (adversary_6).
+        if element_id == "interrupt" {
+            cx.interrupt().interrupt();
+            return Err(DomEnd::Throw(DomException::new("N", "m")));
+        }
         match element_id
             .strip_prefix("throw:")
             .and_then(|n| n.parse().ok())
@@ -149,20 +155,20 @@ fn document() -> Document {
     }
 }
 
-fn with<R: Send>(limits: RunnerLimits, body: impl FnOnce(&mut Runner) -> R + Send) -> R {
+pub(crate) fn with<R: Send>(limits: RunnerLimits, body: impl FnOnce(&mut Runner) -> R + Send) -> R {
     run_document(limits, Mode::Test, document, body).expect("a runner with the bindings")
 }
 
-fn evaluate(runner: &mut Runner, source: &str) -> ScriptEnd {
+pub(crate) fn evaluate(runner: &mut Runner, source: &str) -> ScriptEnd {
     runner.evaluate(&format!("{PRELUDE}{source}"))
 }
 
-fn ran(runner: &mut Runner, source: &str) {
+pub(crate) fn ran(runner: &mut Runner, source: &str) {
     let end = evaluate(runner, source);
     assert_eq!(end, ScriptEnd::Ran, "{end}");
 }
 
-fn collect(runner: &mut Runner) {
+pub(crate) fn collect(runner: &mut Runner) {
     for _ in 0..2 {
         let collected = runner.agent_and_realm().0.collect();
         assert!(matches!(collected, Ok(Outcome::Normal(_))), "{collected:?}");
@@ -342,7 +348,7 @@ fn the_record_of_an_uncaught_exception_of_a_long_message_is_cut() {
 
 /// The peak resident bytes of this process (`VmHWM` of `/proc/self/status`, Linux). Each test
 /// runs in a process of its own under cargo-nextest.
-fn peak_resident_bytes() -> u64 {
+pub(crate) fn peak_resident_bytes() -> u64 {
     let status = std::fs::read_to_string("/proc/self/status").expect("/proc/self/status");
     let line = status
         .lines()
@@ -356,23 +362,41 @@ fn peak_resident_bytes() -> u64 {
     kib * 1024
 }
 
-/// Held. `DOMException.code` in a loop: the copy of the name is dropped when the getter returns
-/// and steps are charged for it (`prelude.rs:441-455`, one step per 64 bytes): 1,000 reads of a
-/// name of 2^14 code units of three-byte characters charge at least 1,000 × 768 steps, and a
-/// step budget under that ends the script `limit: steps`.
+/// Held, rewritten in the fourth pass on ruling 1 of fix round 3: `DOMException.code` copies a
+/// name of at most 26 code units (the longest legacy name), so each copy is bounded and
+/// dropped when the getter returns; a longer name is not copied (code 0 from its length), and
+/// a loop of reads of either ends at the step limit. Each loop counts its rounds: a read of
+/// `code` of a name of 2^14 code units of U+0800 costs about what a read of `name` costs (a
+/// copy would charge 768 steps per read, one per 64 bytes of its 48 KiB), so the loop of
+/// `code` makes more than half the rounds of the loop of `name`.
 #[test]
-fn the_code_getter_in_a_loop_charges_its_copies() {
+fn the_code_getter_in_a_loop_copies_at_most_a_legacy_name_and_ends_at_the_step_limit() {
     let mut small = limits(64 << 20, 1 << 20);
-    small.engine.steps_per_entry = 500_000;
+    small.engine.steps_per_entry = 1_000_000;
     let started = Instant::now();
-    let end = with(small, |runner| {
-        evaluate(
+    let ends = with(small, |runner| {
+        ran(
             runner,
-            r#"var e = new DOMException("m", "\u0800".repeat(1 << 14));
-               for (var i = 0; i < 1000; i++) { check(e.code === 0, "code"); }"#,
-        )
+            r#"G.e = new DOMException("m", "\u0800".repeat(1 << 14));
+               G.f = new DOMException("m", "NoModificationAllowedError");
+               G.g = new DOMException("m", "\u0800".repeat(26));
+               G.rounds = [0, 0, 0];"#,
+        );
+        let ends = [
+            r#"for (;;) { check(G.f.code === 7 && G.g.code === 0, "code"); G.rounds[0]++; }"#,
+            r#"for (;;) { check(G.e.name.length === 16384, "name"); G.rounds[1]++; }"#,
+            r#"for (;;) { check(G.e.code === 0, "code"); G.rounds[2]++; }"#,
+        ]
+        .map(|source| evaluate(runner, source));
+        ran(
+            runner,
+            r#"check(G.rounds[2] * 2 > G.rounds[1] && G.rounds[0] > 1000, "rounds " + G.rounds);"#,
+        );
+        ends
     });
-    assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
+    for end in ends {
+        assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
+    }
     let seconds = started.elapsed().as_secs_f64();
     assert!(seconds < 20.0, "{seconds} s");
 }

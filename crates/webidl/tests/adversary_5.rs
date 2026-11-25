@@ -155,6 +155,53 @@ fn an_interface_or_a_dictionary_named_self_is_refused() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// Held. The registry's own kinds hold across kinds: an interface `Of` (the prelude's
+/// `fn interface_of`), a dictionary `RawD` beside a dictionary `D` (both `RawD`), a dictionary
+/// `Totals` (a `pub struct` of the prelude) and a dictionary `Interface` (the generator's
+/// enum): each refused naming both. The
+/// implementor's mutant list calls the claim of `value interface_x` equivalent; the first case
+/// is a pair only that claim refuses.
+#[test]
+fn names_of_two_kinds_that_meet_are_refused() {
+    let cases = [
+        (
+            "interface Of {\n  readonly attribute DOMString x;\n};\n".to_string(),
+            "Of",
+            "Of x reading\n",
+        ),
+        (
+            "dictionary D {\n  boolean a = false;\n};\ndictionary RawD {\n  boolean b = false;\n};\n\
+             interface Node : EventTarget {\n  undefined a(optional D d = {});\n  undefined b(optional RawD d = {});\n};\n"
+                .to_string(),
+            "Node",
+            "Node a mutation\nNode b mutation\n",
+        ),
+        (
+            "dictionary Totals {\n  boolean a = false;\n};\n\
+             interface Node : EventTarget {\n  undefined a(optional Totals d = {});\n};\n"
+                .to_string(),
+            "Node",
+            "Node a mutation\n",
+        ),
+        (
+            "dictionary Interface {\n  boolean a = false;\n};\n\
+             interface Node : EventTarget {\n  undefined a(optional Interface d = {});\n};\n"
+                .to_string(),
+            "Node",
+            "Node a mutation\n",
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (extra, definitions, rows) in &cases {
+        match generated_with(extra, definitions, rows) {
+            Ok(_) => wrong.push(format!("{rows}: generated")),
+            Err(error) if error.contains("both written") => {}
+            Err(error) => wrong.push(format!("{rows}: {error}")),
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// Red (note). Web IDL's identifier allows a hyphen (`/[_-]?[A-Za-z][0-9A-Z_a-z-]*/`);
 /// `identifier` writes it `_` for a member, an argument or a field, but `camel` and `snake` keep
 /// it in the names of a dictionary: `dictionary Foo-Bar` is written `pub struct Foo-bar` and
