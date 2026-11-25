@@ -21,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -47,7 +47,7 @@ What exists before it, and what this story only calls:
 - the bindings and `DomCx` of `story:webidl-bindings`, and its rule `Runner::document_end` in
   `crates/script/src/runner.rs` that maps an interrupted entry to the limit `DomCx` recorded,
   otherwise to `limit: wall-clock`;
-- swell `0.9.0` and the microtask checkpoint after each script of `story:swell-0-9-0`, its steps
+- swell `0.10.0` and the microtask checkpoint after each script of `story:swell-0-9-0`, its steps
   in the step total and its end taken as the script's end;
 - the reading slice and the document over a parsed tree (`story:scripts-dom-reading`);
 - the hook, which reports each script element it runs and each it skips with a word of Q1's line
@@ -135,7 +135,7 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
 5. The values of Q4 were measured without bindings or DOM; this story measures them again with both
    (steps per second in the test profile and in release, the heap of a realm with the bindings,
    whether a page with more than 1,000 scripts reaches the script count) with probes in the session
-   scratch directory, never committed. The measurements are taken on swell's tag `0.9.0`, which
+   scratch directory, never committed. The measurements are taken on swell's tag `0.10.0`, which
    `story:swell-0-9-0` takes before this story. A value holds if a script at that limit ends with that
    limit's end word. Where one does not hold, the story changes it where it lives in code (the
    agent's limits, the wall-clock bound and the stack in `crates/script/src/runner.rs`; the

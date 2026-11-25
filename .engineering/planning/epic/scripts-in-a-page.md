@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 54
+revision: 55
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -180,8 +180,8 @@ The form chosen (S1, option a): that git dependency, on a release tag. What chan
   the same change.
 - Which tag: page scripts run only on a tag that holds the fixes of "From the security review of
   2026-11-22". `0.2.0` may enter for tests of the engine without a page; the tag that runs a
-  page's script is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by
-  `story:swell-0-9-0`.
+  page's script is `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, which holds the
+  fixes of `0.9.0`, taken by `story:swell-0-9-0`.
 
 Two things hold in this form: swell's `[profile.*] overflow-checks = true` (its root
 `Cargo.toml`) does not apply inside surf's build, because cargo reads profiles from the root
@@ -484,7 +484,7 @@ story of those waves writes.
     and a wall-clock interrupt, writes each script's end, and the session shows the two examples
     of "Outcome" (`surf-agent look`, and the document's rows); `surf <url>` keeps running no
     script, tested; the `noscript` rule. Depends on 4, 5, 7, 9, 10,
-    `story:html-document-port`, and swell `0.9.0`, taken by `story:swell-0-9-0`. Writes
+    `story:html-document-port`, and swell `0.10.0`, taken by `story:swell-0-9-0`. Writes
     `crates/surf/src/lib.rs`, `crates/session/`, `crates/page/src/lib.rs`,
     `conformance/src/target.rs`, `docs/agent-answer.md`, and only a test in
     `crates/surf-cli/tests/`. **Waits for
@@ -608,8 +608,8 @@ reviews of `docs/design/scripts.md`:
 
 - The tag of swell (Q13 of the note): `story:scripts-engine-dependency` pins swell `0.8.0`.
   `story:scripts-document-port`, which lets a page's scripts run in a session, runs on the swell
-  tag that holds requirement 11 (Q18 of the note): that tag is `0.9.0`, commit
-  `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0` before it. Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
+  tag that holds requirement 11 (Q18 of the note): that tag is `0.10.0` (the newest that holds it; `0.9.0` is the first), commit
+  `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, taken by `story:swell-0-9-0` before it. Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
   until they are charged, the only bound on them is the session's address-space backstop.
 - Which sessions get which bound (Q11): no new privileges and no core file for every session;
   the address-space, CPU and open-files bounds for a session opened with scripts only. Reason:
@@ -632,7 +632,7 @@ reviews of `docs/design/scripts.md`:
 
 A security review of surf and swell of 2026-11-22 names two conditions for running page scripts. The operator forwarded it: "Fix Swell's resource limits before Surf runs untrusted JavaScript."
 
-- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0`.
+- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is `0.10.0` (`0.9.0` is the first that holds them), commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, taken by `story:swell-0-9-0`.
 - Before a session process runs a script, its environment is reduced to what it needs (today it inherits the caller's environment but two variables of surf), its privileges of the operating system are restricted, and it has resource limits of its own. This is part of the candidate story `scripts-hostile-pages` or a story before it.
 
 ## The DOM from Web IDL
@@ -814,7 +814,7 @@ script wrote in its page line (example 1), with the option off by default. It ne
 candidate stories: `scripts-decisions`, `webidl-reader`, `scripts-engine-dependency`,
 `scripts-spec`, `session-process-hardening`, `webidl-bindings`, `html-script-hook`,
 `scripts-dom-reading`, `scripts-dom-mutation`, `scripts-dom-attributes` (example 2 comes in the same
-story) and `scripts-document-port`, with `story:html-document-port` and swell `0.9.0`, the tag that
+story) and `scripts-document-port`, with `story:html-document-port` and swell `0.10.0`, the newest tag that
 holds the review's fixes, taken by `story:swell-0-9-0`. After it, without blocking it: `scripts-dom-selectors`,
 `scripts-html-conformance` and `scripts-hostile-pages`, which the epic's acceptance needs. Of the
 11, `scripts-decisions` and `webidl-reader` start now, three more after the note, and the rest

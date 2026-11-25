@@ -25,6 +25,8 @@ scope:
 - confidence: cited
   path: crates/html/src/tree_builder/modes.rs
 - confidence: cited
+  path: crates/html/tests/adversary_tree_state.rs
+- confidence: cited
   path: crates/html/tests/main.rs
 - confidence: cited
   path: crates/html/tests/tree_state.rs
@@ -41,6 +43,10 @@ scope:
 - confidence: cited
   path: crates/script/src/lib.rs
 - confidence: cited
+  path: crates/script/src/runner.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
@@ -50,6 +56,8 @@ scope:
   path: crates/webidl/src/generate.rs
 - confidence: cited
   path: crates/webidl/src/prelude.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object.rs
 - confidence: cited
   path: crates/webidl/tests/main.rs
 - confidence: cited
@@ -66,7 +74,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 27
+revision: 35
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -269,7 +277,14 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    (`crates/html/src/tree.rs:455-463`) and is charged by its length. The sibling members are not
    in this list: decision 9 gives them their own rule. A String a member returns is made by
    `Cx::new_string`, which the engine charges, and one beyond `string_length` (16,777,216,
-   `runner.rs:46`) is a `RangeError` (`docs/design/scripts.md:307`). A reading member calls no
+   `runner.rs:46`) is a `RangeError` (`docs/design/scripts.md:307`). swell at the pin applies
+   `string_length` only to a String its own operations create, and `Cx::new_string` does not
+   check it. So the glue's one conversion of a member's String answer throws the `RangeError`
+   itself, before `Cx::new_string`: it counts UTF-16 code units against the limit the agent
+   was made with, and counts only an answer of more bytes than the limit. A member of the slice
+   does not build what is thrown away: a copy of one node's data is checked before the copy,
+   and a member that concatenates stops when what it gathered passes the limit. The error is
+   the realm's `RangeError`, which a script can catch. A reading member calls no
    `to_utf16` and no `to_rust_string_lossy`: its String arguments reach it as Rust strings copied
    by `Copies::copy` (`bindings.rs:553`), with a lone surrogate written U+FFFD
    (`selection.txt:24`).
@@ -280,9 +295,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    requirements.txt` in a clone of swell) and the report holds them (acceptance 15). There is no
    edge between this story and `story:swell-0-9-0`: the two are built in separate trees and merged
    one after the other. They write the same files (Placement), so whichever merges second merges
-   `main` first and takes its numbers from its own log, as `swell-0-9-0.md:556-562` says for its
-   pair with `story:script-error-kind-aggregate`; if swell's story merged first the pin is its
-   tag and the rows are read there.
+   `main` first and takes its numbers from its own log, as the Placement of that story says for
+   this pair; if swell's story merged first the pin is its tag and the rows are read there.
 9. Sibling reads keep position hints in the slice, and `Tree` gets no sibling read. `Tree` has no
    sibling read, so a sibling member would scan the parent's children: `nextSibling` over `n`
    siblings visits about `n * n / 2` nodes, which passes the 10,000,000 steps of an entry
@@ -334,10 +348,22 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       overrides both methods. With the defaults a getter makes a new object per read, as today:
       the four `TestWrap` implementations compile unchanged and their getters do not hold
       `[SameObject]`; only `SurfWrap` does (a test pins both, acceptance 4).
-    - The write counter. `Tree` gains `writes(&self) -> u64`, raised by every public write of
-      `Tree`, by `create` and by every write of the parser, kept out of `PartialEq` by a newtype
-      as the unit keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved` can
-      serve (Context).
+    - The write counter. `Tree` gains `writes(&self) -> u64`, kept out of `PartialEq` by a
+      newtype as the unit keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved`
+      can serve (Context). It is raised by each write that changes a child list, that is each
+      function that assigns a node's `children` or `parent`, a parse's inserts included, and by
+      nothing else. A write that changes only a node's `data` or its attributes does not raise it
+      (`set_attribute`, `set_attribute_ns`, `remove_attribute`, `remove_attribute_ns`,
+      `toggle_attribute`, `add_attributes`; `replace_data`, `set_data`, `append_data`,
+      `insert_data`, `delete_data`; `push_text`, which only extends an existing text), and neither
+      does `create` or a `create_*` function, which adds a node to the arena and to no child list.
+      A function that can do both raises it when it changes a child list (`set_text_content`,
+      `normalize`, `split_text`). The reason for the narrow rule: the counter exists only to
+      refill the kept `childNodes` and `children` objects. If every write raised it, a loop
+      `for (i = 0; i < p.children.length; i++) p.children[i].className = "x"` (the attribute
+      slice's members, a later story) would read the kept object twice per turn after a write
+      that changed no child list, cost `2 * n * n` steps and end `limit: steps-per-script` at
+      about 2,236 children, as the loop below does.
       The reason it exists: `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` reads
       the attribute twice per turn; refreshed at each read at one step per node, a parent of `n`
       children costs `2 * n * n` steps against 10,000,000 (`runner.rs:41`), so `n` of about 2,236
@@ -419,6 +445,46 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     the epic's lines 464-468, 342-343, 854, 749-754, 704-705, 716-724, 910, 919-920 and 925-927;
     `story:scripts-parse-run` by a paragraph that gives it the `DocumentInfo` duty, and
     `story:swell-0-9-0` by a sentence in its Placement.
+17. What the review of the unit's first tip found, as rules. Each narrows the decision it names
+    and wins where the two differ.
+    - The refill of a kept collection is all or nothing (decision 10). A kept `childNodes` or
+      `children` object is a snapshot: its data (`length`, `item`, `namedItem`) and its index
+      properties always show the same list. The refill writes the new nodes in place with
+      define and never with set, so no script code runs in a refill and a setter a script put
+      at an index is not called; it deletes the tail and writes the data and `written` last. If
+      a step fails (the script froze or sealed the object, made it non-extensible or made an
+      index non-configurable), the refill puts back what it wrote, leaves the data and `written`
+      untouched, and the getter throws a `TypeError`. The object is then the old snapshot,
+      whole, and each later read of the getter tries again. No index at or past `length`
+      answers a node the glue put there. This is a deviation: a browser refuses the freeze or
+      the define on the collection itself. The notes of the four rows and the design note name
+      it.
+    - A member charges what it does (decision 7). No member does work of `k * m` behind a charge
+      of one. `getElementsByClassName` takes its argument as an ordered set (duplicates dropped,
+      as the DOM says), charged one step per 64 bytes, and charges per element one step and one
+      per 64 bytes of its `class` attribute before a scan that is linear in those bytes.
+      `documentElement`, `doctype` and the lookups that start at the document charge one step
+      per child of the document they scan. The reason: an interrupt is taken only after a host
+      call, so one call whose time is not bounded by its steps runs past the wall clock.
+    - `baseURI` (decision 13): the first `base` with an `href` decides; if its URL does not
+      parse or its scheme is `data` or `javascript`, the answer is the fallback base URL, as
+      "set the frozen base URL" says. A later `base` is not read instead.
+    - A sibling hint holds two positions per parent, the two last answered (decision 9), so a
+      parent read from both ends in turn stays linear. The table keeps its eight entries.
+    - `lookupNamespaceURI`, `lookupPrefix` and `isDefaultNamespace` on a `DocumentType` and a
+      `DocumentFragment` answer what the DOM's "locate a namespace" and "locate a namespace
+      prefix" answer there, null also for the prefixes `xml` and `xmlns`.
+    - `substringData` answers UTF-16 code units: a cut inside a surrogate pair answers the lone
+      half. The answer is made with `Cx::new_string_utf16`; the length check of decision 7 and
+      the charge per 64 bytes apply; the member walks to its offset and does not convert the
+      whole data.
+    - The write counter is not raised by an insert that moves no node, such as an empty
+      `DocumentFragment` appended (decision 10: "by nothing else").
+    - The generator refuses a `[SameObject]` row it cannot hold (an attribute of the global or
+      of a non-node interface that returns a collection) with an error that names the row.
+    - An `HTMLCollection` has no named properties: `collection["id"]` is undefined and
+      `namedItem` answers. A named deviation in the notes of its rows; a later story builds
+      them.
 
 ## Change
 
@@ -458,6 +524,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
   (the file's lines 14-16); `Cargo.lock`: `"surf-url",` in the entry of `surf-script`, between
   `"surf-secret",` and `"swell",`. Nothing of `taskfiles/` changes (Context).
 - `crates/script/src/lib.rs`: the head comment, which says "No DOM yet" (line 5).
+- `crates/script/src/runner.rs`: `ScriptHost` carries the agent's `string_length`
+  (`ScriptHost::new(mode, string_length)`, a public read `string_length()`, and the one call in
+  `Runner::new` that passes `limits.engine.string_length`), for the length check of decision 7.
+  No other line of the file changes.
 - `[SameObject]` (decision 10), in the generator's files and their outputs:
   - `crates/webidl/src/generate.rs` and `crates/webidl/src/prelude.rs`: the enum `SameObject`,
     the getters of the four rows, the two provided methods of `Wrap` and the field `written`,
@@ -476,14 +546,20 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     last line change (`bindings.rs:40-61`).
 - `crates/html/src` (decisions 10 and 11), the files named here and no others: `tree.rs` (the
   mode field, `quirks_mode()`, the counter newtype and `writes()`, the constructors, the raise
-  of the counter at each function that assigns a node's `children`, `parent`, `data` or
-  attributes, and at `create`, which adds a node to the arena: on the unit `create` `:296`,
-  `insert` `:404`, `remove` `:471`, `remove_children` `:485`, `move_children` `:495`,
-  `push_text` `:444`, `add_attributes` `:455`, `insert_checked` `:927`, `clone_node` `:1137`,
-  `split_text` `:1298`, `replace_data` `:1320`, `put_attribute` `:1435`, `drop_attribute` `:1463`,
-  `normalize` `:1243`, `set_text_content` `:1375`; the implementor greps the assignments to
-  `self.nodes[...]` for any other, and checks this list against the unit's `tree.rs` at the
-  merge of this story: a write function added after this story names it is added to the list),
+  of the counter at each function that assigns a node's `children` or `parent`: on the unit
+  `insert` `:404`, `remove` `:471` (when the node has a parent), `remove_children` `:485` and
+  `move_children` `:495` (when a child moves), `insert_checked` `:927` (after its return for a
+  node already in place) and `clone_node` `:1137` (when a copy gets a child: a deep clone of a
+  node with children, or of a `template`). `insert_new`, `detach`, `remove_node`, `adopt_node`,
+  `insert_before`, `append_child`, `replace_child`, `move_before`, `split_text` (with a parent),
+  `normalize` (when it removes a node) and `set_text_content` (when it removes or adds a child)
+  raise it through those, with no site of their own. Left out, because they assign `data` or
+  attributes or add a node to no child list: `create` `:296` and the `create_*` functions,
+  `push_text` `:444`, `add_attributes` `:455`, `put_attribute` `:1435`, `drop_attribute` `:1463`,
+  `replace_data` `:1320` and the functions on it, `set_attribute` and the other attribute
+  writes; the implementor greps the assignments to `self.nodes[...]` for any other, and checks
+  this list against `tree.rs` at the merge of this story: a write function added after this story
+  names it is added to the list),
   `tree_builder.rs` (`QuirksMode` public, `Parsed.quirks_mode` and its `allow` removed, the three
   tests), `tree_builder/modes.rs` (the two writes at `:207` and `:217`) and `lib.rs` (the
   re-export). Tests: `crates/html/tests/
@@ -522,7 +598,7 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
 3. Collections.
    a. `for (x of document.childNodes)`, `[...nodes]`, `nodes.length`, `nodes.item(i)`,
       `nodes[i]`, `nodes.forEach`, and the same node object from a collection and from a direct
-      member (`document.body.childNodes[0] === document.body.firstChild`).
+      member (`document.documentElement.childNodes[0] === document.documentElement.firstChild`).
    b. `HTMLCollection.namedItem` by `id` and by `name` on an HTML element.
    c. `namedItem("")` is `null`; `namedItem("missing")` is `null`.
    d. An `svg` element with a `name` attribute is not found by that name, and one with an `id`
@@ -619,7 +695,13 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    h. `string_length`: a document of one text of 16,777,217 bytes, parsed under limits raised
       for the case (`max_input_bytes` and `max_stored_bytes`), makes `textContent` throw a
       `RangeError`; if the case does not run within 5 s or ends `limit: memory` first, the report
-      names its time and the end it reached and the case asserts that end instead.
+      names its time and the end it reached and the case asserts that end instead. A text of
+      16,777,216 units is read and its `length` is 16,777,216. The count is in UTF-16 units: a
+      text of more bytes than the limit and at most the limit's units is read, and an astral
+      character counts two. The `data` of one text beyond the limit and the `textContent` of
+      several texts that pass it only together throw the same error. After a caught
+      `RangeError` the same node answers `nodeName` and its parent's `childNodes` reads as
+      before.
    i. The loop `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` over 5,000 children
       ends `Ran`, with the steps under 15 times those of the same loop over 500 children (a
       refresh at each read gives 100 times). The loop calls `length` and reads index properties
@@ -658,12 +740,22 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        for the doctypes of the parser's own three tests, and `NoQuirks` for a fragment parse's
        tree.
     b. `writes()` is raised by a parse, and by each public write function of the unit's write
-       surface (`tree.rs:962-1561`: the `create_*` functions, `insert_before`, `append_child`,
-       `remove_node`, `replace_child`, `move_before`, `clone_node`, `import_node`, `adopt_node`,
-       `normalize`, `split_text`, `replace_data`, `set_data`, `append_data`, `insert_data`,
-       `delete_data`, `set_text_content`, `set_attribute`, `set_attribute_ns`,
-       `remove_attribute`, `remove_attribute_ns`, `toggle_attribute`), one case per function in a
-       table, on a successful write; a refused write may leave it.
+       surface that changes a child list, and left as it was by each that does not: one table,
+       one case per function, each asserting "raised" or "left as it was" on a successful write
+       (`tree.rs:962-1561`); a refused write may leave it.
+       - Raised: `insert_before`, `append_child`, `replace_child` and `move_before` (a node that
+         is already at that place is the "left as it was" case of each), `remove_node` and
+         `adopt_node` of a node with a parent.
+       - Left as it was: `create_element_ns`, `create_text_node`, `create_comment`,
+         `create_processing_instruction`, `create_document_fragment`; `replace_data`, `set_data`,
+         `append_data`, `insert_data`, `delete_data`; `set_attribute`, `set_attribute_ns`,
+         `remove_attribute`, `remove_attribute_ns`, `toggle_attribute`.
+       - One case per side: `remove_node` and `adopt_node` of a node with no parent (left);
+         `clone_node` and `import_node` of a node with no child (left) and a deep clone of one
+         with children (raised); `normalize` of a parent with two adjacent texts (raised) and
+         with none (left); `split_text` of a text with a parent (raised) and with none (left);
+         `set_text_content` on an element with a child, or with a non-empty value (raised), on an
+         empty element with the empty value, on a text node and on a document (left).
     c. Two trees that differ only in `writes()` compare equal; two that differ in the mode do not.
     d. The unit's tests, which compare a hooked tree with a plain parse, still pass.
 12. The repository's rules.
@@ -733,6 +825,31 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        `slot --timeout`, at most 30 minutes, and is not started again unchanged; every compiling
        or testing command carries `slot` (`slot cargo run -p surf-webidl --bin bindings`); a
        script that measures or waits starts without the `slot` prefix.
+17. The review's rules (decision 17), in the modules `adversary_dom_reading` of
+    `crates/script/tests`, `adversary_tree_state` of `crates/html/tests` and
+    `adversary_same_object` of `crates/webidl/tests`.
+    a. After a refill that failed, for each of the shapes frozen, sealed, non-extensible and
+       non-configurable index: the getter throws a `TypeError`, and `c.length`, `c.item(i)` and
+       `c[i]` agree for every `i` of the old list. After a failed refill and a later one to a
+       shorter list, no index at or past `length` answers a node. A setter a script put at an
+       index is not called by a refill.
+    b. `getElementsByClassName` of 5,000 wanted tokens against elements of 5,000 class tokens
+       ends `Ran` under the wall clock of 1 s, with steps that grow with the bytes scanned.
+    c. One test fails when the step charge of a walking member is removed, for each of
+       `getRootNode`, `isConnected`, `compareDocumentPosition`, `isEqualNode`, `children`,
+       `wholeText`, the sibling members and `baseURI`; `wrapper_limit` fails when a wrapper is
+       not kept; `collection_limit` fails when making a collection charges no step.
+    d. A `base` whose `href` is a `data:` or a `javascript:` URL gives the document's address as
+       `baseURI`.
+    e. 5,000 children walked from both ends in turn end `Ran`, with the steps under 15 times
+       those of 500 children.
+    f. `lookupNamespaceURI("xml")` on a doctype and on a fragment is null.
+    g. `substringData` cut inside a surrogate pair answers the lone half (`charCodeAt(0)` is the
+       half's unit, not 0xFFFD).
+    h. An empty fragment inserted leaves `Tree::writes()`; over random sequences of the public
+       writes the counter moves if and only if a child list changed.
+    i. The generator's run on a selection with a `[SameObject]` collection attribute of the
+       global ends with an error that names the row.
 
 ## Out of scope
 
@@ -771,13 +888,15 @@ They write `AGENTS.md`, `Cargo.lock`, `crates/script/Cargo.toml`, `crates/script
 and `docs/design/scripts.md`, and both rewrite the public surfaces (`README.md`,
 `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/how-it-is-built.md`,
 `website/docs/status.md`, `website/docs/what-works.md`). Whichever merges second merges `main`
-first and takes its numbers from its own log, as `swell-0-9-0.md:556-562` says for its pair with
-`story:script-error-kind-aggregate`. This story adds the line `surf-url` right after
+first and takes its numbers from its own log, as the Placement of `story:swell-0-9-0` says for
+this pair. This story adds the line `surf-url` right after
 `surf-secret` in `crates/script/Cargo.toml` and in the lock; swell's story changes the pin on the
 next line.
 
 The generator, `selection.txt` and `bindings.rs` are on `main` since `6bd9bc9`: this story changes
-them, and nothing else of the epic changes them in the same wave. `crates/script/src/lib.rs` and
+them, and nothing else of the epic changes them in the same wave. This story edits `runner.rs`
+only where `ScriptHost` is made (the Change); `story:swell-0-9-0` edits other lines of the file
+and the second merge keeps both. `crates/script/src/lib.rs` and
 `runner.rs` are written after it by `story:scripts-parse-run`, ordered by that story's edge; that
 story builds the `DocumentInfo` of a page (address as a `surf_url::Url`, the response's content
 type, the name of the encoding the parse decodes with) and calls `dom::slices(info)`, and
