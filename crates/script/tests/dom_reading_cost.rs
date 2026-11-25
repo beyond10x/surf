@@ -586,3 +586,14 @@ fn a_chain_as_deep_as_the_depth_bound() {
     });
     report("a chain as deep as the depth bound", &calls);
 }
+
+/// The members of `reading` read the tree only through its module of reads, whose functions
+/// charge before their loops: the source of `reading.rs` calls neither `tree()` nor
+/// `tree_mut()`, and charges nothing of its own.
+#[test]
+fn the_members_read_the_tree_only_through_the_reads() {
+    let source = include_str!("../src/dom/reading.rs");
+    for call in ["tree()", "tree_mut()", "charge("] {
+        assert!(!source.contains(call), "reading.rs holds `{call}`");
+    }
+}
