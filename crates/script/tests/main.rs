@@ -14,6 +14,7 @@ mod adversary_dom_reading_2;
 mod adversary_dom_reading_3;
 mod adversary_dom_reading_4;
 mod adversary_dom_reading_5;
+mod adversary_dom_reading_6;
 mod bindings;
 mod dom_attributes;
 mod dom_mutation;
