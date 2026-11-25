@@ -597,3 +597,58 @@ fn the_members_read_the_tree_only_through_the_reads() {
         assert!(!source.contains(call), "reading.rs holds `{call}`");
     }
 }
+
+/// `with_tree` under `limits` in place of the sweep's own.
+fn with_tree_under<R: Send>(
+    limits: RunnerLimits,
+    tree: impl FnOnce() -> Tree + Send,
+    body: impl FnOnce(&mut Runner) -> R + Send,
+) -> R {
+    run_document(
+        limits,
+        Mode::Test,
+        move || Document {
+            tree: tree(),
+            limits: raised(),
+            slices: slices(),
+        },
+        body,
+    )
+    .expect("a runner with the bindings")
+}
+
+/// A text of 1 MiB read under a `string_length` of 512 Ki units: its bytes are charged, one step
+/// per 16, before its code units are counted against the limit; the read is the `RangeError`.
+#[test]
+fn a_value_over_string_length_is_charged_before_it_is_measured() {
+    let tree = || {
+        let mut tree = parsed("<!DOCTYPE html><p id=\"l\"></p>".to_string())();
+        let found = elements(&tree, "p");
+        let long = tree.create_text_node(&"a".repeat(1 << 20)).expect("a text");
+        tree.append_child(found[0], long).expect("appended");
+        tree
+    };
+    let mut under = limits();
+    under.engine.string_length = 1 << 19;
+    let calls = with_tree_under(under, tree, |runner| {
+        let end = runner.evaluate("var G = this; G.l = document.getElementById('l').firstChild;");
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+        vec![
+            call(
+                runner,
+                "data of 1 MiB over a string_length of 512 Ki, caught",
+                "try { l.data; throw new Error('no RangeError'); } \
+                 catch (e) { if (!(e instanceof RangeError)) throw e; }",
+                (1 << 20) / 16,
+            ),
+            call(
+                runner,
+                "textContent of 1 MiB over a string_length of 512 Ki, caught",
+                "try { l.parentNode.textContent; throw new Error('no RangeError'); } \
+                 catch (e) { if (!(e instanceof RangeError)) throw e; }",
+                (1 << 20) / 16,
+            ),
+        ]
+    });
+    report("a value over string_length", &calls);
+}

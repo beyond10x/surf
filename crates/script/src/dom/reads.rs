@@ -221,19 +221,19 @@ fn system_id_of(data: &NodeData) -> &str {
 }
 
 /// The character data of `node` as `data`, `nodeValue` and `textContent` answer it, `None` for
-/// a node without: held to the agent's `string_length` (past it the `RangeError`), then one
-/// step per 16 bytes before the copy.
+/// a node without: one step per 16 bytes, before the data is measured against the agent's
+/// `string_length` (past it the `RangeError`) and copied.
 pub(super) fn copied(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<String>> {
     let limit = cx.string_length();
-    let Some(data) = character_data(cx.tree(), node) else {
+    let Some(bytes) = character_data(cx.tree(), node).map(str::len) else {
         return Ok(None);
     };
+    charge(cx, bytes / BYTES_A_STEP)?;
+    let data = character_data(cx.tree(), node).unwrap_or_default();
     if longer_than(data, limit) {
         return Err(DomEnd::StringLength);
     }
-    let steps = data.len() / BYTES_A_STEP;
-    charge(cx, steps)?;
-    Ok(character_data(cx.tree(), node).map(str::to_string))
+    Ok(Some(data.to_string()))
 }
 
 /// A String a member builds from pieces (`textContent`, `wholeText`, `title`), held to the
@@ -284,13 +284,13 @@ impl Gathered {
     }
 }
 
-/// Appends the data of the text `node` to `gathered`: admitted, charged at one step per 16
-/// bytes, then copied.
+/// Appends the data of the text `node` to `gathered`: its bytes charged at one step per 16, then
+/// admitted and copied.
 fn gather(cx: &mut DomCx<'_, '_>, gathered: &mut Gathered, node: NodeId) -> DomResult<()> {
-    let data = character_data(cx.tree(), node).unwrap_or_default();
-    gathered.admit(data)?;
-    let steps = gathered.steps(data.len());
+    let bytes = character_data(cx.tree(), node).map_or(0, str::len);
+    let steps = gathered.steps(bytes);
     charge(cx, steps)?;
+    gathered.admit(character_data(cx.tree(), node).unwrap_or_default())?;
     gathered.append(character_data(cx.tree(), node).unwrap_or_default());
     Ok(())
 }

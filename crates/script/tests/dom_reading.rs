@@ -2243,9 +2243,10 @@ fn a_name_past_string_length_is_a_range_error() {
     });
 }
 
-/// `data` and `nodeValue` past `string_length` throw before the copy: the read of 64,000 bytes
-/// costs the steps of the read of 1,025, not one per 64 bytes. The script catches the error and
-/// reads on: the same wrapper answers, and the parent's collection reads as before.
+/// `data` and `nodeValue` past `string_length` throw before the copy: the data's bytes are
+/// charged first, one step per 16, before its code units are counted against the limit, so the
+/// read of 64,000 bytes costs 3,936 steps more than the read of 1,025. The script catches the
+/// error and reads on: the same wrapper answers, and the parent's collection reads as before.
 #[test]
 fn data_past_string_length_throws_before_the_copy() {
     let page = format!("<p>{}</p><p>{}</p>", "a".repeat(1_025), "a".repeat(64_000));
@@ -2269,7 +2270,10 @@ fn data_past_string_length_throws_before_the_copy() {
         let short = steps(runner, "try { a.data; } catch (e) {}");
         let long = steps(runner, "try { b.data; } catch (e) {}");
         eprintln!("data past string_length: 1,025 bytes {short} steps, 64,000 bytes {long}");
-        assert!(long < short + 10, "{long} against {short}");
+        assert!(
+            (short + 3_930..short + 3_945).contains(&long),
+            "{long} against {short}"
+        );
     });
 }
 

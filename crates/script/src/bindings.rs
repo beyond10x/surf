@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 6966133d129966be9a1fd58a716b25b16a734e40a639e67f29448b1f2b8857ae  crates/webidl/src/prelude.rs
+//! d733233eaba2ef342587fc9bc7923bd30ad2e86be9084e6eeb55c3443e662a30  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 6d2d6e49062797346d97a898536ed44f27fc7b9f7e71a97ab84cf1a4685b6ec1
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 75c681fa5df24e40995cb80d519852602ca832e5eef02c9cab7f5ab569efa8b8
 
 use std::cell::Cell;
 
@@ -1259,15 +1259,16 @@ pub const COLLECTION_NODE_STEPS: u64 = 8;
 pub const STRING_BYTES_A_STEP: u64 = 16;
 
 /// A new String of `text`: the one conversion of a member's String answer, charged one step per
-/// [`STRING_BYTES_A_STEP`] bytes before the copy. swell applies `string_length` to a String its
-/// own operations create, not to one `Cx::new_string` makes, so a text longer than the agent's
-/// `string_length` is the realm's `RangeError` here, before the engine copies and charges it.
+/// [`STRING_BYTES_A_STEP`] bytes before its code units are counted and before the copy. swell
+/// applies `string_length` to a String its own operations create, not to one `Cx::new_string`
+/// makes, so a text longer than the agent's `string_length` is the realm's `RangeError` here,
+/// before the engine copies it.
 fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
     if longer_than(text, cx.string_length()) {
         return Err(string_length_error(cx));
     }
-    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
-    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
     cx.engine.new_string(text).map(Value::String)
 }
 

@@ -16,7 +16,7 @@
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
 //! engine copies it. The members here do not build what would be thrown away: `data`,
-//! `nodeValue` and a text's `textContent` check the data before they
+//! `nodeValue` and a text's `textContent` charge the data's bytes, then check it before they
 //! copy it, and the members that concatenate (`textContent`, `wholeText`, `title`) stop at the
 //! piece that would take the String past the limit, with the steps of what they read charged.
 //!

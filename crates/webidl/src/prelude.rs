@@ -1157,15 +1157,16 @@ pub const COLLECTION_NODE_STEPS: u64 = 8;
 pub const STRING_BYTES_A_STEP: u64 = 16;
 
 /// A new String of `text`: the one conversion of a member's String answer, charged one step per
-/// [`STRING_BYTES_A_STEP`] bytes before the copy. swell applies `string_length` to a String its
-/// own operations create, not to one `Cx::new_string` makes, so a text longer than the agent's
-/// `string_length` is the realm's `RangeError` here, before the engine copies and charges it.
+/// [`STRING_BYTES_A_STEP`] bytes before its code units are counted and before the copy. swell
+/// applies `string_length` to a String its own operations create, not to one `Cx::new_string`
+/// makes, so a text longer than the agent's `string_length` is the realm's `RangeError` here,
+/// before the engine copies it.
 fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
     if longer_than(text, cx.string_length()) {
         return Err(string_length_error(cx));
     }
-    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
-    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
     cx.engine.new_string(text).map(Value::String)
 }
 
