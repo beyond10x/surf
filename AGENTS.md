@@ -363,7 +363,7 @@ above, and the list of standards itself was written from memory.
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
-    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
+    swell 0.10.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
     swell and `surf-secret`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
     reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
@@ -1898,7 +1898,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   build turns it off; the lock is read only in the form cargo writes. Else it prints
   `Cargo.lock: <n> package(s), <m> from outside this repository, each on the allow-list`:
   58 and 25 today (`story:scripts-engine-dependency`; 51 and 19 before it). The list holds
-  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.8.0
+  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.10.0
   (`docs/design/scripts.md`, Q13 and Q15), one line `<name> <version> <source> <checksum>`
   each, sorted. It does not read `conformance/Cargo.lock`. A path dependency outside the
   repository has no `source` line and is not caught. The tests of
