@@ -16,7 +16,7 @@ scope:
   path: crates/session/tests
 - confidence: cited
   path: crates/surf/src/lib.rs
-revision: 7
+revision: 8
 ---
 ## Why
 
@@ -73,7 +73,8 @@ What the scripts epic needs from this story (`docs/design/scripts.md`, Q11, "The
 - The stated number of kept trees per session counts the document being parsed: with the
   current tree only, a session holds two trees while a `go` parses the next page.
 - The rows of a kept document include the records of its scripts' ends (Q7 of the note: owned
-  by the document through the relation `scripts`, at most 1,000 per document). They are deleted
+  by the document through the relation `scripts`, at most one for each node of its tree, so at
+  most 1,048,576; `story:scripts-parse-run`, acceptance 19). They are deleted
   or bounded with the document's other rows.
 - A document the session left holds no state of the script engine: the agent is dropped at the
   end of the document's parse (Q5 of the note). This story states it in "What it keeps" and

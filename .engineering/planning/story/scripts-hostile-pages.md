@@ -13,7 +13,7 @@ scope:
   path: crates/script/tests
 - confidence: cited
   path: crates/session/tests
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 9}
 ---
@@ -75,8 +75,8 @@ only: every behaviour it shows is written by an earlier story.
      and `steps_per_entry` `u64::MAX` through `parse_with_slices`, whose factory counts its calls.
      The ends are the second parse's, `limit: wall-clock` then `not run: wall-clock`;
      `stopped()` is `wall-clock`; the factory was called twice and not a third time; the call
-     took at least 400 ms (the clock of each parse ran its 200 ms) and under 600 ms (two bounds
-     plus the parse), so a third parse would show as a time over 600 ms and a count of 3.
+     took at least 400 ms (the clock of each parse ran its 200 ms); the count of 2 shows that no
+     third parse ran, and no upper time bound is asserted.
 2. `bound_with_script`: the test sets the address-space bound in `Config` to a constant of the
    case, `AS_BOUND_MIB`, written as the `VmPeak` of a session without scripts on the same page
    (measured once by a probe, the value and probe in the report) plus 64 MiB; a page of a few large

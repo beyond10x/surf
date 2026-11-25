@@ -15,7 +15,7 @@ scope:
   path: crates/script/src/dom/mutation.rs
 - confidence: cited
   path: crates/script/tests/dom_mutation.rs
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -79,8 +79,8 @@ with a test:
   the bytes the node stores, through `Cx::charge_host_bytes`
   (`crates/swell/src/host/mod.rs:577 @ 0.8.0`), the `HostBytes` kept until the agent is dropped
   (`docs/design/scripts.md`, Q4; requirement 3). An element a script connects that is a `script`
-  element gets the end `not run: inserted` through the function of `story:scripts-parse-run` (Q1,
-  Q7).
+  element gets the end `not run: inserted` through `record_inserted(cx, node)` of
+  `story:scripts-parse-run` (Q1, Q7).
 - `crates/script/tests/dom_mutation.rs`: the module `dom_mutation`, declared by
   `story:webidl-bindings`.
 - In the last commit, the public surfaces of acceptance 8.

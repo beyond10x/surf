@@ -29,7 +29,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 16}
 ---
@@ -58,11 +58,11 @@ passed`. The crate `surf-html-conformance` depends on `surf-html` only
    (`crates/html-conformance/src/runner.rs:6-7,126 @ a14e3b0` call `parse_document(&str)`);
    `parse_with_scripts` takes bytes, so the harness passes the case's input as its UTF-8 bytes,
    in a `Page` with the address `about:blank` and the content type `text/html`, and
-   `Config::SESSION`. An `Err(RunnerError)` is a failure of the harness's host, not a result of
-   the case: the run fails and does not count it as passed or as failed. A case input whose bytes
-   hold a `meta` that names another encoding after 1,024 bytes is parsed twice and runs a script
-   before it twice (`story:scripts-parse-run`, decision 10); no case of the suite is known to
-   do so, and the harness reads the ends of the second parse only.
+   `Config::SESSION`; the harness puts the UTF-8 byte order mark (0xEF 0xBB 0xBF) before those
+   bytes, so the entry decodes them as UTF-8 with confidence `Certain`, drops the mark from the
+   text, and a `meta` in the case starts no second parse (`story:scripts-parse-run`, decision 10).
+   An `Err(RunnerError)` is a failure of the harness's host, not a result of the case: the run
+   fails and does not count it as passed or as failed.
 2. `surf-html-conformance` depends on `surf-script` (a tooling crate that ships nothing).
    `taskfiles/lock-owners.txt`, which `story:scripts-engine-dependency` writes
    (`docs/design/scripts.md`, Q15), gains the line `surf-script surf-html-conformance` in this

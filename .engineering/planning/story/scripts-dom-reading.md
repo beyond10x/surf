@@ -90,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 42
+revision: 43
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -1073,7 +1073,10 @@ this pair. This story adds the line `surf-url` right after
 next line.
 
 The generator, `selection.txt` and `bindings.rs` are on `main` since `6bd9bc9`: this story changes
-them, and nothing else of the epic changes them in the same wave. This story edits `runner.rs`
+them. `story:scripts-parse-run` changes `prelude.rs` and writes `bindings.rs` again after this
+story (it depends on it); `story:scripts-dom-attributes`, `story:scripts-utf16-length` and
+`story:scripts-dom-collection-names` also change that set, and whichever merges second writes
+`bindings.rs` again from the merged sources. This story edits `runner.rs`
 only where `ScriptHost` is made (the Change); `story:swell-0-9-0` edits other lines of the file
 and the second merge keeps both. `crates/script/src/lib.rs` and
 `runner.rs` are written after it by `story:scripts-parse-run`, ordered by that story's edge; that
