@@ -388,6 +388,51 @@ fn compile_strings() {
     );
 }
 
+/// `%AsyncFunction%` and `%AsyncGeneratorFunction%`, reached as the `constructor` of an async
+/// function's and an async generator function's prototype, end as `Function` does in a
+/// session (Q4's row of `eval` and `Function`): allowed, their functions run, and a body
+/// 10,000 code units longer costs each of the three at least 10,000 steps more.
+#[test]
+fn async_constructors_compile_as_function_does() {
+    const CONSTRUCTORS: [&str; 3] = [
+        "Function",
+        "(async function () {}).constructor",
+        "(async function* () {}).constructor",
+    ];
+    let pad = " ".repeat(10_000);
+    let (ends, costs, check) = run(limits(), Mode::Session, |runner| {
+        let ends = vec![runner.evaluate(
+            "var AF = (async function () {}).constructor; \
+                 var AGF = (async function* () {}).constructor; \
+                 if (AF === Function || AGF === Function) throw new Error(\"same\"); \
+                 AF(\"return 1\")().then(function (v) { globalThis.a = v; }); \
+                 AGF(\"yield 2\")().next().then(function (r) { globalThis.b = r.value; });",
+        )];
+        let mut costs = Vec::new();
+        for constructor in CONSTRUCTORS {
+            let mut steps = Vec::new();
+            for body in ["", pad.as_str()] {
+                let before = runner.steps();
+                let end = runner.evaluate(&format!("({constructor})(\"{body}\");"));
+                steps.push((end, runner.steps() - before));
+            }
+            costs.push((constructor, steps));
+        }
+        let check = runner.evaluate("if (a !== 1 || b !== 2) throw new Error(\"results\");");
+        (ends, costs, check)
+    })
+    .expect("a runner");
+    assert_eq!(ends, [ScriptEnd::Ran]);
+    assert_eq!(check, ScriptEnd::Ran, "{check}");
+    for (constructor, steps) in costs {
+        let [(short_end, short), (long_end, long)] = steps.as_slice() else {
+            panic!("{constructor}: {steps:?}");
+        };
+        assert_eq!((short_end, long_end), (&ScriptEnd::Ran, &ScriptEnd::Ran));
+        assert!(long - short >= 10_000, "{constructor}: {short} {long}");
+    }
+}
+
 /// An `AggregateError` keeps its own word and its message (Q7).
 #[test]
 fn aggregate_error() {

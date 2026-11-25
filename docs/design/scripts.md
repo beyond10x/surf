@@ -147,6 +147,9 @@ that ended `ran`, `threw` or `refused`, once the script's end, its steps and its
 read, it calls `Agent::perform_microtask_checkpoint()`, one entry of swell's with a step budget
 of its own, `steps_per_entry` (HOST-193), and adds that entry's `last_entry_steps()` to the
 document's total (HOST-197); the wall clock ends a checkpoint as it ends a script (HOST-198).
+Before it reads a thrown value and before the checkpoint, the runner asks whether the wall clock
+ran out or the interrupt is set; if so, the script ends at that limit and no checkpoint runs, and
+it asks again after a checkpoint that emptied the queue (Q4).
 The checkpoint is a step of running that script, so its end is the script's end:
 `Normal` leaves it, `Terminated(StepBudget)`, `Terminated(MemoryBudget)` and
 `Terminated(Interrupted)` make it `limit: steps-per-script`, `limit: memory` and `limit:
@@ -172,8 +175,12 @@ a script without clearing the microtask queue, and swell's note leaves the clear
 `docs/design/host-interface.md:1211-1212 @ 0.10.0`); jobs a script queued before its limit are
 that script's work, and run by the next script's checkpoint they would spend its budget
 (`.engineering/planning/epic/scripts-in-a-page.md`, "The gaps"). So a script element may spend
-two entries' steps, its own and its checkpoint's; the document's step total and the wall clock
-bound the sum, and `steps_per_entry` stays one number (Q4).
+two entries' steps, its own and its checkpoint's: one checkpoint is one outermost entry with one
+step budget, however many jobs it runs, each job's calls nested in it
+(`crates/swell/src/host/agent.rs:738-739`, `:963-964 @ 0.10.0`). What the code enforces at this
+tip: `steps_per_entry` for each of the two entries, which stays one number (Q4), and the wall
+clock over all of them. The document's step total (`RunnerLimits::steps_per_runner`) is counted
+(`Runner::steps`) but no caller enforces it yet; `story:scripts-document-port` does.
 
 The steps of "prepare the script element" (4.12.1.1) for an element of the first table:
 
@@ -313,6 +320,26 @@ function may answer `Terminated(Interrupted)` itself, which ends the run with th
 (HOST-217; `conformance/host/requirements.txt:216-217 @ 0.10.0`). A limit a promise job reaches
 in the checkpoint after a script ends that script with the limit's word (Q2).
 
+An interrupt that is set when a script ends is the script's end (`Runner::evaluate`). Once the
+script's run answered, a normal end or a throw, the runner asks whether the wall clock ran out or
+the interrupt is set, with `InterruptHandle::is_set`, which reads the flag without taking it
+(`crates/swell/src/host/interrupt.rs:28-31 @ 0.10.0`); swell takes it, clears it and ends the run
+in `Terminated(Interrupted)`, at the start of every outermost entry, at each charge of steps and
+in the interpreter's own checks (`crates/swell/src/host/agent.rs:965-993 @ 0.10.0`,
+`crates/swell/src/interp/budget.rs:34-41 @ 0.10.0`). If so, the script ends `limit: wall-clock`,
+or with the limit the bindings recorded (the rule above); no text of a thrown value is read, no
+checkpoint runs, the queue is cleared and the flag withdrawn. The flag can be set at that point:
+the wall clock's thread sets it at any instant, and a getter of the bindings that sets it and
+then answers or throws is followed by no read of it (the tests of
+`crates/script/tests/run_end.rs`). The read of a thrown `DOMException`'s text is a run of engine
+calls, and the first takes a flag set after the question: that read answers that the run ended,
+and the script ends as above, not with a record without a message (`Runner::exception_text`).
+After a checkpoint that emptied the queue the runner asks again, because the checkpoint reads the
+flag only before it takes a job off (`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`): a script
+whose run and jobs ended well while the clock ran out or a job left the flag set ends `limit:
+wall-clock`. The next script of the document is `not run: wall-clock` when the clock ran out (the
+table's row); a flag set while the clock had not run out leaves the next script to run.
+
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,
 `T` the same in the test profile (`target/debug/`):
@@ -358,14 +385,14 @@ with the reason.
 | steps per document, summed from `last_entry_steps()` | 50,000,000, chosen: five scripts at `steps_per_entry` | `R limits` | `loop run 0: true after 1.000 s, 19980802 steps, 19978480 steps/s` (2.4 to 2.5 s for the sum at those rates) | the script whose steps take the sum to it keeps its own end; each later script: `not run: steps-per-document` |
 | scripts run per document | 1,000, chosen: it bounds the records of Q7, at most 1,000 per document; the steps, memory and wall clock bound the work already | none: a choice, not a measurement | none: `story:scripts-parse-run` measures again whether a page with more scripts reaches it | the 1,001st script element and each later one: `not run: scripts-per-document` |
 | bytes of one script's source (UTF-8, as the tree holds it) | 524,288 (512 KiB), measured: the largest power of two of the sweep that parsed | `R limits` (the first round's parse sweep, on the build node) | `parse var source of 524260 bytes, 27324 statements, memory_bytes 64 MiB: parsed in 0.106 s, heap_bytes after 11713890`, and `parse var source of 1048540 bytes, 53538 statements, memory_bytes 64 MiB: terminated MemoryBudget in 0.155 s, heap_bytes after 202424` | that script, not parsed: `limit: source-bytes`; later scripts run |
-| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script: `limit: wall-clock`; each later script: `not run: wall-clock` |
+| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script, and a script that ends while the clock ran out or the interrupt is set: `limit: wall-clock`; each later script: `not run: wall-clock` |
 | parser: input bytes (`crates/html/src/limits.rs:17-21`) | 16,777,216, the parser's | none: a script adds no input | `crates/html/src/limits.rs:103` (`max_input_bytes: 16 * 1024 * 1024`) | not reached by a script: the first version has no `document.write`; parsing stops as today |
 | parser: depth | 512, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:104` (`max_depth: 512`) | a write that would nest an element deeper: refused, the script: `limit: depth` |
 | parser: nodes | 1,048,576, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:105` (`max_nodes: 1024 * 1024`) | a write that would make one more node: refused, the script: `limit: nodes` |
 | parser: attributes per element | 1,024, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:106` (`max_attributes: 1024`) | `limit: attributes` |
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:107` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:108` (`max_steps: 1 << 27`) | counts tree construction's scans, not a script's writes; read inside each token, before each entry of a scan of the stack of open elements or of the list of active formatting elements and before each write to the tree, so the token that passes the limit is processed only up to the next read; parsing stops (`stopped_by` `Steps`), and no later script element is reached |
-| `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
+| `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2). Since `0.9.0` two more paths make code from source text: `%AsyncFunction%` and `%AsyncGeneratorFunction%`, reached as the `constructor` of an async function's and of an async generator function's prototype, no global (`CHANGELOG.md:115`, `:85 @ 0.10.0`). Both call `create_dynamic_function` (`crates/swell/src/builtins/async_function.rs:88-89 @ 0.10.0`, `builtins/async_generator.rs:196-198 @ 0.10.0`), which asks the same hook with the compilation type `Function` for every kind (`crates/swell/src/dynamic_code.rs:786-793 @ 0.10.0`; the hook `hooks.rs:176-181 @ 0.10.0`), so they end as `Function` does: allowed, a step per code unit of the source as it is copied (`dynamic_code.rs:772 @ 0.10.0`; the test `engine::async_constructors_compile_as_function_does` of `surf-script`) |
 | after `Terminated(MemoryBudget)` | `Agent::clear_microtasks()` first, then `collect()` once, chosen (the clear drops the queued jobs and credits their charge, HOST-200, so the collection finds it free); a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
@@ -482,6 +509,11 @@ At `0.10.0` `Date` exists over the host's clock: the constructor, `Date.now()`, 
 answer to milliseconds, and the other setters, `Date.UTC` and `Date.parse` throw a `TypeError`
 (`CHANGELOG.md:56-62 @ 0.10.0`). So HOST-125 and HOST-126 have a test, and the test
 `engine::clock_advances` of `surf-script` runs: two `Date.now()` of the test clock differ by 1.
+In a session `Date.now()` reads the system clock, so a page can time its own run against the
+wall-clock bound of Q4. What a script reaches grew at `0.9.0` by two more paths that make code
+from source text besides `eval` and `Function`, `%AsyncFunction%` and `%AsyncGeneratorFunction%`;
+they reach no clock, seed or time zone of their own and pass the hook of Q4's row of `eval` and
+`Function`.
 The six other ids are `pending slice 4` still; `Math.random` and all of `Math` but `max`, and the
 getters of a date's fields, do not exist (`CHANGELOG.md:257-264 @ 0.10.0`). New at `0.9.0`,
 pending for slice 4: HOST-209 to HOST-211 (a time-zone offset out of range is clamped, a host
@@ -525,6 +557,11 @@ reached` among them:
   whose name ends in `Error` and fails naming one whose end reads another word. What it cannot
   notice: a kind with no global constructor whose name ends in `Error` reaches the wildcard
   unnoticed. `ErrorKind::ALL` cannot serve: it keeps seven entries, without `AggregateError`.
+  A throw is `threw` only while the run has not ended: when the wall clock ran out or the
+  interrupt is set as the script's run answers, the script ends `limit: wall-clock` (or with the
+  limit the bindings recorded) and no text of the thrown value is read; a read of a
+  `DOMException`'s text that an interrupt ends gives the same end, never a `threw Error` without
+  a message (Q4).
 - `refused "<message>" <line>:<column>`: the parse answered `Parsed::Errors` and the agent's
   `refusals()` rose (`crates/swell/src/host/agent.rs:266-275 @ 0.8.0`): a construct of a later
   delivery slice, whose `SyntaxError` message names the slice (`CHANGELOG.md:104-106 @ 0.8.0`).

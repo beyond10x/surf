@@ -87,8 +87,8 @@ pub struct RunnerLimits {
     pub source_bytes: usize,
     /// The wall clock from the first script's start, through the agent's interrupt handle; a
     /// script started after it ran out is `not run: wall-clock`. The first script's start is
-    /// the clock's start, so a bound of 0 ends the first script `limit: wall-clock`, or lets a
-    /// short one end `ran` before the interrupt is set.
+    /// the clock's start, so a bound of 0 ends the first script `limit: wall-clock`: a clock
+    /// that ran out when a script ends is that script's end ([`Runner::evaluate`]).
     pub wall_clock: Duration,
 }
 
@@ -336,8 +336,9 @@ pub struct ScriptError {
     /// The own `message`, decoded from UTF-16 with unpaired surrogates replaced and cut to its
     /// first [`MESSAGE_CHARS`] characters; for a `DOMException`, `<name>: <message>` from its
     /// data, cut the same; `None` for a value that is no error object or an error without a
-    /// String `message`, and for a `DOMException` whose read an interrupt set after the throw
-    /// or the memory budget ended.
+    /// String `message`, and for a `DOMException` whose read the memory budget ended. A read
+    /// that an interrupt ends makes no record: the script ends `limit: wall-clock`
+    /// ([`Runner::evaluate`]).
     pub message: Option<String>,
     /// `None` when swell names no site: a throw raised outside any ECMAScript frame.
     pub site: Option<Site>,
@@ -554,6 +555,9 @@ impl Drop for WallClock {
     }
 }
 
+/// The answer of a read of a thrown value that the run's end ended: an interrupt took it.
+struct RunEnded;
+
 /// One agent with one realm, on the thread [`run`] made, and the totals of its scripts.
 pub struct Runner {
     // Dropped in this order: the clock's thread ends first, the agent last.
@@ -622,6 +626,18 @@ impl Runner {
     /// Parses `source` as a classic script in the runner's realm, runs it to its end and then
     /// performs HTML's microtask checkpoint ("clean up after running script").
     ///
+    /// An interrupt that is set when a script ends is the script's end. When the run answered,
+    /// whatever it answered, and before a thrown value is read and before the checkpoint, the
+    /// runner asks whether the wall clock ran out or the interrupt is set
+    /// ([`Runner::run_ended`]); if so, the script ends `limit: wall-clock`, or with the limit the
+    /// bindings recorded ([`Runner::document_end`]), no text of a thrown value is read, no
+    /// checkpoint runs and the interrupt is withdrawn. An interrupt that ends the read of a
+    /// thrown value all the same (set after the question, taken by the read's first engine
+    /// call) ends the script the same way, not with a record without a message. After a
+    /// checkpoint that emptied the queue the runner asks again: a script whose run and jobs
+    /// ended well while the clock ran out or the interrupt was set before the runner returned
+    /// ends `limit: wall-clock` too.
+    ///
     /// The checkpoint follows a script that ended `ran`, `threw` or `refused`; after a limit or
     /// `faulted` there is none. It is one entry of swell's with a step budget of its own,
     /// `steps_per_entry` (HOST-193), and its end is the script's end: a limit or a fault of the
@@ -655,6 +671,7 @@ impl Runner {
         self.clock.before_script(self.limits.wall_clock);
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
+        let end = self.at_run_end(end);
         let end = self.document_end(end);
         // The script's steps are read before the checkpoint, which begins an entry of its own
         // and so changes what `last_entry_steps()` and `last_entry_error_site()` answer.
@@ -721,6 +738,39 @@ impl Runner {
         }
     }
 
+    /// Whether the run's end has come: the wall clock ran out, or the interrupt is set and not
+    /// yet used. `is_set` reads the flag without taking it
+    /// (`crates/swell/src/host/interrupt.rs:28-31 @ 0.10.0`); what takes it is the start of an
+    /// outermost entry, a charge of steps and the interpreter's own checks, each of which clears
+    /// it and ends the run in `Terminated(Interrupted)` (`host/agent.rs:965-993 @ 0.10.0`,
+    /// `interp/budget.rs:34-41 @ 0.10.0`).
+    fn run_ended(&self) -> bool {
+        self.clock.ran_out() || self.agent.interrupt_handle().is_set()
+    }
+
+    /// The end of a script whose run's end came: `limit: wall-clock`, with the interrupt
+    /// withdrawn, used as the script's end as swell clears it when it ends a run with it.
+    fn run_end(&mut self) -> ScriptEnd {
+        self.agent.interrupt_handle().clear();
+        ScriptEnd::Limit(Reason::WallClock)
+    }
+
+    /// `end`, or the run's end when it came ([`Runner::run_ended`]) and `end` is `ran`, `threw`
+    /// or `refused`: a limit, a fault and a script not run keep their word.
+    fn at_run_end(&mut self, end: ScriptEnd) -> ScriptEnd {
+        match end {
+            ScriptEnd::Ran | ScriptEnd::Threw(_) | ScriptEnd::Refused(_) if self.run_ended() => {
+                self.run_end()
+            }
+            ScriptEnd::Ran
+            | ScriptEnd::Threw(_)
+            | ScriptEnd::Refused(_)
+            | ScriptEnd::Limit(_)
+            | ScriptEnd::Faulted
+            | ScriptEnd::NotRun(_) => end,
+        }
+    }
+
     /// Adds the steps of an entry to [`Runner::steps`].
     fn add_steps(&mut self, steps: Result<u64, HostError>) {
         match steps {
@@ -733,7 +783,11 @@ impl Runner {
     /// HTML's microtask checkpoint after a script that ended `end` (`ran`, `threw` or
     /// `refused`), and the script's end after it. Its steps, which `last_entry_steps()` reads
     /// for the whole checkpoint also after a termination (HOST-197), are added to the total.
-    /// `Normal` leaves `end`; a termination is read as a script's is ([`terminated`]); the
+    /// `Normal` leaves `end`, unless the wall clock ran out or the interrupt is set when it
+    /// answered: a job that set the flag and then threw leaves it set when no job follows,
+    /// because the checkpoint reads the flag only before an entry is taken off
+    /// (`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`), and the end is then the run's
+    /// ([`Runner::at_run_end`]). A termination is read as a script's is ([`terminated`]); the
     /// answer is then passed through [`Runner::document_end`], so a DOM limit a job recorded
     /// ends the script with that limit's word. The checkpoint never answers `Throw` (a throw
     /// there faults the agent, `crates/swell/src/host/agent.rs:765-769 @ 0.10.0`), and on a
@@ -741,7 +795,7 @@ impl Runner {
     /// read as `faulted`.
     fn checkpoint(&mut self, end: ScriptEnd) -> ScriptEnd {
         let end = match self.agent.perform_microtask_checkpoint() {
-            Ok(Outcome::Normal(_)) => end,
+            Ok(Outcome::Normal(_)) => self.at_run_end(end),
             Ok(Outcome::Terminated(termination)) => terminated(termination),
             Ok(Outcome::Throw(_)) => ScriptEnd::Faulted,
             Err(HostError::Faulted | surf_defect!()) => ScriptEnd::Faulted,
@@ -776,34 +830,47 @@ impl Runner {
         match parsed {
             Parsed::Parsed(script) => match self.agent.evaluate_script(&script) {
                 Ok(Outcome::Normal(_)) => ScriptEnd::Ran,
-                Ok(Outcome::Throw(thrown)) => ScriptEnd::Threw(self.error(&thrown)),
+                Ok(Outcome::Throw(thrown)) => self.thrown(&thrown, ScriptEnd::Threw),
                 Ok(Outcome::Terminated(termination)) => terminated(termination),
                 Err(HostError::Faulted | surf_defect!()) => ScriptEnd::Faulted,
             },
             // The site is the first error's, and the error is the first of the list (Q16).
             Parsed::Errors(errors) => {
-                let error = match errors.first() {
-                    Some(first) => self.error(first),
-                    None => ScriptError {
+                let end = if self.agent.refusals() > refusals {
+                    ScriptEnd::Refused
+                } else {
+                    ScriptEnd::Threw
+                };
+                match errors.first() {
+                    Some(first) => self.thrown(first, end),
+                    None => end(ScriptError {
                         kind: ScriptErrorKind::SyntaxError,
                         message: None,
                         site: self.site(),
-                    },
-                };
-                if self.agent.refusals() > refusals {
-                    ScriptEnd::Refused(error)
-                } else {
-                    ScriptEnd::Threw(error)
+                    }),
                 }
             }
             Parsed::Terminated(termination) => terminated(termination),
         }
     }
 
+    /// The end of a script whose run answered the thrown value or parse error `value`: `end`
+    /// with its record, or the run's end ([`Runner::run_end`]) when it came before the read or
+    /// ended the read, in which case no record is made.
+    fn thrown(&mut self, value: &Root, end: fn(ScriptError) -> ScriptEnd) -> ScriptEnd {
+        if self.run_ended() {
+            return self.run_end();
+        }
+        match self.error(value) {
+            Ok(error) => end(error),
+            Err(RunEnded) => self.run_end(),
+        }
+    }
+
     /// What a thrown value or a parse error holds, read without running code (Q16). In a
     /// document's runner a `DOMException`'s message is `<name>: <message>` from the exception's
-    /// own data ([`Runner::exception_text`]).
-    fn error(&mut self, value: &Root) -> ScriptError {
+    /// own data ([`Runner::exception_text`]); `Err(RunEnded)` when an interrupt ended that read.
+    fn error(&mut self, value: &Root) -> Result<ScriptError, RunEnded> {
         let (kind, message) = match self.agent.error_summary(value) {
             Ok(Some(summary)) => (
                 error_kind(summary.kind),
@@ -824,7 +891,7 @@ impl Runner {
                 if let Ok(steps) = self.agent.last_entry_steps() {
                     self.thrown_steps = Some(steps);
                 }
-                self.exception_text(value).or(message)
+                self.exception_text(value)?.or(message)
             }
             ScriptErrorKind::EvalError
             | ScriptErrorKind::RangeError
@@ -835,30 +902,44 @@ impl Runner {
             | ScriptErrorKind::AggregateError
             | ScriptErrorKind::Value => message,
         };
-        ScriptError {
+        Ok(ScriptError {
             kind,
             message,
             site,
-        }
+        })
     }
 
     /// The `<name>: <message>` of a `DOMException` a script threw and did not catch, cut to
     /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`; no
     /// longer prefix is copied), read from its data in a `with_cx` that runs no code
-    /// (`bindings::exception_text`); `None` for a runner without a document and for any other
-    /// value, and when the read ends early: the memory budget spent by the read, or an
-    /// interrupt set after the throw, which the read's first engine call takes. The record is
-    /// then an `Error` without a message.
-    fn exception_text(&mut self, value: &Root) -> Option<String> {
-        self.agent.host().dom.as_ref()?;
-        let text = self
-            .agent
-            .with_cx(&self.realm, |cx| {
-                let value = cx.get(value).ok()?;
-                bindings::exception_text(cx, value, MESSAGE_CHARS)
-            })
-            .ok()??;
-        Some(text.chars().take(MESSAGE_CHARS).collect())
+    /// (`bindings::exception_text`). `Ok(None)` when the value has no text: a runner without a
+    /// document, any other value, and a read the memory budget ended (the record is then an
+    /// `Error` without a message). `Err(RunEnded)` when the read was ended by the run's end:
+    /// an interrupt set after [`Runner::run_ended`] answered, which the read's first engine
+    /// call takes. `bindings::exception_text` answers `None` for both; a termination of a call
+    /// is sticky until the `with_cx` returns (`crates/swell/src/host/mod.rs:171-172 @ 0.10.0`),
+    /// so one more engine call, a ToNumber of `undefined`, answers it.
+    fn exception_text(&mut self, value: &Root) -> Result<Option<String>, RunEnded> {
+        if self.agent.host().dom.is_none() {
+            return Ok(None);
+        }
+        let read = self.agent.with_cx(&self.realm, |cx| {
+            let Ok(value) = cx.get(value) else {
+                return Ok(None);
+            };
+            if let Some(text) = bindings::exception_text(cx, value, MESSAGE_CHARS) {
+                return Ok(Some(text));
+            }
+            match cx.to_number(Value::Undefined) {
+                Ok(Err(Abrupt::Terminated(Termination::Interrupted))) => Err(RunEnded),
+                Ok(Ok(_) | Err(Abrupt::Throw(_) | Abrupt::Terminated(_)))
+                | Err(HostError::Faulted | surf_defect!()) => Ok(None),
+            }
+        });
+        match read {
+            Ok(text) => Ok(text?.map(|text| text.chars().take(MESSAGE_CHARS).collect())),
+            Err(HostError::Faulted | surf_defect!()) => Ok(None),
+        }
     }
 
     /// Where the error the last entry answered arose.
