@@ -4,12 +4,14 @@ id: story:scripts-dom-attributes
 kind: story
 status: proposed
 title: The attribute members (14 rows), held to the attribute, stored-byte and memory limits and priced by what they scan
-summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the five attribute functions of the tree's write surface after the standard's name checks and reads through six public reads the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in the tree charged to the memory budget at their peak through a bytes-only charge added to the generator's prelude, a cost module with a floor of steps on the worst shape of each member, a namespace outside the six of the tree named as a deviation, the TrustedType deviation tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
+summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the five attribute functions of the tree's write surface after the standard's name checks and reads through five public reads the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in the tree charged to the memory budget at their peak through a bytes-only charge added to the generator's prelude, a cost module with a floor of steps on the worst shape of each member, a namespace outside the six of the tree named as a deviation and written into the epic, the TrustedType deviation tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:html-script-hook
 - depends_on: story:scripts-dom-reading
 scope:
+- confidence: cited
+  path: .engineering/planning/epic/scripts-in-a-page.md
 - confidence: cited
   path: AGENTS.md
 - confidence: cited
@@ -56,14 +58,14 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 37
+revision: 40
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
 ## Context
 
 The epic's tenth candidate (`.engineering/planning/epic/scripts-in-a-page.md:473-474 @ a14e3b0`)
-and the slice "Attributes, 14" (lines 725-727). The 14 rows of the slice `attributes` in
+and the slice "Attributes, 14" (lines 725-727 @ a14e3b0). The 14 rows of the slice `attributes` in
 `crates/webidl/selection.txt` are `Element` `id` (line 86), `className` (87), `slot` (89),
 `hasAttributes` (90) and the ten operations at lines 92-101: `getAttributeNames`, `getAttribute`,
 `getAttributeNS`, `setAttribute`, `setAttributeNS`, `removeAttribute`, `removeAttributeNS`,
@@ -93,7 +95,10 @@ What the code holds for this slice:
   step, checks the brand of `this` (`Element`), converts each argument with ToString (which may
   run the script's `toString`), copies each String with `Copies::copy` (`bindings.rs:620-630`: a
   lone surrogate written U+FFFD, a step per 64 bytes charged after the copy; the reading story's
-  decision 20 rules one step per 16 bytes, before the copy, and is not built), calls the slice
+  decision 20 rules one step per 16 bytes and keeps the charge after the one copy, bounded by
+  `string_length`, because the engine reads a String only by copying it: it is not built, and
+  the move of that charge before the copy, which that decision gives to
+  `story:scripts-utf16-length`, is in no story's text yet), calls the slice
   and gives the answer to `finish` (`bindings.rs:947-956`, `answered` `:958`): `DomEnd::Throw`
   becomes a `DOMException`, `DomEnd::StringLength` a `RangeError`, `DomEnd::Limit` goes to
   `end_with_limit` (`bindings.rs:512`), which records the limit and ends the script where it is,
@@ -107,8 +112,9 @@ What the code holds for this slice:
   steps (`COLLECTION_NODE_STEPS`, `:1251`). `getAttributeNames` answers a `sequence<DOMString>`
   through `strings_value` (`bindings.rs:1546-1560`, written by `prelude.rs:1441-1454` of
   `crates/webidl/src`), which charges each element's bytes and nothing for the element: a list
-  of 16,384 one-byte names costs the glue 0 steps. The reading story left that open for this
-  slice (decision 7).
+  of 16,384 one-byte names costs the glue 0 steps. Its one caller is `getAttributeNames`
+  (`crates/webidl/src/generate.rs:239`, `bindings.rs:4660`), so a charge added to it changes no
+  other member. The reading story left that open for this slice (decision 7).
 - The tree's public write surface of `story:html-script-hook` has every attribute write this
   story needs: `set_attribute` (`crates/html/src/tree.rs:1538`), `set_attribute_ns` (`:1557`),
   `remove_attribute` (`:1596`), `remove_attribute_ns` (`:1607`) and `toggle_attribute` (`:1627`),
@@ -138,7 +144,7 @@ What the code holds for this slice:
   the same name use one matching rule. The reading unit's own attribute reads (`reads.rs`
   `scan_for`, `positions`, `value_at`, `Reads`, `reads.rs:245-322`) match a name in no namespace
   for `class`, `id` and the like and are private to it; they do not match a qualified name.
-- What a write counts in the tree. `put_attribute` (`tree.rs:1499-1526`) adds a new attribute
+- What a write counts in the tree. `put_attribute` (`tree.rs:1501-1526`) adds a new attribute
   with its record and strings, `attribute_bytes` (`tree.rs:215-222`): `ATTRIBUTE_BYTES` (80,
   `crates/html/src/limits.rs:90-92 @ a14e3b0`) plus the bytes of its prefix, local name and
   value; it replaces an existing attribute's value only (`stored_bytes - old + new`,
@@ -174,8 +180,14 @@ What the code holds for this slice:
   of the script are spent")`, a throw the engine does not deliver: the termination is sticky and
   the run ends. `DomCx::charge_node` fails the same way for the memory budget. A read that
   returns a String is held to `string_length` first (`longer_than`, `bindings.rs:145`, giving
-  `DomEnd::StringLength`), then charged, then copied (`reads::copied`, `reads.rs:139-153`). A scan
-  by name charges its attributes at one step per 4 (`ATTRIBUTES_A_STEP`, `reads.rs:250-252`).
+  `DomEnd::StringLength`), then charged, then copied (`reads::copied`, `reads.rs:139-153`; the
+  glue's `string_value`, `bindings.rs:1263-1270`, has the same order). `longer_than` counts the
+  UTF-16 units of the whole value once its bytes pass `string_length`, a pass of up to the
+  value's length that nothing has charged yet: a defect of the reading unit, passed to its fix
+  round, which charges the byte length before the count (acceptance 14 reads it). A scan by
+  name charges its attributes at one step per 4 (`ATTRIBUTES_A_STEP`, `reads.rs:250-252`), and
+  `reads::attribute_count(tree: &Tree, node: NodeId) -> usize` (`reads.rs:254-265`) answers 0
+  for a node that is no element.
 - The vendored DOM Standard (`crates/webidl/data/whatwg/dom.html`, snapshot `e4f4f4f0`) does
   not use the XML `Name` production. `setAttribute` and `toggleAttribute` throw
   `InvalidCharacterError` for a name that is not a "valid attribute local name": at least one
@@ -213,8 +225,8 @@ removed. Under the reading story's rule a wrapper is found by `NodeId` (its deci
 namespace and the local name, and a rule for what an `Attr` is once its attribute is removed
 (the DOM keeps it, with no owner element), and `Attr` is a `Node`, so every inherited `Node`
 member would need a `this` that is not a `NodeId`. `Attr` and `NamedNodeMap` are not generated
-(`selection.txt:26` lists the definitions; the epic, line 683), so `Element.attributes` is a
-row of `throws` and nothing in the bindings can hold an `Attr`.
+(`selection.txt:26` lists the definitions; the epic, line 683 @ a14e3b0), so
+`Element.attributes` is a row of `throws` and nothing in the bindings can hold an `Attr`.
 
 Members that only read. Of the 17 methods, 9 never write the tree: the getters of `id`,
 `className` and `slot`, `hasAttributes`, `getAttributeNames`, `getAttribute`, `getAttributeNS`,
@@ -249,16 +261,18 @@ sharing one case.
    - `dom/mod.rs` gains `mod attribute_reads;` and `mod attribute_writes;`. `reads.rs` is
      edited in three tokens: `charge`, `ATTRIBUTES_A_STEP` and `attribute_count` become
      `pub(super)`, so that the slice has one function that says what a charge does when the
-     script is over its steps and one rate for a pass over attributes, and no copy of either.
-     The byte rate is `crate::bindings::STRING_BYTES_A_STEP`; the slice has no constant of
-     its own.
+     script is over its steps, one rate for a pass over attributes and one count of them, and no
+     copy of any. The count is `reads::attribute_count(tree: &Tree, node: NodeId)`, which
+     answers 0 for a node that is no element (`reads.rs:254-265`): it does the job, so the tree
+     gains no `attribute_count` of its own. The byte rate is
+     `crate::bindings::STRING_BYTES_A_STEP`; the slice has no constant of its own.
    Member to function (`attribute_reads` for a read, `attribute_writes` for a write; each takes
    the `DomCx` and the element's `NodeId` first):
    - the getters of `id`, `className` and `slot`: `reflected(cx, element, "id" | "class" |
      "slot") -> DomResult<String>`, the value of the attribute with that local name and no
      namespace, the empty string for none (`dom.html:10212`);
-   - `hasAttributes`: `any(cx, element) -> bool`, `attribute_count` above 0; it charges nothing
-     beyond the glue's one step (a count of a length);
+   - `hasAttributes`: `any(cx, element) -> bool`, `reads::attribute_count` above 0; it charges
+     nothing beyond the glue's one step (a count of a length);
    - `getAttributeNames`: `names(cx, element) -> DomResult<Vec<String>>`;
    - `getAttribute`: `get(cx, element, name) -> DomResult<Option<String>>`; `getAttributeNS`:
      `get_ns(cx, element, namespace, local_name)`; `hasAttribute`: `has(cx, element, name) ->
@@ -275,14 +289,17 @@ sharing one case.
    A write also needs what an attribute holds before it is written (its value's bytes, its
    stored bytes): `attribute_reads::find(cx, element, wanted) -> DomResult<Option<Found>>`
    charges the scan of decision 7, calls the tree's read, and answers `Found { value_bytes,
-   stored_bytes }`, two numbers, no reference held across a charge; `wanted` is a qualified name
-   or a namespace and local name. A namespace argument is the empty string (null), or one of the
-   six URLs of `Namespace::url` (`tree.rs:94-106`), mapped by `attribute_reads::namespace_of`,
-   which compares the argument's length with the six URLs' before any byte, so its work is
-   bounded by a constant; a URL that is none of the six matches no attribute, so `getAttributeNS`,
-   `hasAttributeNS` and `removeAttributeNS` answer `null`, `false` and nothing for it, as the
-   standard does, without a scan.
-3. `crates/html/src/tree.rs` gains six public reads, so that the slice has one matching rule
+   stored_bytes, same_length }`, three numbers (the last is the `k` of decision 7, which the
+   write's second charge reuses), no reference held across a charge; `wanted` is a qualified
+   name or a namespace and local name. A namespace argument is the glue's `Option<String>`, the
+   empty string meaning null, or one of the six URLs of `Namespace::url` (`tree.rs:94-106`),
+   mapped by `attribute_reads::namespace_of(namespace: Option<&str>) ->
+   Option<Option<Namespace>>`: `Some(None)` is null, `Some(Some(ns))` one of the six, `None`
+   none of them. It compares the argument's length with the six URLs' before any byte, so its
+   work is bounded by a constant; a URL that is none of the six matches no attribute, so
+   `getAttributeNS`, `hasAttributeNS` and `removeAttributeNS` answer `null`, `false` and nothing
+   for it, as the standard does, without a scan.
+3. `crates/html/src/tree.rs` gains five public reads, so that the slice has one matching rule
    with the writes and no private copy of it, and one public method that is the tree's count of
    an attribute's bytes. Each read is `&self` and takes the element's `NodeId`:
    - `get_attribute(&self, element: NodeId, name: &str) -> Option<&Attribute>`: lowers `name`
@@ -299,22 +316,21 @@ sharing one case.
    - `attribute_names(&self, element: NodeId) -> Vec<String>`: the qualified names in order,
      duplicates kept, each the prefix, a colon and the local name, or the local name
      (`dom.html:10581`);
-   - `attribute_count(&self, element: NodeId) -> usize`;
    - `Attribute::stored_bytes(&self) -> usize`: the tree's count of the attribute,
      `ATTRIBUTE_BYTES` and the bytes of its prefix, local name and value, which is what the
      private `attribute_bytes` (`tree.rs:215-222`) answers, made public and called by it, so
      that the slice's charge uses the tree's own count (decision 8).
-   A node that is not an element answers `None`, `false`, an empty list and 0: the bindings
+   A node that is not an element answers `None`, `false` and an empty list: the bindings
    brand-check `Element` first, and a read has no exception to answer, where a write answers
    `WriteError::InvalidNodeType` (`tree.rs:1471-1479`). What a read costs follows the write
    surface's form: the tree counts no step, and the documentation of each read says what it
-   costs so that the caller charges for it: a read visits each attribute at most once and
-   compares each attribute's name with the wanted one, at most the bytes of the shorter of the
-   two; `attribute_names` also builds one String per attribute, in all the bytes of the
-   names. The tree takes no `Cell` of steps, as the parser's private scans do (`tree.rs:246`): a
-   public read reports nothing and bounds what it scanned. Only `attribute_reads` calls these
-   reads, after its charge (decision 7). The tests of the reads are in the module of the write
-   surface's tests (Change).
+   costs so that the caller charges for it, in a line that starts with the token `Cost:`: a
+   read visits each attribute at most once and compares each attribute's name with the wanted
+   one, at most the bytes of the shorter of the two; `attribute_names` also builds one String
+   per attribute, in all the bytes of the names. The tree takes no `Cell` of steps, as the
+   parser's private scans do (`tree.rs:246`): a public read reports nothing and bounds what it
+   scanned. Only `attribute_reads` calls these reads, after its charge (decision 7). The tests
+   of the reads are in the module of the write surface's tests (Change).
 4. Names are validated in `attribute_writes`, before the scan and the write and in the standard's
    order, and a throw leaves the tree as it was and charges nothing for memory. `setAttribute`
    and `toggleAttribute` throw `InvalidCharacterError` for a name that is not a valid attribute
@@ -339,27 +355,40 @@ sharing one case.
    (`runner.rs:719`) is settled by `story:scripts-dom-mutation`, whose Context names it.
 7. What a call costs: one price for a byte, one for an attribute passed, each charged before the
    work it pays for, in addition to the glue's one step and to the glue's charge for each
-   argument it copies and for each String it answers. The rates are `S`, one step per 16 bytes
+   argument it copies and for each String it answers. The glue's charge for an argument is the
+   one exception: it follows that argument's one copy (Context) until a story moves it, and no
+   story's text holds that move yet, `story:scripts-utf16-length` included; every charge of the
+   slice comes before its pass. The rates are `S`, one step per 16 bytes
    (`STRING_BYTES_A_STEP`), and `A`, one step per 4 attributes passed in a scan by name
-   (`ATTRIBUTES_A_STEP`). A charge is one call of `reads::charge`, before the pass. The extent
-   of every pass is known before the pass starts (the attribute count, a string's length), so
-   no member charges step by step, and no member splits a value into tokens (`className` is the
-   attribute's whole value; `classList` is `throws`).
+   (`ATTRIBUTES_A_STEP`). A charge is one call of `reads::charge`. Each charge is computed from a
+   length known without a pass (the attribute count, a string's byte length), and no pass over a
+   list or over bytes comes before the charge that pays it. The extent of every pass is known
+   before it starts, so no member charges step by step, and no member splits a value into
+   tokens (`className` is the attribute's whole value; `classList` is `throws`).
    - A scan by qualified name (`get`, `has`, and the scan inside a write) over `c` attributes
      of an element, for a name of `n` bytes, where `k` is the number of attributes whose
      qualified name has the length of the lowered name: `c / A + (1 + k) * n / S`. The `1` is the
      lowering pass over the name; each of the `k` compares can read all `n` bytes; an attribute of
      another length is rejected on its length. A scan by namespace and local name (`get_ns`,
      `has_ns`, the scans of `set_ns` and `remove_ns`, `reflected`) over a local name of `l` bytes,
-     `k` the attributes whose local name has that length: `c / A + k * l / S`. `k` comes from one
-     pass over the lengths, paid by the `c / A` term.
-   - A value returned (`get`, `get_ns`, `reflected`): held to the agent's `string_length` first
-     (`longer_than`, then `DomEnd::StringLength`, as `reads::copied` does), then `v / S` for the
-     `v` bytes of the value, then the copy; the glue then charges its own copy of the String it
-     answers, `v / S` again: two passes over the bytes, two charges.
-   - `getAttributeNames`: `c` steps, one per attribute (the pass over the list that adds up the
-     names' lengths), and the names' bytes over `S`, charged before the list is built; then the
-     glue charges the bytes of each name. The generator's `strings_value` charges
+     `k` the attributes whose local name has that length: `c / A + k * l / S`. The order of a
+     scan: (a) charge `c / A`, from the count; (b) one pass over the list that counts `k` (lengths
+     only); (c) charge the bytes of the formula; (d) the tree's read, the second pass. A scan
+     makes two passes over the list, (b) and (d), and `c / A` pays both; the cost module's
+     ratio against the plain walk (acceptance 11) holds the pair to the 20-times mark.
+   - A value returned (`get`, `get_ns`, `reflected`): the value's byte length `v` is known
+     without a pass, so the order is: charge `v / S`; then hold the value to the agent's
+     `string_length` (`longer_than`, then `DomEnd::StringLength`: the count of UTF-16 units it
+     makes once the bytes pass the limit is a pass over the value, paid by that charge); then
+     the copy. This is the reverse of `reads::copied` and of the glue's `string_value`, which
+     count before they charge (Context): the slice does not inherit it. The glue then charges
+     its own copy of the String it answers, `v / S` again: two passes over the bytes, two
+     charges.
+   - `getAttributeNames`: the order is (a) charge `c`, one step per attribute, from the count;
+     (b) one pass over the list that adds up the names' lengths (prefix, a colon, local name);
+     (c) charge the sum over `S`; (d) the tree's `attribute_names`, which builds the list, the
+     second pass; then the glue charges the bytes of each name. The generator's `strings_value`
+     charges
      `STRING_ELEMENT_STEPS`, 8 as a collection node does (`COLLECTION_NODE_STEPS`,
      `bindings.rs:1251`), for each element before its loop; this story changes `strings_value`
      in `crates/webidl/src/prelude.rs` (`:1441-1454`) and regenerates. The weight 8 is a
@@ -369,12 +398,16 @@ sharing one case.
    - A pass over an argument (`validate` of a name, the prefix and local name of `setAttributeNS`,
      the lowering): the bytes of the pass over `S`, charged before it runs.
    - A write. The order of a member is decision 8's. Its steps, each charged before the work
-     they pay for: the validation passes; the scan of `find`; then, before the call of the tree,
-     the tree's own scan again (the same formula, since `set_attribute` and the others scan the
-     list a second time, `tree.rs:1541` and the like) and `(n + v) / S` for the bytes the tree
-     copies (`n` the bytes of the name it stores, `v` of the value, whether it adds an
-     attribute or replaces a value; `toggle` that adds, `v` is 0; `remove` copies nothing; the
-     shift of `drop_attribute` is at most `c` moves, paid by the scan's `c / A`).
+     they pay for: the validation, whose pass over a name is charged (`n / S`) and then made;
+     `find`, a scan as above (two passes over the list, (b) and (d)); then, before the call of
+     the tree, the charge of the tree's own scan, `c / A + (1 + k) * n / S` with the `k` that
+     `find` answered (the list has not changed since, so the pass that counts `k` is not made
+     again), and `(n + v) / S` for the bytes the tree copies (`n` the bytes of the name it
+     stores, `v` of the value, whether it adds an attribute or replaces a value; `toggle` that
+     adds, `v` is 0; `remove` copies nothing); then the call, whose own scan is a third pass
+     over the list. A write that finds or adds so makes three passes over the list, each paid:
+     the first two by `find`'s charges and the third by the second `c / A` and byte charge;
+     the shift of `drop_attribute` is at most `c` moves, paid by the same `c / A`.
    So a write that adds costs at least `2 * (c / A) + (n + v) / S` steps of its own, beyond the
    glue's one step and its charge for the two argument copies, `(n + v) / S` again; the scan
    term is counted twice (`find` and the tree's own).
@@ -412,8 +445,9 @@ sharing one case.
    growth over the peak. The node charge of `charge_node` stays as it is: a node is never taken
    out of the tree's arena (`tree.rs:19-21`), so nothing of it is ever released, where a
    stored byte is freed at a removal (`drop_attribute`, `tree.rs:1528-1534`).
-   `story:scripts-dom-mutation` calls the same function, with the same two counts, for its
-   character-data writes. The order of a member of this slice, all of it in `attribute_writes`:
+   This story owns the function and the two counts; `story:scripts-dom-mutation` is to call them
+   for its character-data writes, and its text does not hold the call yet (Placement).
+   The order of a member of this slice, all of it in `attribute_writes`:
    validate (decision 4); `find`, which charges the scan and answers the sizes; compute the bytes
    the write adds and removes by the tree's count; charge the steps of decision 7; call
    `charge_stored`; write; on a write that the tree then refuses (a limit), call `undo_stored`
@@ -431,6 +465,10 @@ sharing one case.
    - an attribute found, and the write removes it (`removeAttribute`, `removeAttributeNS`,
      `toggleAttribute` that removes): `removed` is `stored_bytes` of it and `added` is 0; no
      charge is made and none refunded;
+   - an attribute found and `toggleAttribute` with `force` true: the tree writes nothing and
+     answers `true` (`tree.rs:1501-1526` for the put, and the arm `Some(_) if force ==
+     Some(true) => Ok(true)` of `toggle_attribute`, `tree.rs:1627`), so the member makes no
+     call of `charge_stored` and no tree call; the steps of the scan stay charged;
    - nothing found and nothing added (`removeAttribute` of an absent name, `toggleAttribute`
      with `force` false): no call.
    A write that the tree refuses for a limit has been charged once, and ends the script. A
@@ -445,8 +483,11 @@ sharing one case.
    (`selection.txt:96`): a namespace that is none of the six of `Namespace` cannot be stored,
    so the call throws `NotSupportedError` after validate and extract has passed and before the
    scan and the charge, with the message `Element.setAttributeNS is not supported` through
-   `DomException::not_supported` (`bindings.rs:107`). An open namespace in `crates/html` is a
-   story of its own (Out of scope).
+   `DomException::not_supported` (`bindings.rs:107`). The epic does not list this deviation, so
+   this story writes it into the epic (Change: a bullet under the epic's "Corrections", with the
+   memory charge, the tree's reads and the generator's change). `story:html-open-namespace` (a
+   draft) lifts it: a tree that stores any namespace, and `setAttributeNS` that then stores one;
+   until it merges the deviation stays; no other story is planned for it.
 10. Kept objects, `[SameObject]` and cached answers. No row of this slice is `[SameObject]`: no
     member returns an object, and the `SameObject` enum (`bindings.rs:2051-2060`) keeps its
     four variants. The two `[SameObject]` attributes of `Element` next to this slice,
@@ -481,8 +522,9 @@ sharing one case.
 
 ## Change
 
-- `crates/html/src/tree.rs`: the six reads of decision 3, each with a doc comment that says
-  what it matches, what it answers for a node that is not an element and what it costs; the
+- `crates/html/src/tree.rs`: the five reads of decision 3, each with a doc comment that says
+  what it matches, what it answers for a node that is not an element and, in a line that starts
+  with `Cost:`, what it costs; the
   module documentation's sentence on what the surface leaves to its caller (`tree.rs:21-23`)
   gains the reads; `Attribute::stored_bytes` (decision 3), which the private `attribute_bytes`
   then calls. No existing behaviour changes. The reading story edits this file too and
@@ -492,8 +534,9 @@ sharing one case.
   `write_set_attribute_ns` at `:1197`, `write_remove_attribute` at `:1243`,
   `write_remove_attribute_ns` at `:1259`, `write_toggle_attribute` at `:1274`):
   `read_get_attribute`, `read_get_attribute_ns`, `read_has_attribute`, `read_has_attribute_ns`,
-  `read_attribute_names`, `read_attribute_count` and `attribute_stored_bytes`; the module is
-  declared in `crates/html/tests/main.rs`, so no `mod` line is added.
+  `read_attribute_names` and `attribute_stored_bytes`; the module is declared in
+  `crates/html/tests/main.rs`, so no `mod` line is added. The count is not a tree read: the
+  slice calls `reads::attribute_count` (decision 2), so there is no `Tree::attribute_count`.
 - `crates/webidl/src/prelude.rs`: the fields `live` and `peak` of `DomState` and their
   initial values in `DomState::new`, `DomCx::charge_stored`, `DomCx::undo_stored`,
   `DomState::stored_live` and `DomState::stored_peak`, the doc comments of decision 8, and the
@@ -504,6 +547,13 @@ sharing one case.
   the digest block stay as they are on the merged `main`.
 - `crates/webidl/selection.txt`: the note of `Element setAttributeNS` (line 96) gains the
   deviation of decision 9; the doc comment of the method carries the note (`bindings.rs:3200`).
+- `.engineering/planning/epic/scripts-in-a-page.md`: one bullet at the end of the section
+  "Corrections of 2026-11-25", in the form of the bullets there, that names the deviation of
+  `setAttributeNS` (a namespace outside the tree's six throws `NotSupportedError`, lifted by
+  `story:html-open-namespace`), the memory charge by peak, the tree's five reads and
+  `Attribute::stored_bytes`, and the generator's change (`charge_stored`, `undo_stored`, the
+  per-element charge of `strings_value`). It is a one-line addition after the section's last
+  bullet; no other line of the epic changes.
 - `crates/script/src/dom/attribute_reads.rs` (new): `reflected`, `any`, `names`, `get`,
   `get_ns`, `has`, `has_ns`, `find`, `namespace_of` and the scan charge (decisions 2, 7).
 - `crates/script/src/dom/attribute_writes.rs` (new): `set_reflected`, `set`, `set_ns`, `remove`,
@@ -533,13 +583,17 @@ sharing one case.
   (`dom_reading.rs:2399-2432`) asserts that `el.getAttribute("id")` throws (line 2425, message
   `Element.getAttribute is not supported`); it changes to `el.getAttributeNode("id")` with the
   message of a row of `throws`, `Element.getAttributeNode is not supported: attribute nodes`
-  (`bindings.rs:2042-2047` makes the message `<member> is not supported: <reason>`). One line.
+  (`bindings.rs:2042-2047` makes the message `<member> is not supported: <reason>`). One
+  line, and no other: the test holds three adjacent lines, `document.appendChild(el)` (the
+  mutation slice's), `el.getAttribute("id")` (this slice's) and `el.querySelector("p")` (the
+  selectors slice's); each slice's story changes its own line and leaves the other two
+  (Placement).
 - `docs/design/scripts.md`: the paragraph on the charge of the DOM a script makes
   (`:322-332`) and the line that lists what `memory_bytes` holds (`:902-904`) say that the
   bytes a script writes into a node that exists are charged too: twice the peak of the bytes
   that script writes hold in the tree, before the write, never refunded when the peak falls,
   where a node's charge is never refunded because a node is never taken out of the arena.
-  `story:scripts-dom-mutation` edits the same lines (Placement).
+  This story alone edits these two places for the memory charge (Placement).
 - `AGENTS.md`: the entry of `crates/script` (`AGENTS.md:365-369`) names the slice `attributes`,
   its three files and its test count.
 - In the last commit, the public surfaces of acceptance 13: `README.md`, `docs/badges/make.sh`,
@@ -581,7 +635,8 @@ sharing one case.
       member, after the checks of decision 4 (`xml:a` in an outside namespace throws
       `NamespaceError`, not `NotSupportedError`) and with `totals().bytes` unchanged;
       `getAttributeNS`, `hasAttributeNS` and `removeAttributeNS` in it answer `null`, `false`
-      and `undefined`, and raise `runner.steps()` by no more than the glue's charges (no scan).
+      and `undefined`, and the same calls on an element of 4 attributes and on one of 1,024
+      raise `runner.steps()` by equal amounts (no scan).
    f. The table tests run each entry through the helper, so each case makes its own runner and
       asserts the end `Ran` and no recorded limit.
 2. Limits of the tree (outside the table). Each case parses a page with
@@ -599,14 +654,17 @@ sharing one case.
    c. `removeAttribute` and `removeAttributeNS` record no limit at any state; a later script of
       the same runner runs after each end above (the record is cleared).
    d. The members map `WriteError::Limit(limit)` to `DomEnd::Limit(limit)` for any `limit`
-      (decision 5): `git grep -n -e 'Limit::Nodes' -e 'Limit::Depth' -e 'Limit::InputBytes'
-      -e 'Limit::Steps' -- crates/script/src/dom/attribute_writes.rs` prints nothing, and no case
-      asserts one of those four ends (no write of this slice reaches them, Context).
+      (decision 5): `git ls-files crates/script/src/dom/attribute_writes.rs` prints the path and
+      `git grep -n -e 'Limit::Nodes' -e 'Limit::Depth' -e 'Limit::InputBytes' -e 'Limit::Steps'
+      -- crates/script/src/dom/attribute_writes.rs` prints nothing, and no case asserts one of
+      those four ends (no write of this slice reaches them, Context).
 3. The write that the epic's example 2 needs. On a parsed `<a href="/old">`,
    `a.setAttribute("href", "/next")` leaves the tree's attribute `href` as `/next`, read through
    `runner.document()` and `Tree::data`; `a.setAttribute("x", { toString() { return "y" } })`
-   sets `y` (the `TrustedType` deviation of rows 95 and 96; `Element.setAttribute` has the note,
-   `bindings.rs:3189`); a lone surrogate in a value is stored as U+FFFD (`selection.txt:24`).
+   sets `y`, and `a.setAttributeNS(null, "x", { toString() { return "y" } })` sets `y` (the
+   `TrustedType` deviation of rows 95 and 96, one case for each row; `Element.setAttribute` has
+   the note, `bindings.rs:3189`); a lone surrogate in a value is stored as U+FFFD
+   (`selection.txt:24`).
 4. Reading what a write made, through members of the reading story, in one script each: after
    `el.id = "z"`, `document.getElementById("z") === el` and the old id finds nothing; after
    `el.className = "k"`, `document.getElementsByClassName("k")` holds `el`; `el` is the same
@@ -617,8 +675,11 @@ sharing one case.
    b. The tree's write counter. Each of the 8 writers of this story (the three setters,
       `setAttribute`, `setAttributeNS`, `removeAttribute`, `removeAttributeNS`,
       `toggleAttribute`), run once on an element, leaves `runner.document()`'s
-      `tree().writes()` where it was, and so do the 9 readers. This case is the held
-      statement of decision 10: no kept object and no cached answer depends on an attribute.
+      `tree().writes()` where it was, and so do the 9 readers. Each writer's case also asserts
+      that the write took effect, read back through `getAttribute` or the tree (the attribute
+      is set, changed or gone), so a writer that throws fails the case and the unchanged
+      counter is not vacuous. This case is the held statement of decision 10: no kept object
+      and no cached answer depends on an attribute.
 5. Prices (decision 7). `runner.steps()` is read around each script, one call a script, on the
    session's limits; a floor is the sum of the charges the call makes, and each floor is stated
    with its terms in the case.
@@ -633,11 +694,51 @@ sharing one case.
       charge and the glue's charge for the String it answers), and `setAttribute` of such a value
       likewise (the glue's copy of the argument and the tree's copy; the floor assumes the
       argument price of decision 20 is merged, acceptance 14).
-   c. Before the work. With `steps_per_entry` at 50,000, `setAttribute("a", v)` with `v` of
-      1,048,576 bytes ends `limit: steps-per-script`, and the tree, `stored_live()`,
-      `stored_peak()` and `totals().bytes` are as before the script: the charges came before the
-      write and `charge_stored` was not reached. A `getAttribute` of a value of 1,048,576
-      bytes under the same budget ends the same way.
+   c. Before the work. The glue's own copy of a 1 MiB argument costs 65,536 steps, so a budget
+      under that ends the script in the glue and shows nothing about the slice. The case sets
+      the budget between the glue's charge and the glue's plus the slice's, in these steps.
+      `steps_per_entry` is raised for the two measuring runs (10,000,000) and set to the
+      budget B for the two runs that follow; all four run the same page `<p></p>` and the
+      script `var e = document.documentElement; var v = "x".repeat(1048576);` (the script
+      builds `v` first), each on its own runner, in one `#[test]`.
+      - S0 is `runner.steps()` after a run of that script without the call: the steps up to
+        the call, including the building of `v`. If building `v` alone ended the script the
+        case would prove nothing, so the case asserts S0 is under B.
+      - S1 is `runner.steps()` after a run with `e.setAttribute("a", v);` added, and C =
+        S1 - S0 is what the call costs. Its terms: G = 1,048,576 / 16 = 65,536 (the glue's
+        copy of `v`; the name `"a"` is under 16 bytes and costs 0), W = (1 + 1,048,576) / 16 =
+        65,536 (the slice's charge for the bytes the tree copies: `n` of 1, `v` of 1,048,576),
+        and M, the rest (the glue's one step, the scan of 0 attributes, the validation of a
+        name of 1 byte): M = C - G - W is measured and the case asserts G + W <= C and C <=
+        G + W + 1,000, so that M is a few steps and not a term that hides the others.
+      - B = S0 + G + M + W / 2 = S0 + C - W / 2. With B the script ends `limit:
+        steps-per-script` and the tree, `stored_live()`, `stored_peak()` and `totals().bytes`
+        are as before the call: the glue's charge and the rest passed, the slice's charge for the
+        bytes did not fit, and nothing was written. With B + W the script ends `Ran` and the
+        attribute `a` is set to `v` (read back through the tree). A slice that charges after
+        its write, with the same total, ends with B at the same place with the attribute
+        written and `stored_live()` raised, so the first assertion fails on it.
+      - The same form for `setAttributeNS` with a name of 1 MiB: `var n = "x:" +
+        "y".repeat(1048574);` and `e.setAttributeNS("http://www.w3.org/2000/svg", n, "")`. G =
+        (1,048,576 + 26) / 16 = 65,537 (the name and the URL of 26 bytes, the value empty), V =
+        1,048,574 / 16 = 65,535 (the validation of the local name; the prefix of 1 byte costs 0),
+        the bytes charge (1 + 1,048,574) / 16 = 65,535, W = V + the bytes charge = 131,070, M
+        measured with the same assertion. B = S0 + G + M + W / 2 lets the validation pass and
+        ends at the bytes charge; B + W runs and the attribute is set in the SVG namespace.
+      - The read half has the value come from the page: `<p a="...">` with a value of
+        1,048,576 bytes (built by the test in the page string once, parsed under `Limits`
+        raised for it). `e.getAttribute("a")` costs C = S1 - S0 with the terms W_r =
+        1,048,576 / 16 = 65,536 (the slice's charge for the value), G2 = 65,536 (the glue's
+        charge for the String it answers) and M. B1 = S0 + M + W_r + G2 / 2 ends the script
+        `limit: steps-per-script` (the slice's charge was made, so the glue's does not fit); a
+        read that charged nothing would pass with B1. B2 = S0 + C ends `Ran`. The order of
+        the slice's charge and its copy in a read leaves nothing to see at the end of a run,
+        so this case does not hold it: it is held by the doubled floor of 5b, by the source
+        of the reads (decision 7, acceptance 14) and by review.
+      - The terms assume the argument price of decision 20 (16 bytes a step), merged first
+        (acceptance 14). The case records S0, S1, C and M in a comment. The implementor moves
+        the slice's charge to after its write once, runs the case and reports that it went
+        red, as in 11h.
    d. `var a = p.children; for (i = 0; i < p.children.length; i++) p.children[i].className = "x";`
       over 5,000 children ends `Ran`, with no recorded limit, with `runner.steps()` under 15
       times those of the same loop over 500 children, and `a === p.children` afterwards. The
@@ -653,7 +754,10 @@ sharing one case.
    `stored_live()`, `stored_peak()` and the tree's `stored_bytes()` before and after, starts
    with `live` and `peak` at 0, and gives `Document` the session's `memory_bytes` of 67,108,864
    (`SESSION_ENGINE_LIMITS`, `runner.rs:40-48`) and the default `Limits` unless it says
-   otherwise.
+   otherwise. The figures of 6a to 6f (80, 837, 1,109,930 and the rest) hold only because
+   `ATTRIBUTE_BYTES` is `size_of::<Attribute>()` (`limits.rs:90-92 @ a14e3b0`), 80 on a
+   64-bit target: each case reads `surf_html::limits::ATTRIBUTE_BYTES` and computes its numbers
+   from it, and the figures below are comments in the case, stated for a value of 80.
    a. For each of `setAttribute` of a new name, `setAttribute` to a longer value, `setAttribute`
       to a shorter value, `setAttributeNS` of a new prefixed name, `toggleAttribute` that adds
       and the `id` setter on an element without `id`: `totals().bytes` rises by exactly twice
@@ -731,7 +835,7 @@ sharing one case.
       `totals().bytes`) as they were. The heap grows by at least the charge beyond an uncharged
       control, as `node_charge` measures it (`tests/bindings.rs:917-954`).
 7. The reads of the tree (decision 3), in the module `script_hook` of `crates/html/tests`.
-   a. Each of the six reads and `Attribute::stored_bytes` has a test (the last equals the rise
+   a. Each of the five reads and `Attribute::stored_bytes` has a test (the last equals the rise
       of `Tree::stored_bytes` for each attribute `set_attribute`, `set_attribute_ns` and
       `toggle_attribute` add); `get_attribute` and `has_attribute` lower a name for an HTML
       element and not for an SVG one; the NS reads match by namespace and local name and not
@@ -741,32 +845,45 @@ sharing one case.
       one) on an HTML and an SVG element, `has_attribute` is true exactly when
       `remove_attribute` of the same name on a clone of the tree lowers the attribute count,
       and `has_attribute_ns` likewise against `remove_attribute_ns`.
-   c. A node that is not an element (a text node, the document) answers `None`, `false`, an
-      empty list and 0.
-   d. Each read's doc comment names its cost: `git grep -n -i 'cost' -- crates/html/src/tree.rs`
-      shows a line in the doc comment of each of the six.
-8. Other slices and `[SameObject]` (decision 10). `el.appendChild`, `el.querySelector`,
-   `el.attributes`, `el.classList`, `el.getAttributeNode("a")` and `document.createAttribute("a")`
-   throw `NotSupportedError` naming the member (`<member> is not supported: <reason>` for a row
-   of `throws`, `bindings.rs:2042-2047`; `<member> is not supported` for the others,
-   `bindings.rs:149-155`), each in its own `try`; `el.attributes === el.attributes` and
-   `el.classList === el.classList` each throw, never answer. `git grep -n -F 'el.getAttribute('
-   -- crates/script/tests/dom_reading.rs` prints no line that expects a throw. The `SameObject`
-   enum keeps its four variants: `git diff -U0 -- crates/script/src/bindings.rs | grep
-   'SameObject'` prints nothing.
-9. The generated files. `awk '$3=="attributes"' crates/webidl/selection.txt | wc -l` prints 14;
-   the row `Element setAttributeNS` holds the deviation of decision 9;
-   `slot task webidl-check` exits 0 and `slot task webidl-slow` regenerates `bindings.rs` byte
-   for byte; `git diff -U0 -- crates/script/src/bindings.rs | grep '^[-+]//! [0-9a-f]\{64\}'`
-   prints the digest lines of `crates/webidl/selection.txt` and of
-   `crates/webidl/src/prelude.rs` and no other source's, and `charge_stored` is in the file.
-10. Files, and the source test. `git diff --stat` names only the files of the Change and of the
-    public surfaces; it names nothing else under `crates/html/` than `src/tree.rs` and
-    `tests/script_hook.rs`, and not `crates/script/src/runner.rs`,
-    `crates/script/tests/adversary_3.rs`, `adversary_4.rs`, `adversary_5.rs` or
-    `crates/webidl/src/generate.rs`; in `reads.rs` it shows three changed lines. The module
-    `dom_attributes` is the one declared at `tests/main.rs:17` and `dom_attributes_cost` the one
-    added after it; no `[[test]]` entry is added; `slot task test-layout` exits 0.
+   c. A node that is not an element (a text node, the document) answers `None`, `false` and an
+      empty list.
+   d. Each read's doc comment carries a line that starts with the token `Cost:`: `git grep -c -F
+      'Cost:' -- crates/html/src/tree.rs` prints 5 (it prints 0 at `83e6b8a`, where the token is
+      free), one for each of the five reads. A grep cannot show that each line is in the right
+      doc comment; the test of 7a for each read reads the file's text of that read's comment
+      with `include_str!` and asserts the token follows the read's name before the next `fn`.
+8. Other slices and `[SameObject]` (decision 10), a guard that holds on `main` today and stays
+   green only if this story does not move one of its own rows out of `throws` by mistake:
+   `el.attributes`, `el.classList`, `el.getAttributeNode("a")` and
+   `document.createAttribute("a")`, rows of this slice that stay `throws`, throw
+   `NotSupportedError` naming the member (`<member> is not supported: <reason>` for a row
+   of `throws`, `bindings.rs:2042-2047`), each in its own `try`; `el.attributes === el.attributes`
+   and `el.classList === el.classList` each throw, never answer. The case names no row of
+   another slice: `el.appendChild` is the mutation slice's and `el.querySelector` the
+   selectors slice's, and each of those stories changes its own line of
+   `other_slices_still_throw` (Change, Placement). `git grep -n -F 'el.getAttribute(' --
+   crates/script/tests/dom_reading.rs` prints no line that expects a throw, and
+   `git diff -U0 $(git merge-base main HEAD)..HEAD -- crates/script/tests/dom_reading.rs`
+   shows one removed and one added line of that test, the `getAttribute` line. The
+   `SameObject` enum keeps its four variants: `git diff -U0 $(git merge-base main HEAD)..HEAD
+   -- crates/script/src/bindings.rs | grep 'SameObject'` prints nothing (a guard).
+9. The generated files. `awk '$3=="attributes"' crates/webidl/selection.txt | wc -l` prints 14
+   (a guard, true on `main`); the row `Element setAttributeNS` holds the deviation of decision
+   9; `slot task webidl-check` exits 0 and `slot task webidl-slow` regenerates `bindings.rs`
+   byte for byte; `git diff -U0 $(git merge-base main HEAD)..HEAD -- crates/script/src/bindings.rs
+   | grep '^[-+]//! [0-9a-f]\{64\}'` prints the digest lines of `crates/webidl/selection.txt`
+   and of `crates/webidl/src/prelude.rs` and no other source's, and `git grep -c -F
+   'charge_stored' -- crates/script/src/bindings.rs` prints a number above 0 (nothing at
+   `a14e3b0`).
+10. Files, and the source test. `git diff --stat $(git merge-base main HEAD)..HEAD` names only
+    the files of the Change and of the public surfaces (a guard); it names nothing else under
+    `crates/html/` than `src/tree.rs` and `tests/script_hook.rs`, and not
+    `crates/script/src/runner.rs`, `crates/script/tests/adversary_3.rs`, `adversary_4.rs`,
+    `adversary_5.rs` or `crates/webidl/src/generate.rs`; the same diff of `reads.rs` holds only
+    the `pub(super)` tokens this story needs that `main` lacks (three, or fewer when the
+    selectors story merged some first). The module `dom_attributes` is the one declared at
+    `tests/main.rs:17` and `dom_attributes_cost` the one added after it; no `[[test]]` entry is
+    added; `slot task test-layout` exits 0.
     The source test `dom_attributes_cost::the_members_touch_the_tree_only_through_the_files`
     reads `attributes.rs`, `attribute_reads.rs` and `attribute_writes.rs` with `include_str!`
     (as `dom_reading_cost::the_members_read_the_tree_only_through_the_reads` does,
@@ -780,8 +897,15 @@ sharing one case.
     a shape, no loop to steady a number. Each case records its steps, its time and the time a
     step against the plain walk of `dom_reading_cost.rs` (`getElementById('none')` over 20,000
     elements without attributes); it asserts a floor of steps, the sum of the charges of
-    decision 7 for that shape, and no time. Under raised parse limits (16,384 attributes, room
-    for long values) and `string_length` of 1 << 22:
+    decision 7 for that shape, and no time: no assertion of the module reads a time (the 5 s,
+    the ratio of 20 and the 60 s below are the report's and the runner's bounds, not a test's;
+    `AGENTS.md:1966 @ a14e3b0` lets a test bound a time only at 10 times the time it takes
+    alone, and proves a cost by a count). Cases that share a page are one `#[test]` that
+    builds the page once and runs its members in turn, each on its own runner: a shared
+    in-process value is built once for each test under nextest, which runs each test in its own
+    process, so the page of 11a, 11b and 11c is parsed once for the three, and one test
+    holds 11d. Under raised parse limits (16,384 attributes, room for long values) and
+    `string_length` of 1 << 22:
     a. `getAttribute` and `hasAttribute` of an absent name over an element of 4,096 attributes
        whose names are all 1,000 bytes long, the wanted name 1,000 bytes long and differing
        only in its last byte (every compare reads the whole name; the names are distinct, 996
@@ -793,15 +917,20 @@ sharing one case.
        the names over 16.
     d. `getAttribute` of a value of 4,194,304 bytes (the bound): floor 2 * 4,194,304 / 16 =
        524,288; and a value of 4,194,305 bytes throws the `RangeError` with the steps raised by
-       less than 262,144, the charge for the value (the check precedes the charge).
+       at least 4,194,305 / 16 = 262,144: the slice charges the value's bytes from its byte
+       length before `longer_than` counts anything (decision 7), so a slice that counted first
+       and threw would raise the steps by less and fail. The glue's charge for the answer is not
+       reached, so the floor is the slice's alone. The page holds both values in one
+       attribute each, in one `#[test]`.
     e. `setAttribute` with a value of 4,194,304 bytes on an element of 16,384 attributes, adding
        a name: floor 2 * 4,194,304 / 16 (the glue's copy and the tree's) + 2 * 16,384 / 4 (two
-       scans); the `id` setter (which shares `set_reflected` with `className` and `slot`) with
+       charged scans, three passes); the `id` setter (which shares `set_reflected` with
+       `className` and `slot`) with
        the same value; `setAttributeNS` with a qualified name of 1 MiB (`"x:" +
        "y".repeat(1048574)`), the SVG namespace URL and an empty value: floor the passes of the
        validation over the prefix and the local name, the scans, and `(n + v) / 16`.
        `toggleAttribute` and `setAttribute` with a name of 1 MiB likewise (validate, lowering,
-       two scans, the tree's copy, the glue's copy).
+       two charged scans, the tree's copy, the glue's copy).
     f. `removeAttribute` and `removeAttributeNS` of the last of 16,384 attributes: floor
        2 * 16,384 / 4 = 8,192 (two scans; the shift is paid by them).
     g. The quadratic shape: `for (i = 0; i < 4096; i++) e.setAttribute("n" + i, "v")` on an
@@ -811,7 +940,10 @@ sharing one case.
        charge of decision 7 in turn (the scan, the value, the names, the validation, the tree's
        second scan, the tree's copy, the per-element step), runs the module, and the report
        names for each removal the cases that went red; a charge with no red case gets a case
-       or a tighter floor. The report states each case's time and ratio against the plain walk;
+       or a tighter floor. The same report names the case of 5c that went red when the slice's
+       charge was moved after its write, and the case of 11d that went red when
+       `longer_than` was called before the slice's charge. The report states each case's
+       time and ratio against the plain walk;
        a ratio over 20 is a defect of the price, fixed by raising the charge in the same change.
        No case runs over 5 s; a case that does is named with its time and its shape is made
        smaller by a round number, with the floor from the smaller shape.
@@ -838,24 +970,33 @@ sharing one case.
        `AGENTS.md:365-369 @ 83e6b8a`, where it says "29 tests"; the reading story edits the same
        entry) has a test count equal to the tests of `surf-script` in the log of the tip.
 14. The folder's bounds hold, and the order of the work. The reading unit's price commit (one
-    step per 16 bytes in `Copies::copy`, charged before the copy) is merged first: at the
+    step per 16 bytes in `Copies::copy`, charged after the one copy: no story's text holds
+    the move before the copy yet) is merged first: at the
     start `git grep -n -F 'units / 64' -- crates/script/src/bindings.rs` (the line
     `cx.charge_steps(units / 64)`, `bindings.rs:628` at `83e6b8a`) prints nothing, else the
-    floors of 5b, 6 and 11 are not the story's and the work waits for that commit. The
+    floors of 5b, 5c, 6 and 11 are not the story's and the work waits for that commit. At the
+    same start the implementor reads `longer_than` (`bindings.rs:145-147`), `reads::copied`
+    (`reads.rs:142-153`) and `string_value` (`bindings.rs:1263-1270`) and reports whether each
+    charges a value's bytes before it counts UTF-16 units: at `83e6b8a` none does, which is the
+    reading unit's defect, passed to its fix round; this story's own reads charge first
+    (decision 7, 11d) whatever that round has done. The
     test step ends within 120 s and no test runs over 60 s; a test over 5 s is named with its
     time in the report, and so is the time of `dom_attributes` and of `dom_attributes_cost` as
     a whole (the loops of 6b to 6d and the shapes of 11 are the ones to time); each case makes
     its own runner (5.9 to 16.4 ms in the bindings unit's measure, `webidl-bindings.md` "As
     built"); no model call and no network request in a test; no Python in anything that stays;
-    an expensive product is made once per test run and never per test (the pages of 11 are
-    built once for the module's cases that share a shape, not per case, and no case starts a
-    server); no generator with a committed output is added: the existing one gains
+    an expensive product is made once per test run and never per test (cases of 11 that share
+    a page are one `#[test]` that builds the page once and runs the members in turn, each on
+    its own runner, and no case starts a server); no generator with a committed output is
+    added: the existing one gains
     `charge_stored` and the per-element step, and the time of `slot task webidl-slow` is
     measured before and after, both in the report; a build or test job in the pool ends within
     10 minutes or names its time with `slot --timeout`, at most 30 minutes, and is not started
     again unchanged; every compiling or testing command carries `slot`; a script that measures
     or waits starts without it.
-15. The report holds, as text: the numbers measured in 5, the steps of 5d, the number written,
+15. The report holds, as text: the numbers measured in 5, S0, S1, C and M of each case of 5c
+    and that the case went red with the slice's charge moved after its write, the steps of 5d,
+    the number written,
     the steps and `heap_bytes()` of 6b, the steps and N of 6d, the cases of 11 with their steps,
     times and ratios and the cases that went red for each removed charge (11h), the times of
     `webidl-slow` before and after, and the output of 13a.
@@ -864,17 +1005,22 @@ sharing one case.
 
 `Element.attributes`, `Attr` and `NamedNodeMap`, which are not generated, and the five attribute
 node members and `Document.createAttribute` and `createAttributeNS`, which are rows of `throws`
-(an attribute has no identity in the tree, Context): they stay `throws`, and a later story gives
-them an identity rule of its own, a wrapper keyed by the element, the namespace and the local
-name; `classList` and the token lists (`selection.txt:88`, `reason: token lists`); the attributes
-of a `ProcessingInstruction` (rows 205-211, `throws`); an open namespace in `crates/html`, so
-that `setAttributeNS` can store an attribute in a namespace outside the six (decision 9), a
-later story of its own; a refund of what the peak charged, or of a node's charge (decision 8);
+(an attribute has no identity in the tree, Context): they stay `throws`, excluded by the epic
+(`epic:128`, `:683` and `:741 @ a14e3b0`; no story); `classList` and the token lists
+(`selection.txt:88`, `reason: token lists`), which the epic excludes in the same lines (no
+story); the attributes of a `ProcessingInstruction` (rows 205-211, `throws`); an open
+namespace in `crates/html`, so that `setAttributeNS` can store an attribute in a namespace
+outside the six (decision 9), which is `story:html-open-namespace` (a draft); a refund of what
+the peak charged, or of a node's charge (decision 8): no story is planned;
 the words of `Limit::InputBytes` and `Limit::Steps` (`story:scripts-dom-mutation`); creating an
 element (`createElement` is the slice `mutation`'s); the parse that runs a page's scripts
 (`story:scripts-parse-run`); a page in a session and the example of a link built by script
 (`story:scripts-document-port`); the argument price of decision 20 itself and the 16-byte rate
-of `Copies::copy` (the reading unit's price commit).
+of `Copies::copy` (the reading unit's price commit); the move of the glue's argument charge
+before its copy, which no story's text holds (`story:scripts-utf16-length` swaps the count of
+units and holds nothing of it), so a write of this slice charges the glue's copy of an argument
+after the copy until a story moves it; the uncharged count of `longer_than` in `reads::copied`
+and `string_value` (the reading unit's fix round, Context).
 
 ## Placement
 
@@ -888,48 +1034,68 @@ surface of the hook story and the reads this story adds. Beside `story:scripts-d
 merges second takes `main`, regenerates it with the generator (`slot task webidl-check` and
 `slot task webidl-slow` hold it) and checks the digest lines (acceptance 9).
 Shared with the reading story: `crates/html/src/tree.rs` (it adds the write counter, this story
-adds six reads and `Attribute::stored_bytes`; the reading story merges first and this story
+adds five reads and `Attribute::stored_bytes`; the reading story merges first and this story
 merges `main` before it edits the file), `crates/webidl/selection.txt`, `bindings.rs`,
 `crates/webidl/src/prelude.rs` (`strings_value` is the reading unit's open item and this
 story's change), `crates/script/src/dom/reads.rs` (three tokens), `dom/mod.rs` (two `mod`
-lines), `crates/script/tests/dom_reading.rs` (one line), `docs/design/scripts.md`, `AGENTS.md`
-and the public surfaces; this story merges `main` before it regenerates `bindings.rs`.
+lines), `crates/script/tests/dom_reading.rs`, `docs/design/scripts.md`, `AGENTS.md` and the
+public surfaces; this story merges `main` before it regenerates `bindings.rs`.
+The test `other_slices_still_throw` (`dom_reading.rs:2399-2432 @ 83e6b8a`) holds three adjacent
+lines, `document.appendChild(el)` (the mutation slice's), `el.getAttribute("id")` (this
+slice's) and `el.querySelector("p")` (the selectors slice's). Each of the three stories changes
+its own line and no other, so no two of them edit the same line; the one that merges later
+takes `main` first.
+Shared with `story:scripts-dom-selectors`: `crates/script/src/dom/reads.rs`, `tests/main.rs`
+(one `mod` line each, in different places) and `dom/mod.rs`, `AGENTS.md` and the public
+surfaces. The selectors story's revision is to put its own functions in `selector_reads.rs`
+and to touch `reads.rs` by `pub(super)` on `charge` and on the attribute scan and by widening
+the scan's name to `&str`; its text at the plan commit does not hold that yet. This story
+makes `charge`, `ATTRIBUTES_A_STEP` and `attribute_count` `pub(super)` and calls
+`reads::attribute_count` (no `Tree::attribute_count` exists). Whichever of the two merges
+second keeps the other's tokens, adds none twice and takes `main` first. No edge orders the
+two.
+Shared with `story:scripts-dom-mutation`: `tests/main.rs` and `dom/mod.rs` (one `mod` line each,
+in different places), `AGENTS.md` and the public surfaces; whichever merges later merges `main`
+first and takes its numbers from its own log. This story owns `DomCx::charge_stored`,
+`DomCx::undo_stored`, the two counts `live` and `peak` of `DomState` (all in
+`crates/webidl/src/prelude.rs`) and the `Writes` variant of `crates/script/tests/bindings.rs`
+that calls them. The mutation story's text at the plan commit does not hold a call of them (it
+charges nodes with `charge_node`); its revision is to take them for its character-data writes.
+Whichever of the two merges second takes the function, the counts and the test variant as
+they are, regenerates `bindings.rs` and adds no second. The mutation story writes its own file,
+and so does this one for its writes (`attribute_writes.rs`). This story alone edits
+`docs/design/scripts.md:322-332` and `:902-904` for the memory charge.
+Shared with `story:swell-0-9-0` (active): `crates/script/tests/bindings.rs` (this story adds a
+`Writes` variant, that story adds cases), `docs/design/scripts.md` (this story the paragraphs
+at `:322-332` and `:902-904`, that story the Q4 paragraph at `:338-341`), `AGENTS.md`,
+`README.md` and the public surfaces. Whichever merges later merges `main` first, takes its
+numbers from its own log and re-reads `docs/design/scripts.md` after the merge.
 Shared with `story:scripts-parse-run`: `crates/webidl/src/prelude.rs` and `bindings.rs` (it adds
 `DomState::swap_tree` beside the fields this story adds; no line of one is the other's, and the
 second merger regenerates), `docs/design/scripts.md`, `AGENTS.md` and the public surfaces. That
 story lends the one tree to each script and leaves `live` and `peak` as they are. This story does
 not depend on it: its tests run a document through `run_document`, as the reading story's do.
-Shared with `story:scripts-dom-mutation`: `DomCx::charge_stored`, `DomCx::undo_stored` and the
-two counts `live` and `peak` of `DomState`. This story adds them to
-`crates/webidl/src/prelude.rs` and the mutation story calls the same function, with the same two
-counts, for its character-data writes, so it needs this story's function or adds the same one;
-whichever of the two merges second merges `main` first, takes the function and the counts as
-they are, regenerates `bindings.rs` and does not add a second. The mutation story writes its
-own file, and so does this one for its writes (`attribute_writes.rs`); the mutation story takes
-the same form, or moves both into one shared file when it merges second and says so. They
-share `docs/design/scripts.md:322-332` and `:902-904`, `AGENTS.md`
-and the public surfaces; whichever merges later merges `main` first and takes its numbers from
-its own log.
-Shared with `story:scripts-dom-selectors`: `AGENTS.md`, the public surfaces, `tests/main.rs`
-(one `mod` line each, in different places) and `dom/mod.rs`, on the same rule.
-Drafts that touch the same files, none a dependency: `story:scripts-utf16-length` edits
-`prelude.rs` (`string_length`) and `bindings.rs` and moves the argument charge before the copy,
-so it lands in the generator beside this story's change and the later one regenerates;
+Drafts that touch the same files, none a dependency: `story:html-parser-hook-cost` names
+`crates/html/src/tree.rs` too, and whichever merges second takes `main` first;
+`story:scripts-utf16-length` edits `prelude.rs` (`string_length`) and `bindings.rs` (the count of
+UTF-16 units) and does not move the argument charge, so it lands in the generator beside
+this story's change and the later one regenerates;
 `story:scripts-dom-collection-names` edits the `HTMLCollection` rows of `selection.txt` and the
 glue, not this slice's rows; `story:scripts-dom-sibling-positions` edits the child-list writers
 of `tree.rs` and `reading.rs`/`reads.rs`, not the attribute writes this story reads, so a
-kept position never depends on an attribute.
+kept position never depends on an attribute; `story:html-open-namespace` (a draft) lifts the
+deviation of decision 9, after this story.
 The last commit of the story rewrites the public-surface lines of acceptance 13 (the test
 counts in `README.md`, `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/*`); a
 commit before it leaves them.
 `story:scripts-html-conformance` and `story:scripts-document-port` depend on this slice (the
-epic, lines 478-479 and 486).
+epic, lines 478-479 and 486 @ a14e3b0).
 
 ## Why `epic:scripts-in-a-page`
 
-Example 2 of the epic (lines 69-71) sets `href` with `setAttribute` on an element a script made,
-and the session shows it as a link. This story is the half of that example that is not creating
-the element and putting it in the tree, and it holds every script's attribute write to the
-parser's attribute and stored-byte limits, as the epic's "Security" section asks (line 234), and
-to the agent's memory budget, as a node's bytes are, and every read and write to a price that
-a step buys a bounded amount of work.
+Example 2 of the epic (lines 69-71 @ a14e3b0) sets `href` with `setAttribute` on an element a
+script made, and the session shows it as a link. This story is the half of that example that is
+not creating the element and putting it in the tree, and it holds every script's attribute write
+to the parser's attribute and stored-byte limits, as the epic's "Security" section asks (line
+234 @ a14e3b0), and to the agent's memory budget, as a node's bytes are, and every read and
+write to a price that a step buys a bounded amount of work.
