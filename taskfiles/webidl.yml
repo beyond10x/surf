@@ -7,18 +7,28 @@ vars:
 
 tasks:
   webidl-check:
-    desc: Fail when a source of the generated DOM bindings differs from its sha256 in their header (no build, no generation).
+    desc: Fail when a source of the generated DOM bindings, or the file itself, differs from its sha256 in their header (no build, no generation).
     summary: |
-      Fail when a source of the generated DOM bindings differs from its sha256 in their header (no build, no generation).
+      Fail when a source of the generated DOM bindings, or the file itself, differs from its sha256 in their header (no build, no generation).
 
-      crates/script/src/bindings.rs names in its header the sha256 of each source the binary
-      bindings of surf-webidl reads: the two vendored pages and the cut of the HTML Standard,
-      crates/webidl/selection.txt, crates/webidl/Cargo.toml and every file of crates/webidl/src.
-      The task fails when the header lists another set of files than these, and runs
+      What decides the bytes of crates/script/src/bindings.rs, and where each is held:
+      - in its header's digests, so this task fails on a change: the two vendored pages and
+        the cut of the HTML Standard (crates/webidl/data/whatwg/), crates/webidl/selection.txt,
+        crates/webidl/Cargo.toml, every file of crates/webidl/src, and rust-toolchain.toml,
+        which pins the rustfmt that formats the file;
+      - in the trigger list of the lane slow (AGENTS.md, `task slow`), so webidl-slow is run
+        after a change: surf-html (crates/html/src and crates/html/Cargo.toml), with which the
+        generator reads the DOM and Web IDL pages and each block of the HTML cut, and
+        Cargo.lock, which fixes the versions it builds with.
+
+      The task fails when the header lists another set of files than the first list, and runs
       `sha256sum --check --strict` over the listed lines, which names each file that differs.
-      Then its self-test: a copy of the sources with one byte of selection.txt changed must
-      fail naming that file and no other. Regenerate with `cargo run -p surf-webidl --bin bindings`. A step of check; the lane
-      slow regenerates the file and compares the bytes (webidl-slow).
+      Its self-test: a copy of the sources with one byte of selection.txt changed must fail
+      naming that file and no other. Then it compares the sha256 of the file's lines after its
+      header's last line ("The sha256 of the lines after this one: ...") with that line, so a
+      change of the file by hand fails naming it; its self-test changes one byte of a copy and
+      must fail. Regenerate with `cargo run -p surf-webidl --bin bindings`. A step of check;
+      the lane slow regenerates the file and compares the bytes (webidl-slow).
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     cmds:
@@ -31,7 +41,8 @@ tasks:
         cut -c 67- "$out/digests" | sort > "$out/listed"
         {
           printf '%s\n' crates/webidl/data/whatwg/dom.html crates/webidl/data/whatwg/webidl.html \
-            crates/webidl/data/whatwg/html-idl.html crates/webidl/selection.txt crates/webidl/Cargo.toml
+            crates/webidl/data/whatwg/html-idl.html crates/webidl/selection.txt crates/webidl/Cargo.toml \
+            rust-toolchain.toml
           find crates/webidl/src -type f -name '*.rs'
         } | sort > "$out/sources"
         if ! cmp -s "$out/listed" "$out/sources"; then
@@ -66,6 +77,41 @@ tasks:
           exit 1
         fi
         echo "webidl-check: self-test: one changed byte of selection.txt fails naming it"
+      - |
+        set -eu
+        out=.out/webidl-check
+        body_check() {
+          line=$(grep -n '^//! The sha256 of the lines after this one: ' "$1" | head -n 1 | cut -d: -f1)
+          if [ -z "$line" ]; then
+            echo "webidl-check: $1 holds no line with the sha256 of its lines after the header"
+            return 1
+          fi
+          expected=$(sed -n "${line}s/^.*: //p" "$1")
+          actual=$(tail -n +"$((line + 1))" "$1" | sha256sum | cut -c 1-64)
+          if [ "$actual" != "$expected" ]; then
+            echo "webidl-check: $1: its lines after the header have sha256 $actual, not $expected; it was changed by hand: run cargo run -p surf-webidl --bin bindings"
+            return 1
+          fi
+        }
+        body_check '{{.BINDINGS}}'
+        echo "webidl-check: the lines of {{.BINDINGS}} after its header match their sha256"
+        copy="$out/self-test-body/bindings.rs"
+        mkdir -p "$(dirname "$copy")"
+        line=$(grep -n '^//! The sha256 of the lines after this one: ' '{{.BINDINGS}}' | head -n 1 | cut -d: -f1)
+        {
+          head -n "$line" '{{.BINDINGS}}'
+          tail -n +"$((line + 1))" '{{.BINDINGS}}' | { printf 'X'; tail -c +2; }
+        } > "$copy"
+        if body_check "$copy" > "$out/self-test-body.txt" 2>&1; then
+          echo "webidl-check: self-test: a changed byte of bindings.rs passed"
+          exit 1
+        fi
+        if ! grep -q "^webidl-check: $copy: its lines after the header" "$out/self-test-body.txt"; then
+          echo "webidl-check: self-test: the failure does not name the copy of bindings.rs:"
+          cat "$out/self-test-body.txt"
+          exit 1
+        fi
+        echo "webidl-check: self-test: one changed byte of bindings.rs fails naming it"
 
   webidl-slow:
     desc: Generate the DOM bindings again into .out/webidl-slow and compare them byte for byte with crates/script/src/bindings.rs.

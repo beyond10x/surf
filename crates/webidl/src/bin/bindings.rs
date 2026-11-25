@@ -2,8 +2,9 @@
 //! script engine (`story:webidl-bindings`) to `<out>`, by default
 //! `crates/script/src/bindings.rs`, from the vendored files of `crates/webidl/data/whatwg/` and
 //! the selection `crates/webidl/selection.txt` (or `<file>`). The header names the sha256 of
-//! each source, computed with `sha256sum`; the text is formatted with `rustfmt`. The time of
-//! each phase goes to standard error.
+//! each source, computed with `sha256sum`, among them `rust-toolchain.toml`, which pins the
+//! `rustfmt` that formats the text; after `rustfmt`, its last line gets the sha256 of the lines
+//! after it (`surf_webidl::BODY_DIGEST_LINE`). The time of each phase goes to standard error.
 //!
 //! `--without-html` reads the DOM Standard and the Web IDL Standard only, for timing the
 //! generator before the HTML Standard is added; a selection that names `Window` then fails.
@@ -18,7 +19,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
-use surf_webidl::{Digest, Model, Selection, bindings_model, cut_idl_blocks, generate, read_page};
+use surf_webidl::{
+    Digest, Model, Selection, bindings_model, cut_idl_blocks, fill_body_digest, generate, read_page,
+};
 
 fn main() -> ExitCode {
     match run() {
@@ -110,6 +113,8 @@ fn run() -> Result<(), String> {
     }
     sources.push(label);
     sources.push("crates/webidl/Cargo.toml".to_string());
+    // It pins the toolchain, so the version of the `rustfmt` that formats the file.
+    sources.push("rust-toolchain.toml".to_string());
     let mut code = Vec::new();
     rust_files(&root.join("crates/webidl/src"), &mut code)?;
     code.sort();
@@ -123,6 +128,8 @@ fn run() -> Result<(), String> {
     let started_format = Instant::now();
     let formatted = rustfmt(&text)?;
     let format_time = started_format.elapsed();
+    let formatted = fill_body_digest(&formatted, sha256_of)
+        .ok_or("the generated text holds no line of the body's digest")??;
     std::fs::write(&out, &formatted).map_err(|error| format!("{}: {error}", out.display()))?;
     eprintln!(
         "bindings: wrote {} ({} lines, {} bytes); read {:.3} s, generate {:.3} s, rustfmt {:.3} s",
@@ -209,6 +216,40 @@ fn sha256(root: &Path, paths: &[String]) -> Result<Vec<Digest>, String> {
         ));
     }
     Ok(digests)
+}
+
+/// The sha256 of `bytes`, by `sha256sum` on its standard input: 64 lowercase hex digits.
+fn sha256_of(bytes: &[u8]) -> Result<String, String> {
+    let mut child = Command::new("sha256sum")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("sha256sum: {error}"))?;
+    let mut stdin = child.stdin.take().ok_or("sha256sum: no stdin")?;
+    let input = bytes.to_vec();
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("sha256sum: {error}"))?;
+    writer
+        .join()
+        .map_err(|_| "sha256sum: the writer panicked")?
+        .map_err(|error| format!("sha256sum: {error}"))?;
+    let digest: String = String::from_utf8_lossy(&output.stdout)
+        .chars()
+        .take(64)
+        .collect();
+    if !output.status.success()
+        || digest.len() != 64
+        || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "sha256sum: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(digest)
 }
 
 /// `text` formatted by `rustfmt --edition 2024`.

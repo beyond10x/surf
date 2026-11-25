@@ -5,7 +5,19 @@
 //! slice whose default for every method answers `NotSupportedError` naming the member, one host
 //! function per getter, setter, operation and interface object, and the table the realm's setup
 //! reads. It refuses, naming the row, a definition the selection does not name, a member the
-//! model does not hold ([`Selection::check`]), and a type or a member it does not convert.
+//! model does not hold ([`Selection::check`]), a type or a member it does not convert,
+//! `[LegacyUnforgeable]` off the global interface, and two arguments of one member that get one
+//! Rust name.
+//!
+//! What it writes from the model and the selection is Rust: a name of the model becomes an
+//! identifier by [`identifier`]'s rule (`snake` form, `-` written `_`, a keyword raw, `self`,
+//! `super` and `crate` with a `_` at the end), and a note of the selection goes into a one-line
+//! `///` comment with each control character written as its escape ([`doc_text`]); in a string
+//! literal it is written with Rust's escapes.
+//!
+//! Beside the digests of its sources, the header holds the sha256 of the file's lines after
+//! the header, which the binary `bindings` fills in after `rustfmt` ([`BODY_DIGEST_LINE`]), so
+//! that `task webidl-check` notices a change of the file itself.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -226,6 +238,9 @@ struct Method {
     this: This,
     args: Vec<Arg>,
     ret: Return,
+    /// An attribute's setter: Web IDL converts its first argument, `undefined` when none was
+    /// passed (3.7.6), so no count of arguments is checked.
+    setter: bool,
 }
 
 /// The generator's state over one run.
@@ -250,6 +265,30 @@ impl Ord for Conversion {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         format!("{self:?}").cmp(&format!("{other:?}"))
     }
+}
+
+/// The start of the header's last line, which ends in the sha256 of the file's lines after it:
+/// [`generate`] writes 64 zeros there, and the binary `bindings` the digest, after `rustfmt`
+/// ([`fill_body_digest`]).
+pub const BODY_DIGEST_LINE: &str = "//! The sha256 of the lines after this one: ";
+
+/// `text` with the 64 digits of its [`BODY_DIGEST_LINE`] replaced by what `sha256` answers for
+/// the bytes after that line; `None` when `text` holds no such line.
+pub fn fill_body_digest(
+    text: &str,
+    sha256: impl FnOnce(&[u8]) -> Result<String, String>,
+) -> Option<Result<String, String>> {
+    let start = if text.starts_with(BODY_DIGEST_LINE) {
+        0
+    } else {
+        text.find(&format!("\n{BODY_DIGEST_LINE}"))? + 1
+    };
+    let digits = start + BODY_DIGEST_LINE.len();
+    let body = text[digits..].find('\n')? + digits + 1;
+    Some(
+        sha256(&text.as_bytes()[body..])
+            .map(|digest| format!("{}{digest}{}", &text[..digits], &text[digits + 64..])),
+    )
 }
 
 /// Writes `bindings.rs` from `model` and `selection`, with `digests` in its header.
@@ -314,21 +353,43 @@ pub fn camel(name: &str) -> String {
         .collect()
 }
 
-/// A Rust identifier for `name`: raw when it is a keyword.
+/// A Rust identifier for the Web IDL identifier `name` (`/_?[A-Za-z][0-9A-Z_a-z-]*/`): its
+/// [`snake`] form with each `-` written `_`; a keyword that has a raw form is written raw
+/// (`r#type`), and one that has none (`self`, `Self`, `super`, `crate`) gets a `_` at its end
+/// (`self_`). Two names of one member that give the same identifier are refused by the
+/// generator, naming the row.
 fn identifier(name: &str) -> String {
     const KEYWORDS: &[&str] = &[
-        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
-        "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
-        "mut", "pub", "ref", "return", "static", "struct", "super", "trait", "true", "type",
-        "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "gen",
-        "macro", "override", "priv", "try", "typeof", "unsized", "virtual", "yield",
+        "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern",
+        "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut",
+        "pub", "ref", "return", "static", "struct", "trait", "true", "type", "unsafe", "use",
+        "where", "while", "abstract", "become", "box", "do", "final", "gen", "macro", "override",
+        "priv", "try", "typeof", "unsized", "virtual", "yield",
     ];
-    let snake = snake(name);
-    if KEYWORDS.contains(&snake.as_str()) {
+    const NOT_RAW: &[&str] = &["self", "Self", "super", "crate"];
+    let snake = snake(name).replace('-', "_");
+    if NOT_RAW.contains(&snake.as_str()) {
+        format!("{snake}_")
+    } else if KEYWORDS.contains(&snake.as_str()) {
         format!("r#{snake}")
     } else {
         snake
     }
+}
+
+/// `text` for a one-line `///` comment: each control character (a carriage return, a tab)
+/// written as its Rust escape (`\r`), so that the line holds no bare CR, which rustc refuses
+/// in a doc comment, and no line break.
+fn doc_text(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_default().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 fn has_attribute(member: &Member, name: &str) -> bool {
@@ -719,8 +780,21 @@ impl Generator<'_> {
     }
 
     fn args(&mut self, row: &Row, arguments: &[Argument]) -> Result<Vec<Arg>, SelectionError> {
-        let mut out = Vec::new();
-        for argument in arguments {
+        let mut out: Vec<Arg> = Vec::new();
+        for (index, argument) in arguments.iter().enumerate() {
+            let name = identifier(&argument.name);
+            if let Some(before) = arguments[..index]
+                .iter()
+                .find(|before| identifier(&before.name) == name)
+            {
+                return Err(self.refuse(
+                    row,
+                    format!(
+                        "the arguments `{}` and `{}` are both written `{name}`",
+                        before.name, argument.name
+                    ),
+                ));
+            }
             let conversion = self.conversion(row, &argument.ty)?;
             if argument.variadic != (conversion == Conversion::NodesOrStrings) {
                 return Err(self.refuse(
@@ -732,7 +806,7 @@ impl Generator<'_> {
                 ));
             }
             out.push(Arg {
-                name: identifier(&argument.name),
+                name,
                 conversion,
                 optional: argument.optional,
                 default: argument.default.clone(),
@@ -750,6 +824,17 @@ impl Generator<'_> {
         let rows: Vec<Row> = self.selection.rows_of(&name).cloned().collect();
         let mut members = String::new();
         let mut unscopables = Vec::new();
+        // Web IDL 3.7.9: an interface with an indexed property getter (`getter T
+        // name(unsigned long index)`) gets `@@iterator`, `%Array.prototype.values%`. It follows
+        // from the getter, so no row names it.
+        let indexed = self.model.members(&name).iter().any(|member| {
+            matches!(&member.kind, MemberKind::Operation { getter: true, arguments, .. }
+            if arguments.first().is_some_and(|index| !index.ty.nullable
+                && matches!(index.ty.kind, TypeKind::Integer {
+                    unsigned: true,
+                    size: crate::IntegerSize::Long,
+                })))
+        });
         let mut iterable = false;
         let mut steps = format!("interface_{}", snake(&name));
         let mut length = 0;
@@ -762,6 +847,14 @@ impl Generator<'_> {
                 unscopables.push(row.member.clone());
             }
             let unforgeable = has_attribute(&member, "LegacyUnforgeable");
+            if unforgeable && this != This::Global {
+                return Err(self.refuse(
+                    row,
+                    "`[LegacyUnforgeable]` off the global interface: the bindings put such a \
+                     member on the global object only, and Web IDL puts it on each instance"
+                        .to_string(),
+                ));
+            }
             let label = format!("{name}.{}", row.member);
             match &member.kind {
                 MemberKind::Constructor { arguments } => {
@@ -797,6 +890,7 @@ impl Generator<'_> {
                                 this: This::Global,
                                 args,
                                 ret: Return::Node,
+                                setter: false,
                             };
                             let body = self.member_function(
                                 &format!("interface_{}", snake(&name)),
@@ -813,7 +907,7 @@ impl Generator<'_> {
                     }
                 }
                 MemberKind::Iterable { .. } => {
-                    if this != This::Collection {
+                    if !indexed {
                         return Err(
                             self.refuse(row, "`iterable<T>` without an indexed getter".to_string())
                         );
@@ -880,6 +974,7 @@ impl Generator<'_> {
                                 this,
                                 args: Vec::new(),
                                 ret,
+                                setter: false,
                             };
                             let body = self.member_function(
                                 &getter, &label, &variant, this, row.slice, &method, false,
@@ -919,6 +1014,7 @@ impl Generator<'_> {
                                         variadic: false,
                                     }],
                                     ret: Return::Undefined,
+                                    setter: true,
                                 };
                                 let body = self.member_function(
                                     &setter,
@@ -991,6 +1087,7 @@ impl Generator<'_> {
                                 this,
                                 args,
                                 ret,
+                                setter: false,
                             };
                             let body = self.member_function(
                                 &function, &label, &variant, this, row.slice, &method, false,
@@ -1024,7 +1121,7 @@ impl Generator<'_> {
             .join(", ");
         let _ = writeln!(
             self.specs,
-            "InterfaceSpec {{ interface: Interface::{variant}, steps: {steps}, length: {length}, members: &[{members}], unscopables: &[{unscopables}], iterable: {iterable} }},"
+            "InterfaceSpec {{ interface: Interface::{variant}, steps: {steps}, length: {length}, members: &[{members}], unscopables: &[{unscopables}], indexed: {indexed}, iterable: {iterable} }},"
         );
         Ok(())
     }
@@ -1040,7 +1137,8 @@ impl Generator<'_> {
         };
         let _ = writeln!(
             self.functions,
-            "/// `{label}`, of `throws` ({reason}): the brand check of `this`, then `NotSupportedError`.\n/// Web IDL converts the arguments first; here no argument is converted, so a call with an\n/// argument whose conversion throws gets `NotSupportedError`, not that throw.\nfn {function}(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {{ cx.charge_steps(1)?; {check} throws(cx, {label:?}, {reason:?}) }}"
+            "/// `{label}`, of `throws` ({}): the brand check of `this`, then `NotSupportedError`.\n/// Web IDL converts the arguments first; here no argument is converted, so a call with an\n/// argument whose conversion throws gets `NotSupportedError`, not that throw.\nfn {function}(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {{ cx.charge_steps(1)?; {check} throws(cx, {label:?}, {reason:?}) }}",
+            doc_text(reason)
         );
     }
 
@@ -1100,7 +1198,7 @@ impl Generator<'_> {
             .iter()
             .filter(|arg| !arg.optional && !arg.variadic)
             .count();
-        if required > 0 {
+        if required > 0 && !method.setter {
             let _ = writeln!(out, "required(cx, &call, {required}, MEMBER)?;");
         }
         for (index, arg) in method.args.iter().enumerate() {
@@ -1255,8 +1353,8 @@ impl Generator<'_> {
 //! Written by `cargo run -p surf-webidl --bin bindings` (`story:webidl-bindings`). Never
 //! edited by hand: a member enters or leaves by a change of the selection, and gets
 //! behaviour in the hand-written slice behind its trait (`crate::dom`). `task webidl-check`
-//! recomputes the sha256 of each source below and compares; `task webidl-slow` writes the
-//! file again and compares the bytes.
+//! recomputes the sha256 of each source below and of the file's lines after this header, and
+//! compares; `task webidl-slow` writes the file again and compares the bytes.
 //!
 //! The sha256 of each source, its path from the repository root:
 //!
@@ -1266,6 +1364,8 @@ impl Generator<'_> {
             let _ = writeln!(out, "//! {}  {}", digest.sha256, digest.path);
         }
         let _ = writeln!(out, "//! {fence}");
+        let _ = writeln!(out, "//!");
+        let _ = writeln!(out, "{BODY_DIGEST_LINE}{}", "0".repeat(64));
         out.push_str(crate::prelude::PRELUDE);
         out.push('\n');
         self.write_interfaces(&mut out);
@@ -1604,7 +1704,7 @@ impl Generator<'_> {
                     .unwrap_or_default();
                 let mut doc = method.doc.clone();
                 for deviation in deviations {
-                    let _ = write!(doc, "; deviation: {deviation}");
+                    let _ = write!(doc, "; deviation: {}", doc_text(deviation));
                 }
                 let _ = writeln!(
                     out,

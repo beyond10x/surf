@@ -323,8 +323,9 @@ pub struct Site {
 pub struct ScriptError {
     pub kind: ScriptErrorKind,
     /// The own `message`, decoded from UTF-16 with unpaired surrogates replaced and cut to its
-    /// first [`MESSAGE_CHARS`] characters; `None` for a value that is no error object or an
-    /// error without a String `message`.
+    /// first [`MESSAGE_CHARS`] characters; for a `DOMException`, `<name>: <message>` from its
+    /// data, cut the same; `None` for a value that is no error object or an error without a
+    /// String `message`.
     pub message: Option<String>,
     /// `None` when swell names no site: a throw raised outside any ECMAScript frame.
     pub site: Option<Site>,
@@ -646,12 +647,15 @@ impl Runner {
         end
     }
 
-    /// Decision 10 of `story:webidl-bindings`: when an entry of a document ends
-    /// `Terminated(Interrupted)` (read as `limit: wall-clock`), a limit the bindings recorded
-    /// (`bindings::end_with_limit`) is the end, in the words of Q4's column `outcome when
-    /// reached`; otherwise the end stays `limit: wall-clock`. The record is cleared after every
-    /// script; after an end other than the interrupt, the interrupt it set and the engine did
-    /// not read is withdrawn with it, so the next script is not ended by it.
+    /// Decision 10 of `story:webidl-bindings`, as ruled in its fix round 1: when the bindings
+    /// recorded a limit during the entry (`bindings::end_with_limit`), that limit is the
+    /// script's end, in the words of Q4's column `outcome when reached`, whatever swell
+    /// answered: `Terminated(Interrupted)` (the answer `end_with_limit` makes), a throw, a
+    /// normal end, or `StepBudget`. Two ends keep their own word: `limit: memory`, whose
+    /// collection and count the runner needs (Q4's row "after `Terminated(MemoryBudget)`"), and
+    /// `faulted`, after which the agent answers nothing. The record is cleared and the
+    /// interrupt withdrawn after every script that recorded one, so the next script inherits
+    /// neither.
     fn document_end(&mut self, end: ScriptEnd) -> ScriptEnd {
         let Some(dom) = self.agent.host_mut().dom.as_deref_mut() else {
             return end;
@@ -659,9 +663,14 @@ impl Runner {
         let Some(limit) = dom.state.take_limit() else {
             return end;
         };
-        if end != ScriptEnd::Limit(Reason::WallClock) {
-            self.agent.interrupt_handle().clear();
-            return end;
+        self.agent.interrupt_handle().clear();
+        match end {
+            ScriptEnd::Limit(Reason::Memory) | ScriptEnd::Faulted => return end,
+            ScriptEnd::Ran
+            | ScriptEnd::Threw(_)
+            | ScriptEnd::Refused(_)
+            | ScriptEnd::Limit(_)
+            | ScriptEnd::NotRun(_) => {}
         }
         match limit {
             Limit::Nodes => ScriptEnd::Limit(Reason::Nodes),
@@ -670,9 +679,9 @@ impl Runner {
             Limit::StoredBytes => ScriptEnd::Limit(Reason::StoredBytes),
             // The limits of the parser's input and of its steps: no member of
             // `story:webidl-bindings` records these two, and Q4 gives them no word for a
-            // script, so the end stays the interrupt's. The first story with a member that
-            // writes into the tree gives each a word of Q4 or shows that no write reaches it.
-            Limit::InputBytes | Limit::Steps => end,
+            // script, so the end is the interrupt's. The first story with a member that writes
+            // into the tree gives each a word of Q4 or shows that no write reaches it.
+            Limit::InputBytes | Limit::Steps => ScriptEnd::Limit(Reason::WallClock),
         }
     }
 
@@ -713,8 +722,10 @@ impl Runner {
         }
     }
 
-    /// What a thrown value or a parse error holds, read without running code (Q16).
-    fn error(&self, value: &Root) -> ScriptError {
+    /// What a thrown value or a parse error holds, read without running code (Q16). In a
+    /// document's runner a `DOMException`'s message is `<name>: <message>` from the exception's
+    /// own data ([`Runner::exception_text`]).
+    fn error(&mut self, value: &Root) -> ScriptError {
         let (kind, message) = match self.agent.error_summary(value) {
             Ok(Some(summary)) => (
                 error_kind(summary.kind),
@@ -726,11 +737,40 @@ impl Runner {
             // `Throw`. Read as a thrown value with nothing known of it.
             Err(HostError::Faulted | surf_defect!()) => (ScriptErrorKind::Value, None),
         };
+        // The site first: the read of an exception's data below is an entry of its own, after
+        // which `last_entry_error_site` answers nothing.
+        let site = self.site();
+        let message = match kind {
+            ScriptErrorKind::Error => self.exception_text(value).or(message),
+            ScriptErrorKind::EvalError
+            | ScriptErrorKind::RangeError
+            | ScriptErrorKind::ReferenceError
+            | ScriptErrorKind::SyntaxError
+            | ScriptErrorKind::TypeError
+            | ScriptErrorKind::UriError
+            | ScriptErrorKind::Value => message,
+        };
         ScriptError {
             kind,
             message,
-            site: self.site(),
+            site,
         }
+    }
+
+    /// The `<name>: <message>` of a `DOMException` a script threw and did not catch, cut to
+    /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`),
+    /// read from its data in a `with_cx` that runs no code (`bindings::exception_text`); `None`
+    /// for a runner without a document and for any other value.
+    fn exception_text(&mut self, value: &Root) -> Option<String> {
+        self.agent.host().dom.as_ref()?;
+        let text = self
+            .agent
+            .with_cx(&self.realm, |cx| {
+                let value = cx.get(value).ok()?;
+                bindings::exception_text(cx, value)
+            })
+            .ok()??;
+        Some(text.chars().take(MESSAGE_CHARS).collect())
     }
 
     /// Where the error the last entry answered arose.

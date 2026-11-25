@@ -2,11 +2,12 @@
 //! single page holds 213 blocks of Web IDL and constructs the reader refuses (`Promise<T>`,
 //! overloads), so only what the selection names is read.
 //!
-//! The page is not parsed whole. Each `pre` element whose start tag, or the start tag of the
-//! `code` element right inside it, has the class `idl` is one block, unless the `pre` has the
-//! class `extract` (an example of the standard, 3 blocks); the bytes from its `<pre`
-//! to its `</pre>` are parsed with `surf-html` alone, and its text content is the block's
-//! text. A block is taken when it defines one of the interfaces asked for (`interface <name>`
+//! The page is not parsed whole; it is read as tags, so that a `pre` inside a comment is no
+//! block and a `>` in a quoted attribute value ends no tag. Each `pre` element whose start
+//! tag, or the start tag of the `code` element right inside it, has the class `idl` is one
+//! block, unless the `pre` has the class `extract` (an example of the standard, 3 blocks);
+//! the bytes from its `<pre` to its `</pre>` are parsed with `surf-html` alone, and its text
+//! content is the block's text. A block is taken when it defines one of the interfaces asked for (`interface <name>`
 //! or `partial interface <name>`). From a block taken, the text read keeps the header of each
 //! such definition (`interface Window : EventTarget {`), each member the selection names for
 //! it, and the closing `};`; every other part of the block is blanked to spaces, its line
@@ -103,65 +104,184 @@ pub fn cut_idl_blocks(bytes: &[u8]) -> Vec<u8> {
 
 /// The byte ranges `<pre ...</pre>` of the blocks of Web IDL: a `pre` start tag with the class
 /// `idl`, or one followed at once by a `code` start tag with that class; not a `pre` with the
-/// class `extract`.
+/// class `extract`. The page is read as tags ([`Tags`]): a `pre` inside a comment is no block,
+/// and a `>` inside a quoted attribute value does not end a start tag. A block ends with the
+/// first `pre` end tag after its start tag.
 fn idl_blocks(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
-    let mut at = 0;
-    while let Some(found) = find(bytes, b"<pre", at) {
-        at = found + 4;
-        let Some(&after) = bytes.get(at) else {
-            break;
-        };
-        if !(after == b'>' || after.is_ascii_whitespace()) {
+    let mut tags = Tags { bytes, at: 0 };
+    while let Some(tag) = tags.next() {
+        if tag.end_tag || tag.name != "pre" {
             continue;
         }
-        let Some(tag_end) = find(bytes, b">", at) else {
-            break;
-        };
-        let mut idl = has_class(&bytes[at..tag_end], "idl");
-        if !idl && bytes[tag_end + 1..].starts_with(b"<code") {
-            let code_start = tag_end + 1 + 5;
-            if let Some(code_end) = find(bytes, b">", code_start) {
-                idl = has_class(&bytes[code_start..code_end], "idl");
-            }
+        let mut idl = tag.has_class("idl");
+        if !idl
+            && let Some(code) = tag_at(bytes, tag.end)
+            && !code.end_tag
+            && code.name == "code"
+        {
+            idl = code.has_class("idl");
         }
-        if !idl || has_class(&bytes[at..tag_end], "extract") {
+        if !idl || tag.has_class("extract") {
             continue;
         }
-        let Some(close) = find(bytes, b"</pre>", tag_end) else {
+        let close = tags
+            .by_ref()
+            .find(|close| close.end_tag && close.name == "pre");
+        let Some(close) = close else {
             break;
         };
-        out.push((found, close + 6));
-        at = close + 6;
+        out.push((tag.start, close.end));
     }
     out
 }
 
-/// Whether the attributes of a start tag hold `class` with the class `name`, quoted or not.
-fn has_class(attributes: &[u8], name: &str) -> bool {
-    let text = String::from_utf8_lossy(attributes);
-    let mut rest = text.as_ref();
-    while let Some(at) = rest.find("class=") {
-        let value = &rest[at + 6..];
-        let (quote, value) = match value.chars().next() {
-            Some(q @ ('\'' | '"')) => (Some(q), &value[1..]),
-            _ => (None, value),
-        };
-        let end = match quote {
-            Some(q) => value.find(q).unwrap_or(value.len()),
-            None => value
-                .find(|c: char| c.is_ascii_whitespace())
-                .unwrap_or(value.len()),
-        };
-        if value[..end]
-            .split_ascii_whitespace()
-            .any(|class| class == name)
-        {
-            return true;
-        }
-        rest = &value[end..];
+/// A tag of a page: its bytes `start..end` (from `<` to after `>`), whether it is an end tag,
+/// its name in ASCII lowercase, and the attributes of a start tag, each its name in ASCII
+/// lowercase and its value.
+struct Tag {
+    start: usize,
+    end: usize,
+    end_tag: bool,
+    name: String,
+    attributes: Vec<(String, String)>,
+}
+
+impl Tag {
+    /// Whether the first `class` attribute holds the class `name`.
+    fn has_class(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .find(|(attribute, _)| attribute == "class")
+            .is_some_and(|(_, value)| value.split_ascii_whitespace().any(|class| class == name))
     }
-    false
+}
+
+/// The tags of a page in order, after `at`: comments (`<!-- ... -->`), doctypes and other
+/// markup declarations, processing instructions and the text of `script` and `style` are
+/// skipped, as HTML's tokenizer reads them.
+struct Tags<'b> {
+    bytes: &'b [u8],
+    at: usize,
+}
+
+impl Iterator for Tags<'_> {
+    type Item = Tag;
+
+    fn next(&mut self) -> Option<Tag> {
+        let bytes = self.bytes;
+        loop {
+            let start = self.at + bytes.get(self.at..)?.iter().position(|&b| b == b'<')?;
+            let rest = &bytes[start..];
+            if rest.starts_with(b"<!--") {
+                // `<!-->` and `<!--->` end at once; any other comment at the next `-->`.
+                let body = start + 4;
+                self.at = if bytes[body..].starts_with(b">") {
+                    body + 1
+                } else if bytes[body..].starts_with(b"->") {
+                    body + 2
+                } else {
+                    find(bytes, b"-->", body).map_or(bytes.len(), |end| end + 3)
+                };
+                continue;
+            }
+            if rest.starts_with(b"<!") || rest.starts_with(b"<?") {
+                self.at = find(bytes, b">", start).map_or(bytes.len(), |end| end + 1);
+                continue;
+            }
+            let Some(tag) = tag_at(bytes, start) else {
+                self.at = start + 1;
+                continue;
+            };
+            self.at = tag.end;
+            if !tag.end_tag && (tag.name == "script" || tag.name == "style") {
+                let close = format!("</{}", tag.name);
+                self.at = find_ascii_case(bytes, close.as_bytes(), tag.end).unwrap_or(bytes.len());
+            }
+            return Some(tag);
+        }
+    }
+}
+
+/// The start or end tag at `at` (a `<` followed by an ASCII letter, or `</` and one), read up
+/// to the `>` that is not inside a quoted attribute value; `None` when there is none, or no
+/// `>` ends it.
+fn tag_at(bytes: &[u8], at: usize) -> Option<Tag> {
+    let mut i = at.checked_add(1)?;
+    let end_tag = bytes.get(i) == Some(&b'/');
+    if end_tag {
+        i += 1;
+    }
+    if !bytes.get(i)?.is_ascii_alphabetic() {
+        return None;
+    }
+    let name_start = i;
+    while bytes
+        .get(i)
+        .is_some_and(|&b| !(b.is_ascii_whitespace() || b == b'/' || b == b'>'))
+    {
+        i += 1;
+    }
+    let name = String::from_utf8_lossy(&bytes[name_start..i]).to_ascii_lowercase();
+    let mut attributes = Vec::new();
+    loop {
+        while bytes
+            .get(i)
+            .is_some_and(|&b| b.is_ascii_whitespace() || b == b'/')
+        {
+            i += 1;
+        }
+        if *bytes.get(i)? == b'>' {
+            break;
+        }
+        // The first character of a name may be `=` (HTML's tokenizer).
+        let attribute_start = i;
+        i += 1;
+        while bytes
+            .get(i)
+            .is_some_and(|&b| !(b.is_ascii_whitespace() || b == b'/' || b == b'>' || b == b'='))
+        {
+            i += 1;
+        }
+        let attribute = String::from_utf8_lossy(&bytes[attribute_start..i]).to_ascii_lowercase();
+        while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
+        }
+        let mut value = String::new();
+        if bytes.get(i) == Some(&b'=') {
+            i += 1;
+            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+                i += 1;
+            }
+            match bytes.get(i)? {
+                &quote @ (b'"' | b'\'') => {
+                    let close = bytes[i + 1..].iter().position(|&b| b == quote)? + i + 1;
+                    value = String::from_utf8_lossy(&bytes[i + 1..close]).into_owned();
+                    i = close + 1;
+                }
+                _ => {
+                    let value_start = i;
+                    while bytes
+                        .get(i)
+                        .is_some_and(|&b| !(b.is_ascii_whitespace() || b == b'>'))
+                    {
+                        i += 1;
+                    }
+                    value = String::from_utf8_lossy(&bytes[value_start..i]).into_owned();
+                }
+            }
+        }
+        if !end_tag {
+            attributes.push((attribute, value));
+        }
+    }
+    Some(Tag {
+        start: at,
+        end: i + 1,
+        end_tag,
+        name,
+        attributes,
+    })
 }
 
 fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -169,6 +289,15 @@ fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .get(from..)?
         .windows(needle.len())
         .position(|window| window == needle)
+        .map(|at| at + from)
+}
+
+/// [`find`] with ASCII letters of either case.
+fn find_ascii_case(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    haystack
+        .get(from..)?
+        .windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle))
         .map(|at| at + from)
 }
 

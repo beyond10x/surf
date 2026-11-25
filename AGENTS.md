@@ -170,7 +170,13 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
+  writes them); `taskfiles/webidl.yml` the tasks `webidl-check` (a step of `check`: the
+  digests in the header of `crates/script/src/bindings.rs`), `webidl-slow` (a step of `slow`)
+  and `webidl-html-cut` (`SNAPSHOT=<file>`, never a step of `check` or `slow`, and it fetches
+  nothing: it cuts the blocks of Web IDL out of a snapshot of the HTML Standard and compares
+  them with `crates/webidl/data/whatwg/html-idl.html` byte for byte; it trusts a snapshot
+  file a person fetched from the address `SOURCE` names, and refuses one whose sha256 is not
+  `SOURCE`'s `snapshot-sha256`). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
   and `task conform-rust` call it, each on a copy of its own of nextest's report, and `task
   view-test` on the JUnit report Playwright writes for it alone. Four tasks of the root
   `Taskfile.yml` run a script of their own, so that their tests run it with `sh` and start no
@@ -1717,6 +1723,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   planted defect of `conformance/` over the whole suite and compares the list it writes,
   `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
   `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
+  Its step `webidl-slow` (`taskfiles/webidl.yml`) builds and runs the binary `bindings` of
+  `surf-webidl` and compares what it writes with `crates/script/src/bindings.rs` byte for
+  byte; it needs no `openssl`. Run it after a change to what decides those bytes and is not
+  among the digests `webidl-check` compares: `crates/html/src/`, `crates/html/Cargo.toml`
+  (`surf-html`, with which the generator reads the pages) and `Cargo.lock`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
   within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
   `.out/page-step.seconds`, builds `surf-agent`, `surf-session` and `surf-view-fixture`, and

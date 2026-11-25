@@ -94,7 +94,7 @@ mod prelude;
 mod selection;
 
 pub use extract::extract_index;
-pub use generate::{Digest, camel, generate, snake};
+pub use generate::{BODY_DIGEST_LINE, Digest, camel, fill_body_digest, generate, snake};
 pub use html::{HTML_DEFINITIONS, HtmlIdl, Skipped, cut_idl_blocks, extract_selected};
 pub use model::{
     Argument, ConstValue, Counts, DefaultValue, Definition, DefinitionKind, DictionaryMember,

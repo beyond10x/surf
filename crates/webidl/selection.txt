@@ -20,6 +20,8 @@
 #
 # A row names an interface of `definitions:` and a member the reader's model holds for it (a
 # member of a mixin it includes counts on it); one row per member.
+#
+# Deviation of every DOMString argument: a lone surrogate reaches the slice as U+FFFD (Rust strings).
 
 definitions: EventTarget Node Element Document CharacterData Text Comment ProcessingInstruction DocumentType DocumentFragment NodeList HTMLCollection DOMException Window
 global: Window

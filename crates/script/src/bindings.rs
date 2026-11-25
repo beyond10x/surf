@@ -34,8 +34,8 @@
 //! Written by `cargo run -p surf-webidl --bin bindings` (`story:webidl-bindings`). Never
 //! edited by hand: a member enters or leaves by a change of the selection, and gets
 //! behaviour in the hand-written slice behind its trait (`crate::dom`). `task webidl-check`
-//! recomputes the sha256 of each source below and compares; `task webidl-slow` writes the
-//! file again and compares the bytes.
+//! recomputes the sha256 of each source below and of the file's lines after this header, and
+//! compares; `task webidl-slow` writes the file again and compares the bytes.
 //!
 //! The sha256 of each source, its path from the repository root:
 //!
@@ -43,19 +43,22 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! f744e252c62e9c49a0fda6aae1403bccf2b452d5f19fbd44d5190957207d10de  crates/webidl/selection.txt
+//! 9b355fa6fa753f930e321be6f7d0a57e41cbce61c84bcf40850b2251f664cb79  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
-//! bfb8a96542bd2cb83d2b5070ff4f36d5d67e6631fd2919b12c95ac3e111ae9d7  crates/webidl/src/bin/bindings.rs
+//! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
+//! 8bd13a24e2b10151bd955e9393fb07f148857ba5f93b2d9e20f5c3a473a9454c  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! 3a5865d943a7b09d09defd77e4bfdfcb1394a47f55f2dbcf8e195d217773dfdd  crates/webidl/src/generate.rs
-//! 0cfcb82626cefa301288e49c93591c1b84ac9224e30398c534b8c76d40b25b45  crates/webidl/src/html.rs
+//! 8264caeb1d19169f69f1792b2e0bfef7bd248dfe545f193e05ae910bd5f235af  crates/webidl/src/generate.rs
+//! 20a67ac3fa19c920b25fd4a6a8de30f9e6254824431501590c4a83d3f9aa1c26  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
-//! ea6274403423c093c1eaffb00ff6dffcc3ecc46b1d8be710490c551208116dca  crates/webidl/src/lib.rs
+//! e09115e64c5cbbf67d4b963ae0d5e7ea50072d62aa42dbcddf6ed47362cc9406  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! bb549081d0e9b6f03be51e53ca4011807741f06ee1366f4b4bdbabe5463d9a92  crates/webidl/src/prelude.rs
+//! 6446670cd0eb29bbd898b67373e80dd8deedb4838c20d3cc4b51b9e8e2c4f5b5  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
+//!
+//! The sha256 of the lines after this one: f46ad4e7b154529b7504f3c9ef70d24e6e22f560eb9d0fa44d9a81f23961975c
 
 use std::cell::Cell;
 
@@ -107,7 +110,7 @@ pub enum DomEnd {
     /// Throw a `DOMException` of that name to the script.
     Throw(DomException),
     /// A write would go over a limit of the parser: nothing is written,
-    /// [`end_with_limit`] records the limit and ends the script.
+    /// [`end_with_limit`] records the limit and ends the script there.
     Limit(Limit),
 }
 
@@ -141,6 +144,9 @@ pub struct DomState {
     limit: Option<Limit>,
     interrupt: InterruptHandle,
     charges: Vec<HostBytes>,
+    /// The message of a `TypeError` noted while the bindings are out of the host
+    /// ([`unwrap_node`]), thrown by [`in_dom`] once they are back.
+    type_error: Option<String>,
 }
 
 impl DomState {
@@ -153,6 +159,7 @@ impl DomState {
             limit: None,
             interrupt,
             charges: Vec::new(),
+            type_error: None,
         }
     }
 
@@ -321,22 +328,42 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
         .map(|data| data.node)
 }
 
+/// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
+/// `<name>: <message>`, read from the exception's own data without running script, whether
+/// the bindings or a script made it; `None` for any other value.
+pub fn exception_text(cx: &Cx<'_, ScriptHost>, value: Value) -> Option<String> {
+    let Value::Object(object) = value else {
+        return None;
+    };
+    let data = cx
+        .host_data::<ExceptionData>(object, Interface::DomException.brand())
+        .ok()??;
+    Some(format!("{}: {}", data.name, data.message))
+}
+
 /// The throw of `exception`: a new `DOMException` object of the realm.
 pub fn throw(cx: &mut DomCx<'_, '_>, exception: &DomException) -> Abrupt {
     throw_exception(cx.engine, cx.installed, exception)
 }
 
-/// Decision 9: a write over the parser's `limit` changes nothing in the tree; this records
-/// the limit, sets the agent's interrupt handle and answers the exception to throw, so that
-/// the entry ends `Terminated(Interrupted)` at swell's next read of the flag, also under a
-/// `catch`, and the runner reads the recorded limit as the script's end.
-pub fn end_with_limit(cx: &mut DomCx<'_, '_>, limit: Limit) -> DomException {
+/// Decision 9, as ruled in fix round 1: a write over the parser's `limit` changes nothing in
+/// the tree, and the limit is the script's end. This records the limit, sets the agent's
+/// interrupt handle and reads it at once with `Cx::charge_steps` (swell's HOST-177: "an
+/// interrupt set before the charge ends it in `Terminated(Interrupted)`"; the charge clears the
+/// flag), and answers that termination. The termination is then sticky for the run, and what
+/// the host function returns is not used (swell's host interface, decision 10, HOST-72): no
+/// `catch` and no `finally` of the page runs after the limit, and the runner reads the
+/// recorded limit as the script's end (`Runner::document_end`). Should the charge answer `Ok`,
+/// the function answers `Terminated(Interrupted)` itself, which swell takes and makes the
+/// run's termination (`object/builtin_function.rs:497 @ 0.8.0`); that answer works at the tag
+/// but swell does not promise it there.
+pub fn end_with_limit(cx: &mut DomCx<'_, '_>, limit: Limit) -> Abrupt {
     cx.state.limit = Some(limit);
     cx.state.interrupt.interrupt();
-    DomException::new(
-        "InvalidStateError",
-        format!("a limit of the parser: {limit:?}"),
-    )
+    match cx.engine.charge_steps(0) {
+        Err(abrupt) => abrupt,
+        Ok(()) => Abrupt::Terminated(Termination::Interrupted),
+    }
 }
 
 /// The slices, each a trait object, and the wrapper hook: what the realm's bindings call.
@@ -665,8 +692,10 @@ fn this_collection(
     }
 }
 
-/// The node of a wrapper whose brand was checked, through the wrapper hook; a `TypeError` when
-/// the hook knows no node of it.
+/// The node of a wrapper whose brand was checked, through the wrapper hook. When the hook knows
+/// no node of it, the `TypeError` is noted, and [`in_dom`] throws it once the bindings are back
+/// in the host, where [`type_error`] finds the realm; the answer here only leaves the member's
+/// closure.
 fn unwrap_node(
     cx: &mut DomCx<'_, '_>,
     slices: &Slices,
@@ -675,10 +704,12 @@ fn unwrap_node(
 ) -> Completion<NodeId> {
     match slices.wrap.unwrap(cx, Value::Object(object)) {
         Some(node) => Ok(node),
-        None => Err(type_error(
-            cx.engine,
-            &format!("{member}: an object that is no node of this document"),
-        )),
+        None => {
+            cx.state.type_error = Some(format!(
+                "{member}: an object that is no node of this document"
+            ));
+            Err(Abrupt::Throw(Value::Undefined))
+        }
     }
 }
 
@@ -692,19 +723,26 @@ fn finish<T>(
     match answer {
         Ok(value) => convert(cx, slices, value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
-        Err(DomEnd::Limit(limit)) => {
-            let exception = end_with_limit(cx, limit);
-            Err(throw(cx, &exception))
-        }
+        Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
     }
 }
 
-/// Runs the slice part of a member: the bindings out of the host, then `f`.
+/// Runs the slice part of a member: the bindings out of the host, then `f`; then, the bindings
+/// back, the `TypeError` [`unwrap_node`] noted, if any.
 fn in_dom(
     cx: &mut Cx<'_, ScriptHost>,
     f: impl FnOnce(&mut DomCx<'_, '_>, &mut Slices) -> Completion<Value>,
 ) -> Completion<Value> {
-    with_dom(cx, f).unwrap_or_else(|| Err(missing()))
+    let answer = with_dom(cx, f).unwrap_or_else(|| Err(missing()));
+    let noted = cx
+        .host_mut()
+        .dom
+        .as_deref_mut()
+        .and_then(|dom| dom.state.type_error.take());
+    match (noted, answer) {
+        (Some(message), Err(Abrupt::Throw(_))) => Err(type_error(cx, &message)),
+        (_, answer) => answer,
+    }
 }
 
 /// ToString (Web IDL's `DOMString`), the String in the engine.
@@ -1150,7 +1188,11 @@ struct InterfaceSpec {
     members: &'static [MemberSpec],
     /// The names of the members declared `[Unscopable]`.
     unscopables: &'static [&'static str],
-    /// Whether it has `iterable<T>` and an indexed property getter.
+    /// Whether it has an indexed property getter: its prototype gets `@@iterator` (Web IDL
+    /// 3.7.9).
+    indexed: bool,
+    /// Whether it has `iterable<T>` and an indexed property getter: its prototype gets the
+    /// iteration methods.
     iterable: bool,
 }
 
@@ -1159,8 +1201,8 @@ struct InterfaceSpec {
 /// `%Error.prototype%` for `DOMException`, to `%Object.prototype%` at the top), its interface
 /// object (a host function whose [[Prototype]] is its parent's interface object), its members
 /// with Web IDL's property attributes, constants on both, `@@toStringTag`, `@@unscopables`,
-/// the iteration methods of an iterable with an indexed getter, and the interface object on the
-/// global. The global object, made with [`window_spec`] by `create_realm`'s setup, gets the
+/// `@@iterator` of an interface with an indexed getter, the iteration methods of an iterable
+/// with one, and the interface object on the global. The global object, made with [`window_spec`] by `create_realm`'s setup, gets the
 /// global interface's prototype and its members. Then the bindings go into the host.
 pub fn install(
     cx: &mut Cx<'_, ScriptHost>,
@@ -1175,6 +1217,15 @@ pub fn install(
         .map_err(defect)?;
     let unscopables_key = cx
         .well_known_symbol(WellKnownSymbol::Unscopables)
+        .map_err(defect)?;
+    // `@@iterator` of an interface with an indexed getter: `%Array.prototype.values%`, the
+    // realm's intrinsic read once here, never through a property a script can replace, and the
+    // same function object on every such prototype.
+    let iterator = cx
+        .well_known_symbol(WellKnownSymbol::Iterator)
+        .map_err(defect)?;
+    let values = cx
+        .intrinsic(realm, HostIntrinsic::ArrayPrototypeValues)
         .map_err(defect)?;
     for spec in &INTERFACES {
         let interface = spec.interface;
@@ -1322,18 +1373,14 @@ pub fn install(
                 data_property(Value::Object(list), false, false, true),
             ))?;
         }
-        if spec.iterable {
-            let iterator = cx
-                .well_known_symbol(WellKnownSymbol::Iterator)
-                .map_err(defect)?;
-            let values = cx
-                .intrinsic(realm, HostIntrinsic::ArrayPrototypeValues)
-                .map_err(defect)?;
+        if spec.indexed {
             engine(cx.define_property_or_throw(
                 prototype,
                 PropertyKey::Symbol(iterator),
                 data_property(Value::Object(values), true, false, true),
             ))?;
+        }
+        if spec.iterable {
             for (name, which) in [
                 ("entries", HostIntrinsic::ArrayPrototypeEntries),
                 ("keys", HostIntrinsic::ArrayPrototypeKeys),
@@ -3610,7 +3657,6 @@ fn setter_node_node_value(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Co
     const MEMBER: &str = "Node.nodeValue";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Node, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_nullable_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -3642,7 +3688,6 @@ fn setter_node_text_content(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
     const MEMBER: &str = "Node.textContent";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Node, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_nullable_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -3992,7 +4037,6 @@ fn setter_element_id(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Complet
     const MEMBER: &str = "Element.id";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Element, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -4021,7 +4065,6 @@ fn setter_element_class_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
     const MEMBER: &str = "Element.className";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Element, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -4066,7 +4109,6 @@ fn setter_element_slot(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Compl
     const MEMBER: &str = "Element.slot";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Element, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -5673,7 +5715,6 @@ fn setter_document_title(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
     const MEMBER: &str = "Document.title";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Document, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -5708,7 +5749,6 @@ fn setter_character_data_data(
     const MEMBER: &str = "CharacterData.data";
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::CharacterData, MEMBER)?;
-    required(cx, &call, 1, MEMBER)?;
     let a0 = to_legacy_null_string(cx, argument(&call, 0))?;
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
@@ -6734,6 +6774,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -6989,6 +7030,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7325,6 +7367,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             "replaceWith",
             "remove",
         ],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7598,6 +7641,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &["prepend", "append", "replaceChildren"],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7685,6 +7729,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &["before", "after", "replaceWith", "remove"],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7712,6 +7757,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7720,6 +7766,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
         length: 0,
         members: &[],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7777,6 +7824,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7828,6 +7876,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &["before", "after", "replaceWith", "remove"],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7903,6 +7952,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &["prepend", "append", "replaceChildren"],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -7924,6 +7974,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: true,
         iterable: true,
     },
     InterfaceSpec {
@@ -7951,6 +8002,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: true,
         iterable: false,
     },
     InterfaceSpec {
@@ -8078,6 +8130,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
     InterfaceSpec {
@@ -8111,6 +8164,7 @@ static INTERFACES: [InterfaceSpec; 14] = [
             },
         ],
         unscopables: &[],
+        indexed: false,
         iterable: false,
     },
 ];

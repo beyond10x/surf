@@ -1,5 +1,7 @@
-The first two files below are copied unchanged from commit snapshots of two WHATWG standards;
-the third holds the blocks of Web IDL of a commit snapshot of a third, not the page. The crate
+Each file below comes from a commit snapshot of a WHATWG standard: the first two are the pages,
+copied unchanged; the third holds the blocks of Web IDL of its snapshot, not the page.
+Why a cut: the HTML page holds an example with a home path, which the repository's source gates refuse.
+The crate
 surf-webidl reads the Web IDL of the first two from their section "IDL Index": the text content
 of the pre element after the h2 element whose id is idl-index. Of the HTML Standard, a single
 page without such an index, it reads only the pre blocks of class idl that define Window or a
