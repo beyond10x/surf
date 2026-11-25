@@ -324,7 +324,8 @@ impl Tree {
 
     /// The count of the tree's writes to its child lists: raised by every write, of the parser
     /// or of the public surface, that changes a node's children or its parent, and by nothing
-    /// else (not by a node added to the arena, a change of a node's data or of its attributes).
+    /// else (not by a node added to the arena, a change of a node's data or of its attributes,
+    /// an insert that moves no node: an empty fragment, or a node already where it would go).
     /// A reader that read a child list when the count was `n` and finds it `n` again knows that
     /// no child list changed. Two trees compare equal whatever their counts are.
     pub fn writes(&self) -> u64 {
@@ -987,7 +988,6 @@ impl Tree {
         if self.nodes[node.0].parent == Some(parent) && self.next_sibling(node) == child {
             return;
         }
-        self.wrote();
         let nodes = match self.nodes[node.0].data {
             NodeData::DocumentFragment => {
                 let children = std::mem::take(&mut self.nodes[node.0].children);
@@ -1001,6 +1001,11 @@ impl Tree {
                 vec![node]
             }
         };
+        // The count moves when a node moves: not for a fragment without children.
+        if nodes.is_empty() {
+            return;
+        }
+        self.wrote();
         let at = match child {
             Some(c) => self
                 .index_in_parent(c)
