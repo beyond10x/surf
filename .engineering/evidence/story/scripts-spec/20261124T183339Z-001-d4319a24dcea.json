@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T18:33:39Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-spec",
+  "kind": "story",
+  "revision": 34,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 9934c89 (the merge e326cd5 of impl/scripts-spec at 59161d9, and a plan merge), 2026-11-24",
+    "reference": "check 45456643014 success, Shared source gates 45456643694 success, Documentation validation 45456642954 success, Documentation site 45459711447 success"
+  }
+}

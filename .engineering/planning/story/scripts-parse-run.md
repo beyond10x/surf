@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:html-script-hook
 - depends_on: story:scripts-dom-reading
+- depends_on: story:swell-0-9-0
 scope:
 - confidence: cited
   path: crates/script/src/lib.rs
@@ -20,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 21
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -43,8 +44,11 @@ What exists before it, and what this story only calls:
   its limits with the starting values of Q4, the thread with the stack of Q5, `ScriptEnd`, the
   step and script totals, the wall-clock timer on the interrupt handle, and the rule after
   `Terminated(MemoryBudget)` (one `collect()`, no further script after a second);
-- the bindings and `DomCx` of `story:webidl-bindings`, and its rule in `crates/script/src/lib.rs`
-  that maps an interrupted entry to the limit `DomCx` recorded, otherwise to `limit: wall-clock`;
+- the bindings and `DomCx` of `story:webidl-bindings`, and its rule `Runner::document_end` in
+  `crates/script/src/runner.rs` that maps an interrupted entry to the limit `DomCx` recorded,
+  otherwise to `limit: wall-clock`;
+- swell `0.9.0` and the microtask checkpoint after each script of `story:swell-0-9-0`, its steps
+  in the step total and its end taken as the script's end;
 - the reading slice and the document over a parsed tree (`story:scripts-dom-reading`);
 - the hook, which reports each script element it runs and each it skips with a word of Q1's line
   `reasons:` (`story:html-script-hook`, decision 1).
@@ -128,7 +132,8 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
 5. The values of Q4 were measured without bindings or DOM; this story measures them again with both
    (steps per second in the test profile and in release, the heap of a realm with the bindings,
    whether a page with more than 1,000 scripts reaches the script count) with probes in the session
-   scratch directory, never committed. A value holds if a script at that limit ends with that
+   scratch directory, never committed. The measurements are taken on swell's tag `0.9.0`, which
+   `story:swell-0-9-0` takes before this story. A value holds if a script at that limit ends with that
    limit's end word. Where one does not hold, the story changes it where it lives in code (the
    agent's limits, the wall-clock bound and the stack in `crates/script/src/runner.rs`; the
    per-document limits in `crates/script/src/run.rs`) and in the note's Q4 or Q5, with its `probe:`
@@ -219,11 +224,12 @@ break the limits (`story:scripts-hostile-pages`).
 
 ## Placement
 
-After `story:html-script-hook` and `story:scripts-dom-reading`; before
+After `story:html-script-hook`, `story:scripts-dom-reading` and `story:swell-0-9-0`; before
 `story:scripts-dom-mutation`, `story:scripts-html-conformance` and `story:scripts-document-port`,
 which call `parse_with_scripts`. Beside `story:scripts-dom-attributes` and
 `story:scripts-dom-selectors`, which write other files of `crates/script`.
-`crates/script/src/runner.rs` is `story:scripts-engine-dependency`'s, merged before this story.
+`crates/script/src/runner.rs` is `story:scripts-engine-dependency`'s, `story:webidl-bindings`' and
+`story:swell-0-9-0`'s, each merged before this story.
 
 ## Why `epic:scripts-in-a-page`
 

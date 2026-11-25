@@ -7,6 +7,7 @@ title: The gate checks the conformance runner's lock and lints
 summary: lock-check reads conformance/Cargo.lock, the gate runs clippy on conformance/, the AGENTS.md sentence on that lock says what holds, and two texts stop naming ESS 0.96.0 as the release in use.
 relations:
 - decomposes: epic:headless-rust-target
+- depends_on: story:script-error-kind-aggregate
 scope:
 - confidence: cited
   path: AGENTS.md

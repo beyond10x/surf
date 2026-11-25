@@ -1,11 +1,12 @@
 # Every kind of what a script threw (`docs/design/scripts.md`, Q7 and Q16): one `Threw` end of
-# each of the seven `ErrorKind` words and `Value`, each read back from `surf.document.Scripts`
+# each of the eight `ErrorKind` words and `Value`, each read back from `surf.document.Scripts`
 # by its word, so that no two kinds can be stored as one. `URIError` is the word of `UriError`.
-# A thrown value that is no error object (`Value`) has no message.
+# A thrown value that is no error object (`Value`) has no message. `AggregateError` comes once
+# more without a message, as swell 0.9.0 ends `throw new AggregateError([])`.
 type: ess-scenario/6
 domain: surf.document
 scenario: document-records-every-error-kind
-summary: A document records a Threw end of each of the eight error kinds and reads each back by its word.
+summary: A document records a Threw end of each of the nine error kinds, and an AggregateError once more without a message, and reads each back by its word.
 
 arrange:
   - instance: page
@@ -125,10 +126,35 @@ timeline:
       dynamic: false
     outcome: added
 
+  - at: 2026-01-06T09:00:09Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 9
+      end: Threw
+      error_kind: AggregateError
+      message: "a AggregateError"
+      line: 9
+      column: 19
+      dynamic: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:10Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 10
+      end: Threw
+      error_kind: AggregateError
+      line: 10
+      column: 20
+      dynamic: false
+    outcome: added
+
 assert:
   - view: surf.document.Scripts
     params: {document_id: {$instance: page}}
-    counts: {at_least: 8, at_most: 8}
+    counts: {at_least: 10, at_most: 10}
   - view: surf.document.Scripts
     params: {document_id: {$instance: page}}
     contains: {position: 1, end: Threw, reason: null, error_kind: Error, message: "a Error", line: 1, column: 11, dynamic: false}
@@ -153,3 +179,9 @@ assert:
   - view: surf.document.Scripts
     params: {document_id: {$instance: page}}
     contains: {position: 8, end: Threw, reason: null, error_kind: Value, message: null, line: 8, column: 18, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 9, end: Threw, reason: null, error_kind: AggregateError, message: "a AggregateError", line: 9, column: 19, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 10, end: Threw, reason: null, error_kind: AggregateError, message: null, line: 10, column: 20, dynamic: false}

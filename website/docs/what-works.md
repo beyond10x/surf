@@ -18,6 +18,16 @@ description: What surf does today, and what it does not do yet.
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
+New with the hardened start of a session process, shipped in release `0.9.0`:
+
+- **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
+  environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
+  the session through them, with no new privileges and no core file; without them it starts
+  the session directly.
+- **A session that died says how.** When a session process ends by a signal `surfd` did not
+  send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
+  and the live view shows the signal beside `died`.
+
 New with the cookie jar and the agent definition, shipped in release `0.8.0`:
 
 - **An agent session keeps cookies.** Each session has a cookie jar of its own, in memory: a

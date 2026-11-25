@@ -43,7 +43,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.8.0 target=x86_64-unknown-linux-musl
+$ version=0.9.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -285,6 +285,16 @@ there instead.
 - **2,171 tests** (1,619, and 552 of the TLS crates in a step of their own): 2,168 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
+
+New with the hardened start of a session process, shipped in release `0.9.0`:
+
+- **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
+  environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
+  the session through them, with no new privileges and no core file; without them it starts
+  the session directly.
+- **A session that died says how.** When a session process ends by a signal `surfd` did not
+  send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
+  and the live view shows the signal beside `died`.
 
 New with the cookie jar and the agent definition, shipped in release `0.8.0`:
 
@@ -530,7 +540,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The hardened start of a session process followed, and release `0.9.0` follows it: `surfd` starts each session with an empty environment and, where `/usr/bin/setpriv` and `/usr/bin/prlimit` exist, with no new privileges and no core file, and an answer names the signal a session died by. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -546,6 +556,7 @@ Round 2 delivered following links, filling and submitting forms, going back and 
 `surf` and an agent session's `go`, `open`, `follow` and `press` load `https:`, and a session
 takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
 session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
+The hardened start of a session process followed; release `0.9.0` ships it.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -589,16 +600,16 @@ surf v1 — 9 file(s), 57 scenario(s), valid
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/6faa23ddcf581f77cabfeb61025485e2f9ddb1a57259b1d734bd726dd75f14d4 are current
-Summary [   1.685s] 54 tests run: 54 passed, 0 skipped
+conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
+Summary [   1.685s] 63 tests run: 63 passed, 0 skipped
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 3.3 s of its budget of 120 s
-the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:29892e5537518e2b6290e5e134f03e324991488e6ca271cd5613409b7588dbc6
+the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 206 test files, one test binary each
+test-layout: 26 test directories, 207 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
@@ -648,9 +659,12 @@ specification, suite, conformance, test and test-layout lines count the scenario
 conform`, `task conform-rust`, `task conform-totals`, `task test` and `task test-layout` on its
 tip (57 authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 tests of the
 conformance crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files;
-where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). The
-times are that run's.
-That run's page tests' line, `71 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
+where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). Its
+conformance and test-layout lines, and the two digests, are those of
+`story:script-error-kind-aggregate` on its tip, from `task conform-rust`, `task conform-totals`
+and `task test-layout` (63 tests of the conformance crate and 207 test files, where
+`story:scripts-spec`'s tip had 54 and 206). The times are that run's.
+That run's page tests' line, `72 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at
 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of 2026-11-24 on `eb97549`,

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T18:33:39Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-spec",
+  "kind": "story",
+  "revision": 34,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes on the unit by a reviewer who did not write it, 2026-11-24",
+    "reference": "first, on eae9f36: 3 musts, 5 shoulds, cases merged, 3 red; second, on 239797e: 1 must (no step sent position 0 to a parsed document), 48 of 48 planted guard changes refused, cases merged, 1 red; fix rounds by the implementor, every red case green on 59161d9; synthesis 2.8 to 2.9 s against a bound of 4.65 s"
+  }
+}

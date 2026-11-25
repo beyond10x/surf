@@ -184,8 +184,9 @@ types:
       summary: Why a script was not run, or which limit ended it.
 
   # The kind of what a script threw (`docs/design/scripts.md`, Q16): the constructor that made
-  # the error object, read through swell's `Agent::error_summary`, never its prototype or `name`;
-  # `Value` when the thrown value is no error object.
+  # the error object, read through swell's `Agent::error_summary`, never its prototype or `name`,
+  # as one of swell 0.9.0's eight `ErrorKind` words; `Value` when the thrown value is no error
+  # object.
   - name: surf.document.ScriptErrorKind
     kind: enum
     variants:
@@ -196,6 +197,7 @@ types:
       - {name: SyntaxError, summary: "SyntaxError"}
       - {name: TypeError, summary: "TypeError"}
       - {name: UriError, summary: "URIError"}
+      - {name: AggregateError, summary: "AggregateError"}
       - {name: Value, summary: "a thrown value that is no error object"}
     naming:
       summary: The kind of what a script threw.
