@@ -41,6 +41,8 @@ scope:
 - confidence: cited
   path: crates/script/src/dom/reading.rs
 - confidence: cited
+  path: crates/script/src/dom/reads.rs
+- confidence: cited
   path: crates/script/src/dom/wrapper.rs
 - confidence: cited
   path: crates/script/src/lib.rs
@@ -52,6 +54,8 @@ scope:
   path: crates/script/tests/adversary_dom_reading_2.rs
 - confidence: cited
   path: crates/script/tests/adversary_dom_reading_3.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading_4.rs
 - confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
@@ -86,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 39
+revision: 41
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -566,6 +570,35 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       The record is conservative there: it stops a document's scripts and gives no wrong
       answer.
 
+20. What the review of the unit's fourth tip found, as rules. Each narrows decision 19 and wins
+    where the two differ. Four reviews each found one more member that read bytes or walked a
+    list without a charge, or charged after the walk, because the charge was written member by
+    member. So the charge moves to the read, and a byte gets one price.
+    - The reads of the tree are one file. `crates/script/src/dom/reads.rs` holds every function
+      that reads the tree for the reading slice. Each does work bounded by a constant (a
+      node's kind, name, parent, first child, one sibling step), or charges before its loop
+      for everything the loop reads. Where the count is not known before a walk (a scan that
+      stops at the first match), the charge goes step by step inside the walk, before each
+      node is read. `crates/script/src/dom/reading.rs` keeps the members and holds no call of
+      `tree()`; a test reads its source and fails when one is added. The slices after this
+      one follow the same form.
+    - One price for a byte: one step per 16 bytes (8 UTF-16 units), for every byte a member or
+      the glue reads, compares, folds, collapses or copies, charged before the work. The
+      64-byte rate of decisions 17 to 19 is gone. A String argument is charged at the same
+      price; at swell `0.8.0` a String is read only by copying it, so that charge comes after
+      the one copy, bounded by `string_length`; `story:scripts-utf16-length` moves it before.
+    - A piece costs a step beside its bytes: a class token (decision 19) and a word of a title.
+    - `title` charges the bytes of every text child before the collapse reads them, and a step
+      a word. The fold of a class token in quirks mode is paid by the bytes' price.
+    - `isDefaultNamespace` with a null prefix charges no attributes, since it scans none.
+    - A script's step limit and these charges on an ordinary page: the design note's Q4 holds
+      the measured steps of one `textContent` read of a page of 50,003 nodes and 950,000
+      bytes of text, and of `getElementsByTagName('*')` walked by index over 25,003 elements.
+      The limit's value is `story:scripts-parse-run`'s to measure again.
+    - Open, for the slices that reach them: a refill copies the old list and the child list
+      before any charge but the call's own step (the mutation slice makes it reachable); an
+      array of Strings charges no step an element (`getAttributeNames`, the attributes slice).
+
 ## Change
 
 - `crates/script/src/dom/reading.rs`: the 81 methods of `Reading`, decisions 1 to 7, 9, 11, 13:
@@ -977,6 +1010,24 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        it is refilled; a String answer of 1 MiB charges at least one step per 16 bytes.
     h. `baseURI` of a `href` of 64,000 bytes charges about 6,000 steps more than of 64 bytes
        (the read, the member's String and the glue's copy), each before its work.
+
+20. The fourth review's rules (decision 20), in the modules `adversary_dom_reading_4` and
+    `dom_reading_cost` of `crates/script/tests`.
+    a. `document.title` of whitespace around one letter charges at least one step per 16 bytes
+       of the title's text, at 2 MiB and at 4 MiB; the steps double with the bytes.
+    b. `document.title` of one-letter words charges at least one step a word.
+    c. The class walk in quirks mode over tokens of 256 KiB charges at least one step per 16
+       bytes of each value it folds.
+    d. A member called with a String argument of 4 Mi units charges at least one step per 16
+       bytes of the argument.
+    e. `dom_reading_cost::the_members_read_the_tree_only_through_the_reads` fails when
+       `crates/script/src/dom/reading.rs` holds a call of `tree()`.
+    f. The wanted set of `getElementsByClassName` charges the bytes of one long token.
+    g. `dom_reading_cost` holds a case for `title`, for the quirks fold and for a String
+       argument, each with a floor of steps and no assertion on a time, and prints the two
+       counts of the ordinary page that the design note's Q4 states.
+    h. Every answer, exception and end of the tests before this round is unchanged; a test
+       whose asserted step count changed is named in the report with both numbers.
 
 ## Out of scope
 
