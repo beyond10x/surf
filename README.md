@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 221 of 221 scenarios](docs/badges/conformance.svg)
-![tests: 2168 passed](docs/badges/tests.svg)
+![tests: 2272 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -282,7 +282,7 @@ there instead.
   check revocation: a revoked certificate that has not expired loads.
 - **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,171 tests** (1,619, and 552 of the TLS crates in a step of their own): 2,168 pass, and 3
+- **2,275 tests** (1,723, and 552 of the TLS crates in a step of their own): 2,272 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
@@ -609,13 +609,21 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 207 test files, one test binary each
+test-layout: 26 test directories, 223 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+webidl-check: the 18 sources of crates/script/src/bindings.rs match its header
+webidl-check: Cargo.lock holds surf-html without dependencies and surf-webidl with surf-html alone, both of the workspace, so it decides no byte of crates/script/src/bindings.rs
+webidl-check: self-test: the locks of the nine forms of a dependency outside the workspace fail, each naming its copy
+webidl-check: self-test: one changed byte of selection.txt fails naming it
+webidl-check: every byte of crates/script/src/bindings.rs matches the sha256 in its header
+webidl-check: self-test: a copy of bindings.rs with one byte after the header changed fails naming it
+webidl-check: self-test: a copy of bindings.rs with a //! line of the header rewritten fails naming it
+webidl-check: self-test: a copy of bindings.rs with an inner attribute inserted before the digest line fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1619 tests: 1616 passed, 0 failed, 3 ignored (cargo-nextest 1617, doc tests 2)
+1723 tests: 1720 passed, 0 failed, 3 ignored (cargo-nextest 1721, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -663,7 +671,11 @@ where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 a
 conformance and test-layout lines, and the two digests, are those of
 `story:script-error-kind-aggregate` on its tip, from `task conform-rust`, `task conform-totals`
 and `task test-layout` (63 tests of the conformance crate and 207 test files, where
-`story:scripts-spec`'s tip had 54 and 206). The times are that run's.
+`story:scripts-spec`'s tip had 54 and 206). Its test, test-layout and webidl-check lines are
+those of `story:webidl-bindings` on its tip, from `task test`, `task test-layout` and `task
+webidl-check` in the gate run on `5dcedfb` (1723 tests, 3 of them ignored, and 223 test files,
+where `story:script-error-kind-aggregate`'s tip had 1619 and 207; the webidl-check lines are new
+with it). The times are that run's.
 That run's page tests' line, `72 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at
