@@ -51,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 50
+revision: 51
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -436,8 +436,12 @@ other: &mut Tree)`. `bindings.rs` is generated from `prelude.rs` and holds diges
 `crates/script/tests/parse_run.rs`: the module of acceptance 1 to 17 and 24.
 `docs/design/scripts.md`: the edits of acceptance 19 and 20, that is Q2's sentence on the step
 total (`:182-183 @ f463e24`), Q5's sentence on the tree (`:497-499`), Q4's row of scripts run per
-document (`:405`), the sentence of Q11's memory bullet on the records of Q7 (`:1015-1016`), and
-the `probe:` lines. The new text of the last two says what is true after this story: only a
+document (`:405`), the sentence of Q11's memory bullet on the records of Q7 (`:1015-1016`), the
+four lines that name this story as the one that measures (`:10`, the "Settled:" line of Q4
+`:444`, the sentence on the margin `:479` and the "Settled:" line of Q5 `:503`), which say
+after it that the values were measured by this story on swell's tag `0.10.0` (`:10` keeps
+`story:scripts-document-port` as the one that measures again), and the `probe:` lines. The new
+text of the Q4 row and of the Q11 sentence says what is true after this story: only a
 script that ran can carry a message, and at most 1,000 scripts run in a document
 (`scripts_per_runner`), so the messages are bounded as before, each at most 1,024 characters
 (Q16); an end `not run` carries one of the fixed words of Q7 and no message, there is one for each
@@ -614,7 +618,7 @@ folder's bounds.
     commit order, which the report names: the commit that adds `swap_tree` to `prelude.rs`
     leaves `webidl-check` failing on the digest of `prelude.rs` (`bindings.rs:59 @ 8086a30`),
     and the commit that writes `bindings.rs` again, which comes next, makes it exit 0.
-19. The four notes of `docs/design/scripts.md`. The base is the merged one: `main` with both
+19. The notes of `docs/design/scripts.md`. The base is the merged one: `main` with both
     units merged, where the note holds Q2's sentence of the swell unit and Q5's of the reading
     unit (at `f463e24` the lines below; Q5's phrase is at `:403` at `8086a30` and `83e6b8a`).
     Each phrase sits on one line of the file there, each command prints the lines named on that
@@ -630,6 +634,12 @@ folder's bounds.
       the records of Q7 (`:1016`); after the change both say what the Change gives: the messages
       bounded by the scripts that ran, the records bounded by the parser's nodes, and the
       bytes as a bound.
+    - ``git grep -n -E 'scripts-parse-run` (and `story:scripts-document-port` )?(measures|measure
+      again)' -- docs/design/scripts.md`` prints five lines on that base (`:10`, `:405`, `:444`,
+      `:479`, `:503 @ f463e24`; each phrase is on one line there, the sentence of `:479-480`
+      wrapping after it) and nothing after the change: the lines say that this story measured
+      the values, in the past tense, and `:405` carries the probe's value in place of "measures
+      again".
     After the change, `git grep -n -F "bounded by the parser's nodes" -- docs/design/scripts.md`
     prints those two places (the phrase kept on one line in each).
 20. The re-measured values of Q4 and Q5, measured with the bindings and the DOM on swell's tag
@@ -638,30 +648,49 @@ folder's bounds.
     a page of more than 1,000 scripts reaches the script count, the size of one record of Q7
     without a message (acceptance 19, Q11), and Q5's margin. The carrier of each is a `probe:`
     line that stands alone, as the existing ones do (`:442`, `:454 @ f463e24`), beneath the Q4
-    table, one line for each row it measures again, and in Q5's margin paragraph; the line names
-    its row, says `holds` or `<old> -> <new>` and gives the command and its output; where a
-    value changed, the row changes with it. After the commits,
+    table or in Q5's margin paragraph; the line names its row, says `holds` or
+    `<old> -> <new>` and gives the command and its output; where a value changed, the row
+    changes with it. The six lines, by measure:
+    - the rate in the test profile and the rate in release: two lines beneath the Q4 table, each
+      naming the row "steps per document, summed from `last_entry_steps()`";
+    - the heap of a realm with the bindings: a line naming the row `memory_bytes`;
+    - whether a page of more than 1,000 scripts reaches the count: a line naming the row
+      "scripts run per document";
+    - the size of one record: a second line naming that row, which says it bounds the records of
+      Q7. The probe prints `size_of::<Script<script_state::Added>>()` of `surf_types::document`
+      (`generated/rust/crates/surf-types/src/document.rs:954 @ a14e3b0`, a struct of one
+      `ScriptData` and a `PhantomData`, so the size of `ScriptData`, `:897-920`: two identities,
+      a position, an end, an optional reason, error kind, message, line, column and dynamic). It
+      is the size of the value in memory, the heap of a message not included; the row the
+      session stores may differ, and the line says that. The chosen 256 bytes of the Change
+      stay until the line gives its number;
+    - Q5's margin: a line in Q5's margin paragraph.
+    After the commits,
     `git diff -U0 "$(git merge-base main HEAD)..HEAD" -- docs/design/scripts.md |
     /usr/bin/grep -c '^+probe:'` prints at least 6, one for each of the six measures, and the
     report lists them as `holds` or `<old> -> <new>`.
 21. Public surfaces: in its last commit, after merging `main`, the story changes every public
     surface its change makes false, each number taken from the `slot task check` log of its tip.
-    Only the strings this story changes: those of the ones `git grep -n -E 'passed|tests' --
-    README.md website/docs docs/badges` finds on its base whose number the log of its tip gives
-    otherwise. At `a14e3b0` they are the test count `2394 passed` (`README.md:11`,
-    `docs/badges/make.sh:38`, `docs/badges/tests.svg:1,2,10`), `2,394` and `2,397 tests`
-    (`README.md:285`, `website/docs/what-works.md:17`, `website/docs/status.md:31`) and the line
+    The rule is: each number on the lines below that the log of its tip gives otherwise. The
+    lines are those `git grep -n -E 'passed|tests|test files' -- README.md website/docs
+    docs/badges` finds on its base, and at `a14e3b0` they are: the test count `2394 passed`
+    (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg:1,2,10`); the sums
+    `2,397 tests`, `1,845` and `2,394` (`README.md:285`, `website/docs/what-works.md:17`); the
+    row `2,394 passed and 3 ignored: 1,842 passed` (`website/docs/status.md:31`); the line
     `1845 tests: 1842 passed` of the gate block (`README.md:626`,
-    `website/docs/how-it-is-built.md:70`), with the paragraph that names the gate run
-    (`README.md:658-661`, `how-it-is-built.md:102-105`). The line `552 tests: 552 passed` of the TLS
-    step (`README.md:628`, `how-it-is-built.md:72`) is not changed by this story and stays,
+    `website/docs/how-it-is-built.md:70`); the line `26 test directories, 230 test files`
+    (`README.md:612`, `how-it-is-built.md:56`), since the story adds two test files; and the
+    paragraph that names the gate run, with its `1845 tests` and `230 test files`
+    (`README.md:658-661`, `how-it-is-built.md:102-105`). The line `552 tests: 552 passed` of the
+    TLS step (`README.md:628`, `how-it-is-built.md:72`) is not changed by this story and stays,
     unless the log's number differs. After the commit, `git grep -n -F '<old>'` over those files
     prints nothing for each old string the log changes, and each new number equals the log's.
     "After merging `main`" is the order against the stories that write the same lines
     (Placement).
 22. The gate and the guards of the merge. `slot task check` exits 0 (true on the merged base: a
-    guard); `git diff --stat "$(git merge-base main HEAD)..HEAD"` names only the files of the
-    Change. The reading unit's test of a
+    guard); `git diff --stat "$(git merge-base main HEAD)..HEAD"` names only files of this
+    story's scope list (the front matter), and the `git diff --name-only` of the same range
+    holds no path that list lacks. The reading unit's test of a
     refill the memory limit cuts (at `8086a30`,
     `adversary_dom_reading_2::a_refill_ended_by_the_memory_limit_leaves_one_list`, by the name it
     has on the merged tree) passes: it is the check that the merged `Runner::evaluate` kept the
@@ -714,11 +743,16 @@ folder's bounds.
     attempt does not count and the test tries again with `wall_clock` at half and then at three
     quarters of the measured time, which the filler still passes; only when all three attempts
     end that way does it fail, with a message that says the host preempted it three times and
-    gives the three bounds. When the parser's limit ends
-    the doubling first (`stopped_by` of the filler's tree names which limit), the test raises
-    that limit and the input limit of its page by the same factor, at most 4 times, and fails
-    with a message that names the limit and the time reached if the filler is still short. The
-    ends of the attempt that counts are `ran`, `not run: scripts-per-document`,
+    gives the three bounds. The filler is capped at 131,072 `<p></p>` (917,504 bytes, 131,072
+    nodes), and the test never raises the parser's limits (node limit 1,048,576, input limit
+    16 MiB, `limits.rs:100-108 @ a14e3b0`). The arithmetic: the note's bound for the heap of a
+    tree is 2 times the stored bytes plus 3 times 136 bytes for each node
+    (`crates/html/src/limits.rs:45-51 @ a14e3b0`); the filler stores one byte for each node, so
+    it is at most 2 x 131,072 + 408 x 131,072 = 53,739,520 bytes, 51.25 MiB, under 64 MiB
+    (the tree's own bound at the defaults is about 536 MiB). If one parse of the filler at the
+    cap takes under 200 ms, the test fails with a message that names the size reached (the
+    count of `<p></p>`, the nodes) and the time of that parse. The ends of the attempt that
+    counts are `ran`, `not run: scripts-per-document`,
     `not run: scripts-per-document`, and `stopped()` is `scripts-per-document`. The
     test prints the time it took, and is named in the report if that is over 5 s.
 25. The folder's bounds hold. The test step ends within 120 s and no test runs over 60 s; a test
@@ -748,10 +782,12 @@ before `story:scripts-dom-mutation`, `story:scripts-html-conformance` and
 `story:scripts-document-port`, which call `parse_with_scripts` (`scripts-dom-mutation.md:94`,
 `scripts-html-conformance.md:54`, `scripts-document-port.md:149-156`) and, for the first, also
 `record_inserted`. The document-port story passes the page's address and content type in `Page`,
-the conformance story the case's UTF-8 bytes, `about:blank`, `text/html` and `Config::SESSION`,
-and both read `Err(RunnerError)` as a failure of the host. The records of one document are
-bounded by the parser's nodes, not by 1,000 (acceptance 19); `story:scripts-document-port` and
-`story:scripts-hostile-pages` are told so in their texts.
+the conformance story the case's UTF-8 bytes behind a UTF-8 byte order mark (so the entry decodes
+them as UTF-8 with confidence `Certain` and no `meta` restarts the parse; `encoding.rs:396-406,
+454-462 @ a14e3b0`, `scripts-html-conformance.md:58-65` at the plan tip), `about:blank`,
+`text/html` and `Config::SESSION`, and both read `Err(RunnerError)` as a failure of the host.
+The records of one document are bounded by the parser's nodes, not by 1,000 (acceptance 19);
+`story:scripts-document-port` and `story:scripts-hostile-pages` are told so in their texts.
 
 The merge order of the two units does not matter: the story holds whichever merges first.
 `Runner::evaluate` at `8086a30` holds the block that reads the reading unit's record of a cut
@@ -767,7 +803,10 @@ the merged file and resolves what overlaps.
 - `crates/script/src/runner.rs`: this story, `story:scripts-dom-reading` (where `ScriptHost` is
   made, `:171,585 @ 8086a30`), `story:swell-0-9-0` (`evaluate`) and the draft
   `story:scripts-job-errors` (`host_clean_up_after_job`, `scripts-job-errors.md:49`), which
-  depends on `story:swell-0-9-0` and has no edge to this story. This story reads the merged file.
+  depends on `story:swell-0-9-0` and has no edge to this story, and the draft
+  `story:scripts-event-loop-and-timers`, which takes `HostError::MemoryBudget` out of
+  `surf_defect!()` there (`scripts-event-loop-and-timers.md:30-31`) and is ordered after this
+  story through `story:scripts-document-port`. This story reads the merged file.
 - `crates/script/tests/engine.rs`: this story (the pins at `:240-250`), `story:swell-0-9-0`
   (a dependency: three ignored tests at `:341-378` and the cases of its acceptance 3,
   `swell-0-9-0.md:296,658`) and the draft `story:scripts-seeds-and-time-zone` (removes the
@@ -775,16 +814,19 @@ the merged file and resolves what overlaps.
   the story that merges second takes the merged file.
 - `crates/script/src/bindings.rs` is generated from `crates/webidl/selection.txt`,
   `crates/webidl/src/prelude.rs` and the generator (`crates/webidl/src/`, the files listed at
-  `bindings.rs:51-60 @ 8086a30`); its header holds their digests. Five stories write that set,
+  `bindings.rs:51-60 @ 8086a30`); its header holds their digests. Six stories write that set,
   the reading unit merged before this story: `story:scripts-dom-reading` (`generate.rs`,
   `prelude.rs`, `bindings.rs`; `scripts-dom-reading.md:646-660`), this story (`prelude.rs`,
   `DomState::swap_tree`), `story:scripts-dom-attributes` (proposed; `prelude.rs`,
   `strings_value`, `live` and `peak`; `scripts-dom-attributes.md:497-503,897-899`; no edge to
   this story, which it names as the sharer), `story:scripts-utf16-length` (`prelude.rs`,
-  `string_length`; `scripts-utf16-length.md:18-41`) and `story:scripts-dom-collection-names`
-  (`selection.txt`; `scripts-dom-collection-names.md:17`); the swell unit leaves the
-  comments of `prelude.rs` out (`swell-0-9-0.md:327-331`) and does not write the set. The drafts
-  depend on the reading story and have no edge to this one. No new edge. The rule:
+  `string_length`; `scripts-utf16-length.md:18-41`), `story:scripts-dom-collection-names`
+  (`selection.txt`; `scripts-dom-collection-names.md:17`) and `story:html-open-namespace`
+  (draft; `selection.txt`, where the note of the deviation on `setAttributeNS` goes,
+  `html-open-namespace.md:19,61`; it depends on `story:scripts-dom-attributes` and has no edge
+  to this story); the swell unit leaves the comments of `prelude.rs` out
+  (`swell-0-9-0.md:327-331`) and does not write the set. The drafts have no edge to this
+  one. No new edge. The rule:
   `bindings.rs` is never merged by hand; the story that merges second writes it again from the
   merged sources with `slot cargo run -p surf-webidl --bin bindings`, and `slot task webidl-check`
   (the digests) and `webidl-slow` (the bytes) in its gate hold it (acceptance 18).
@@ -792,8 +834,16 @@ the merged file and resolves what overlaps.
   `docs/badges/tests.svg`, `website/docs/status.md`, `what-works.md`) are rewritten in the last
   commit of this story and of `story:scripts-dom-attributes` and `story:scripts-dom-selectors`
   too (`scripts-dom-attributes.md:64-72`, `scripts-dom-selectors.md:72-80`), which also write
-  other files of `crates/script`. Acceptance 21's "after merging `main`" is the order: the last
-  to merge takes the numbers of its own log.
+  other files of `crates/script`; `story:scripts-dom-mutation` rewrites `README.md:11,285` and
+  `status.md:23` in its acceptance 8 (`scripts-dom-mutation.md:115-121`; its scope list names
+  neither file), and `story:scripts-html-conformance` and `story:scripts-document-port` have
+  `website/docs/status.md` and `what-works.md` in their scope. Those three depend on this
+  story, so the order exists: this story merges before them and each takes the log of its own
+  tip. For the others, no edge: acceptance 21's "after merging `main`" is the order, and the
+  last to merge takes the numbers of its own log. The entry of `surf-script` in `AGENTS.md`
+  (`:365-368 @ a14e3b0`) is edited by this story, by `story:scripts-dom-attributes` (`AGENTS.md`
+  in its scope, `scripts-dom-attributes.md:597`) and by `story:scripts-dom-selectors`: no edge;
+  the one that merges later takes `main` first and re-reads the test count from its log.
 - `AGENTS.md` and `website/docs/status.md` are in the scope of `story:conformance-lock-and-lints`
   (draft); `AGENTS.md` is also in that of `story:session-argument-checks` (draft),
   `story:test-step-holds-with-tls` (active) and `story:tls-tests-as-tables` (draft, which changes
