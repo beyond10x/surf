@@ -21,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -215,14 +215,19 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
     build or test job in the pool ends within 10 minutes or names its time with `slot --timeout`,
     at most 30 minutes; a test over 5 s is named (`wall_clock` waits 100 ms by design;
     `deepest_nesting_on_parse_thread` is timed and named if over 5 s).
-17. `document_facts_reach_the_script`: a page fetched from `https://example.com/dir/page` with
-    the content type `text/html`, in bytes, through `parse_with_scripts`, whose one inline script
-    writes `document.URL`, `document.baseURI`, `document.contentType` and `document.compatMode` to
-    the global `facts` as one string, ends `ran`, and `facts` is the four values that the
-    `DocumentInfo` of decision 1 and the parser gave: `https://example.com/dir/page`,
-    `https://example.com/dir/page` (no `base` element), `text/html` and `BackCompat` (no doctype);
-    the same page after `<!DOCTYPE html>` gives `CSS1Compat` for the last. The page is the test's
-    own stub, with no network request and no model call.
+17. `document_facts_reach_the_script`: the test's own page (no network request, no model call),
+    in bytes, parsed by `parse_with_scripts` with the address `https://example.com/dir/page` and
+    the content type `text/html`, has one inline script that compares `document.URL`,
+    `document.baseURI`, `document.contentType` and `document.compatMode` with
+    `https://example.com/dir/page`, `https://example.com/dir/page` (no `base` element),
+    `text/html` and `BackCompat` (no doctype), and throws an `Error` whose message is the four
+    values read, joined by a space, when one differs. The script's end is `ran`; an `error:` end
+    shows the values in its record. The same page after `<!DOCTYPE html>`, its script comparing
+    with `CSS1Compat`, ends `ran`. The script's end is the reader: the test reads nothing from
+    the realm, which is dropped when the parse ends (decision 1). Decision 1's signature has no
+    place for the content type yet: how it reaches `parse_with_scripts` (a parameter or a field
+    of `options`) is stated in decision 1 when this story is revised against
+    `story:scripts-dom-reading` as built, and this item names that place then.
 
 ## Out of scope
 

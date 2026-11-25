@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 25
+revision: 26
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -248,8 +248,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    the copy: the glue keeps it and charges one step per 64 node ids copied, before the copy. A
    call then costs `1 + ceil(n / 64)` steps over a collection of `n` nodes, and a loop of `m`
    such calls costs about `m * (1 + n / 64)`: with `m` equal to `n` that reaches the 10,000,000
-   steps of an entry (`runner.rs:41`) at `n` of about 25,000 (`25,000 * 25,000 / 64` is
-   9,765,625), where the first form costs `m` steps. The implementor finds out first whether
+   steps of an entry (`runner.rs:41`) at `n` of about 25,270 (`n + n * n / 64` is
+   10,002,971 there), where the first form costs `m` steps. The implementor finds out first whether
    take and restore builds, reports the compiler's message if it does not, and the report says
    which of the two forms was built.
 6. No reading member records a limit. The members read the tree and never write it, so none
@@ -571,9 +571,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    a. A script in `head` of a page without a doctype reads `BackCompat`.
    b. The same page with `<!DOCTYPE html>` reads `CSS1Compat`.
    c. The tree the hooked parse returns equals the plain parse's (equality includes the mode).
-   d. `Parsed.quirks_mode` is gone: `git grep -n -F 'quirks_mode' --
-      crates/html/src/tree_builder.rs` names no field of `Parsed` (the builder's own field and
-      the three tests that read `tree.quirks_mode()` remain).
+   d. `Parsed.quirks_mode` is gone: `git grep -n -F 'pub(crate) quirks_mode' --
+      crates/html/src/tree_builder.rs` prints nothing (on the unit it prints the field of
+      `Parsed`, `:578`; the builder's own field, which is not `pub(crate)`, and the three tests
+      that read `tree.quirks_mode()` remain).
    Every other case of this story runs over `parse_document` and needs no hook.
 7. Sibling reads (decision 9). `runner.steps()` is read around each script.
    a. `for (n = p.firstChild; n; n = n.nextSibling)` over 100,000 siblings ends `Ran` with the
@@ -631,7 +632,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       for take and restore only. With the copy form a loop of `m` calls over `n` nodes costs
       about `m * (1 + n / 64)` steps, which is `n * n / 64` for `m` equal to `n`: over 5,000
       nodes about 390,000 steps, over 500 about 4,000, a ratio of about 90, and an entry ends
-      `limit: steps-per-script` at `n` of about 25,000. The report says which form of
+      `limit: steps-per-script` at `n` of about 25,270 (a case that wants that end uses 26,000
+      or more). The report says which form of
       decision 5 was built and, if the copy, the compiler's message that stopped take and
       restore.
 9. Hostile trees: `getRootNode`, `contains`, `compareDocumentPosition`, `isEqualNode` and
