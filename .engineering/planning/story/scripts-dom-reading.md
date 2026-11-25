@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -522,7 +522,7 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
 3. Collections.
    a. `for (x of document.childNodes)`, `[...nodes]`, `nodes.length`, `nodes.item(i)`,
       `nodes[i]`, `nodes.forEach`, and the same node object from a collection and from a direct
-      member (`document.body.childNodes[0] === document.body.firstChild`).
+      member (`document.documentElement.childNodes[0] === document.documentElement.firstChild`).
    b. `HTMLCollection.namedItem` by `id` and by `name` on an HTML element.
    c. `namedItem("")` is `null`; `namedItem("missing")` is `null`.
    d. An `svg` element with a `name` attribute is not found by that name, and one with an `id`
