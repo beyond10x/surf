@@ -43,6 +43,8 @@ scope:
 - confidence: cited
   path: crates/script/src/lib.rs
 - confidence: cited
+  path: crates/script/src/runner.rs
+- confidence: cited
   path: crates/script/tests/adversary_dom_reading.rs
 - confidence: cited
   path: crates/script/tests/bindings.rs
@@ -72,7 +74,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 33
+revision: 35
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -522,6 +524,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
   (the file's lines 14-16); `Cargo.lock`: `"surf-url",` in the entry of `surf-script`, between
   `"surf-secret",` and `"swell",`. Nothing of `taskfiles/` changes (Context).
 - `crates/script/src/lib.rs`: the head comment, which says "No DOM yet" (line 5).
+- `crates/script/src/runner.rs`: `ScriptHost` carries the agent's `string_length`
+  (`ScriptHost::new(mode, string_length)`, a public read `string_length()`, and the one call in
+  `Runner::new` that passes `limits.engine.string_length`), for the length check of decision 7.
+  No other line of the file changes.
 - `[SameObject]` (decision 10), in the generator's files and their outputs:
   - `crates/webidl/src/generate.rs` and `crates/webidl/src/prelude.rs`: the enum `SameObject`,
     the getters of the four rows, the two provided methods of `Wrap` and the field `written`,
@@ -888,7 +894,9 @@ this pair. This story adds the line `surf-url` right after
 next line.
 
 The generator, `selection.txt` and `bindings.rs` are on `main` since `6bd9bc9`: this story changes
-them, and nothing else of the epic changes them in the same wave. `crates/script/src/lib.rs` and
+them, and nothing else of the epic changes them in the same wave. This story edits `runner.rs`
+only where `ScriptHost` is made (the Change); `story:swell-0-9-0` edits other lines of the file
+and the second merge keeps both. `crates/script/src/lib.rs` and
 `runner.rs` are written after it by `story:scripts-parse-run`, ordered by that story's edge; that
 story builds the `DocumentInfo` of a page (address as a `surf_url::Url`, the response's content
 type, the name of the encoding the parse decodes with) and calls `dom::slices(info)`, and

@@ -53,7 +53,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 ---
@@ -848,7 +848,11 @@ entries of `Cargo.lock`, so the second merge may conflict in those two files and
 changes. The reading story regenerates `crates/script/src/bindings.rs` and rewrites
 `crates/webidl/src/prelude.rs`; this story edits neither (decision 12).
 
-Four overlaps and how the second merge settles each. `AGENTS.md:365-369` is one paragraph that
+Five overlaps and how the second merge settles each. `crates/script/src/runner.rs`: this story
+edits its macro, `evaluate`, `document_end`, `error`, `error_kind` and the comments at `:51` and
+`:201-203`; the reading unit edits the lines that make `ScriptHost` (`ScriptHost::new` gains
+the agent's `string_length`, and the one call of it in `Runner::new`) and no line of these, so
+the second merge keeps both. `AGENTS.md:365-369` is one paragraph that
 both rewrite: the second merge keeps `0.10.0` and `surf-url`, has no "no DOM yet", and takes the
 test counts from its own log after merging `main`. `crates/script/tests/adversary_3.rs` is a file
 this story edits (a comment and a version in a comment, decisions 9 and 11); the reading story's
