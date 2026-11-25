@@ -542,6 +542,7 @@ var d = new DOMException();
 check(d.name === "Error" && d.message === "" && d.code === 0, "the defaults");
 check(new DOMException("x", "NotSupportedError").code === 9, "NotSupportedError's code");
 check(new DOMException("x", "NoSuchName").code === 0, "a name without a code");
+check(new DOMException("x", "NoModificationAllowedError").code === 7, "the longest legacy name");
 var threw = false;
 try {{ Object.getOwnPropertyDescriptor(DOMException.prototype, "name").get.call({{}}); }}
 catch (x) {{ threw = x instanceof TypeError; }}
@@ -604,6 +605,61 @@ fn the_texts_of_a_thrown_dom_exception_are_bounded() {
             );
         },
     );
+}
+
+/// The peak resident bytes of this process (`VmHWM` of `/proc/self/status`, Linux).
+fn peak_resident_bytes() -> u64 {
+    let status = std::fs::read_to_string("/proc/self/status").expect("/proc/self/status");
+    let kib: u64 = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|field| field.parse().ok())
+        .expect("VmHWM");
+    kib * 1024
+}
+
+/// Note 5 of the third review, as ruled: the record of an uncaught `DOMException` copies no
+/// more of its name and message than its 1,024 characters need. A message of 2^22 code units
+/// of U+0800 (8 MiB on swell's heap) thrown uncaught raises the process's peak by less than
+/// 4 MiB, and the record is its first 1,024 characters; one of 1,100 characters outside the
+/// BMP (2,200 code units) keeps 1,021 of them whole.
+#[test]
+fn the_record_of_a_long_dom_exception_copies_only_its_prefix() {
+    let mut large = limits();
+    large.engine.memory_bytes = 32 << 20;
+    large.engine.string_length = 1 << 24;
+    let (end, grown, astral) = with_document(large, surf_document, |runner| {
+        let end = runner.evaluate(r#"this.e = new DOMException("ࠀ".repeat(1 << 22), "N");"#);
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+        let collected = runner.agent_and_realm().0.collect();
+        assert!(
+            matches!(collected, Ok(swell::Outcome::Normal(_))),
+            "{collected:?}"
+        );
+        let before = peak_resident_bytes();
+        let end = runner.evaluate("throw this.e;");
+        let grown = peak_resident_bytes().saturating_sub(before);
+        let astral = runner.evaluate(r#"throw new DOMException("\u{1F600}".repeat(1100), "N");"#);
+        (end, grown, astral)
+    });
+    match end {
+        ScriptEnd::Threw(error) => {
+            let message = error.message.expect("a message");
+            assert_eq!(message.chars().count(), 1024);
+            assert_eq!(message, format!("N: {}", "\u{800}".repeat(1_021)));
+        }
+        other => panic!("{other}"),
+    }
+    let mib = grown >> 20;
+    assert!(mib < 4, "the record raised the peak by {mib} MiB");
+    match astral {
+        ScriptEnd::Threw(error) => assert_eq!(
+            error.message.as_deref(),
+            Some(format!("N: {}", "\u{1F600}".repeat(1_021)).as_str())
+        ),
+        other => panic!("{other}"),
+    }
 }
 
 #[test]

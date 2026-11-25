@@ -320,6 +320,140 @@ fn own_parameter_names_are_renamed_and_member_names_are_distinct() {
     );
 }
 
+/// The refusal of `extra` IDL beside `EventTarget`, `Window` and `DOMException`, with
+/// `definitions` more and `rows`.
+fn refusal(extra: &str, definitions: &str, rows: &str) -> String {
+    let idl = format!(
+        "interface EventTarget {{}};\ninterface Window : EventTarget {{}};\n{extra}\
+         interface DOMException {{ readonly attribute DOMString name; }};\n"
+    );
+    let model = Model::new(read(&idl, "small.idl").expect("read")).expect("model");
+    let text = format!(
+        "definitions: EventTarget Window DOMException {definitions}\nglobal: Window\n{rows}"
+    );
+    let selection = Selection::read(&text, "s.txt").expect("reads");
+    generate(&model, &selection, &[])
+        .expect_err("two names of one Rust name")
+        .to_string()
+}
+
+/// Note 1 of the third review, as ruled: by the rule of the members, every other kind of name
+/// the generator writes is written once, and two of one Rust name are refused naming both:
+/// two interfaces, two dictionaries, a dictionary named like an item of the prelude, a union
+/// and a dictionary, and two members of a dictionary. (Enums, callbacks and constants get no
+/// Rust name.)
+#[test]
+fn every_kind_of_rust_name_is_written_once() {
+    let node = |operations: &str| format!("interface Node : EventTarget {{\n{operations}\n}};\n");
+    let cases = [
+        (
+            "interface HTMLFoo {};\ninterface HtmlFoo {};\n".to_string(),
+            "HTMLFoo HtmlFoo",
+            "",
+            "s.txt:1: the interface `HTMLFoo` and the interface `HtmlFoo` are both written `HtmlFoo`",
+        ),
+        (
+            format!(
+                "dictionary DOMFoo {{ boolean a = false; }};\ndictionary DomFoo {{ boolean b = false; }};\n{}",
+                node(
+                    "  undefined a(optional DOMFoo x = {});\n  undefined b(optional DomFoo y = {});"
+                )
+            ),
+            "Node",
+            "Node a mutation\nNode b mutation\n",
+            "s.txt:4: `Node b`: the dictionary `DOMFoo` and the dictionary `DomFoo` are both written `DomFoo`",
+        ),
+        (
+            format!(
+                "dictionary Copies {{ boolean a = false; }};\n{}",
+                node("  undefined a(optional Copies x = {});")
+            ),
+            "Node",
+            "Node a mutation\n",
+            "s.txt:3: `Node a`: the prelude and the dictionary `Copies` are both written `Copies`",
+        ),
+        (
+            format!(
+                "dictionary D {{ boolean a = false; }};\ndictionary StringOrD {{ boolean b = false; }};\n{}",
+                node(
+                    "  undefined a((DOMString or D) x);\n  undefined b(optional StringOrD y = {});"
+                )
+            ),
+            "Node",
+            "Node a mutation\nNode b mutation\n",
+            "s.txt:4: `Node b`: the union `StringOrD` and the dictionary `StringOrD` are both written `StringOrD`",
+        ),
+        (
+            format!(
+                "dictionary D {{ boolean fooBar = false; boolean foo_bar = false; }};\n{}",
+                node("  undefined a(optional D x = {});")
+            ),
+            "Node",
+            "Node a mutation\n",
+            "s.txt:3: `Node a`: the members `fooBar` and `foo_bar` of `D` are both written `foo_bar`",
+        ),
+    ];
+    let wrong: Vec<String> = cases
+        .iter()
+        .filter_map(|(extra, definitions, rows, expected)| {
+            let got = refusal(extra, definitions, rows);
+            (got != *expected).then(|| format!("{expected}\n   got {got}"))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Note 6 of the third review, as ruled: a square bracket of a note is written with a backslash
+/// before it in the doc comment, so that rustdoc reads no link (`[SameObject]`).
+#[test]
+fn a_bracket_of_a_note_is_no_link() {
+    let idl = "interface EventTarget {};\ninterface Window : EventTarget {};\n\
+               interface Node : EventTarget {\n  readonly attribute unsigned short nodeType;\n};\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let text = "definitions: EventTarget Window DOMException Node\nglobal: Window\n\
+                Node nodeType reading deviation: [SameObject] kept\n";
+    let selection = Selection::read(text, "s.txt").expect("reads");
+    let text = generate(&model, &selection, &[]).expect("generates");
+    assert!(
+        text.contains("deviation: \\[SameObject\\] kept."),
+        "the note's line: {:?}",
+        text.lines().find(|line| line.contains("SameObject"))
+    );
+}
+
+/// Note 2 of the third review, as ruled: the converter of a dictionary reads each member into
+/// a local named by its position, so a member named like a local or a parameter of the
+/// converter (`object`, `value`, `member`, `cx`) meets none of them.
+#[test]
+fn a_dictionary_member_meets_no_local_of_its_converter() {
+    let idl = "interface EventTarget {};\ninterface Window : EventTarget {};\n\
+               dictionary D { boolean _object = false; DOMString value; boolean cx; boolean member = true; };\n\
+               interface Node : EventTarget {\n  undefined a(optional D d = {});\n};\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let text =
+        "definitions: EventTarget Window DOMException Node\nglobal: Window\nNode a mutation\n";
+    let selection = Selection::read(text, "s.txt").expect("reads");
+    let text = generate(&model, &selection, &[]).expect("generates");
+    let start = text.find("fn convert_d(").expect("a converter of D");
+    let body = &text[start..start + text[start..].find("\n}").expect("its end")];
+    let lets: Vec<&str> = body
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("let "))
+        .filter_map(|line| line.split([' ', '=']).next())
+        .collect();
+    assert_eq!(
+        lets,
+        ["object", "m0", "m0", "m1", "m1", "m2", "m2", "m3", "m3"],
+        "{body}"
+    );
+    assert!(
+        body.contains("Ok(RawD { cx_: m0, member: m1, object: m2, value: m3 })"),
+        "{body}"
+    );
+}
+
 /// The rule of the generator's names: `-` is written `_`, a keyword with a raw form is raw, and
 /// `self` gets a `_` at its end (no raw `self` exists).
 #[test]
@@ -361,10 +495,10 @@ fn two_arguments_with_one_rust_name_are_refused() {
         "s.txt:3: `Node foo`: the arguments `my-arg` and `my_arg` are both written `my_arg`"
     );
 }
+
 /// The model of the bindings, the only test that reads the cut of the HTML Standard; and the
 /// header of `bindings.rs` names what this reading gives of each page (note 7 of the second
 /// review): a change of `surf-html` that changes what is read fails here.
-/// The model of the bindings, the only test that reads the cut of the HTML Standard.
 #[test]
 fn rows_match_the_model() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/whatwg");
