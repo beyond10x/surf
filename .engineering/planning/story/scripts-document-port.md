@@ -59,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 42
+revision: 43
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -93,9 +93,11 @@ microtask checkpoint after each script and swell's new error kind and host error
 edges of this story; it takes no tag of its own.
 
 Found while `story:scripts-spec` was built (2026-11-24): the session's cap of 256 rows of entries
-per request does not count the event `ScriptEndAdded`. A page may add up to 1,000 script records
-(Q4), so this story decides whether those events count against the cap or have a bound of their
-own, and holds the answer with a test.
+per request does not count the event `ScriptEndAdded`. A page may add up to one script record for
+each node of its tree, 1,048,576 at most (Q4, the row of scripts run per document, as
+`story:scripts-parse-run` corrects it: a script that did not run has a record too), so this
+story decides whether those events count against the cap or have a bound of their own, and holds
+the answer with a test.
 
 Found by the reviews of `story:session-process-hardening` and `story:scripts-engine-dependency`
 (2026-11-24), each for this story to hold with a test:
