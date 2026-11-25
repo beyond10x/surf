@@ -119,6 +119,8 @@
 //!   move; the `selectedcontent` copy makes no element under a node 512 deep. Each stops the
 //!   parse with [`limits::Limit::Depth`], and only these: the stack of open elements is not
 //!   bounded by it (foster parenting puts an entry above the `table` that is not under it).
+//!   The node limit bounds the stack's length (a node of the tree is on it at most once), and
+//!   the step limit bounds every read of it.
 //!   Text, comments and processing instructions are no deeper than their parent. How the
 //!   parser knows a depth: it keeps the depth of each entry of the stack of open elements, set
 //!   when the entry is pushed, and reads them again from the tree after a hook's write that
@@ -158,10 +160,13 @@
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
 //!   moving children, looking for an element child), and every node the walks of the depth
 //!   limit visit: each parent or host a walk up to a kept depth passes to, each entry of the
-//!   stack of open elements whose depth is read again, and each node under the furthest block
-//!   that the adoption agency algorithm walks to check a move down. The count is checked after
-//!   each token:
-//!   the token that takes it past the limit is processed whole, then parsing stops. The
+//!   stack of open elements whose depth is read again (also one with no parent, which no walk
+//!   reaches), and each node under the furthest block that the adoption agency algorithm walks
+//!   to check a move down. The changes to the stack count too: each entry an insertion or a
+//!   removal inside it moves, each scope boundary the stack's list of them visits then, and
+//!   each entry the `frameset` rule pops. Not counted: the pops of "stop parsing", once at the
+//!   end, one for each entry left. The count is checked after each token: the token that
+//!   takes it past the limit is processed whole, then parsing stops. The
 //!   `selectedcontent` update after the end-of-file token counts every node it visits and
 //!   copies and is checked after each, so it stops where it passes the limit.
 //!   [`Tree::steps`] reads the count a parse ended with. A scan of a child list for a reference

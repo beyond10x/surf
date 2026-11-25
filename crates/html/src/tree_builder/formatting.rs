@@ -172,7 +172,7 @@ impl TreeBuilder {
                 }
                 // 4.18.5. A node not in the list leaves the stack.
                 let Some(at) = node_entry else {
-                    self.open.remove(node_stack);
+                    self.open.remove(node_stack, &self.steps);
                     removed_from_stack += 1;
                     continue;
                 };
@@ -253,10 +253,11 @@ impl TreeBuilder {
             // `formatting_stack`, and the furthest block is lower by those nodes and by the
             // formatting element. Finishing the parsing of its children changes no tree.
             debug_assert_eq!(self.open[formatting_stack], formatting_element);
-            self.open.remove(formatting_stack);
+            self.open.remove(formatting_stack, &self.steps);
             let furthest_block_stack = furthest_block_stack - removed_from_stack - 1;
             debug_assert_eq!(self.open[furthest_block_stack], furthest_block);
-            self.open.insert(furthest_block_stack + 1, new_element);
+            self.open
+                .insert(furthest_block_stack + 1, new_element, &self.steps);
             // 4.27, 4.28. The action is "Keep".
             // 4.29. The adjusted insertion location given (furthest block, null).
             let (parent, reference) = (furthest_block, None);

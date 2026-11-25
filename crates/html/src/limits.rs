@@ -25,7 +25,9 @@ pub struct Limits {
     /// would insert or move a node, not the stack of open elements: an element that would be
     /// deeper is not created, and a move of the adoption agency algorithm or a
     /// `selectedcontent` copy that would put a node deeper is not made (the crate
-    /// documentation, "Limits"). Default 512.
+    /// documentation, "Limits"). The stack of open elements is bounded by the node limit
+    /// instead (a node is on it at most once), and every read of it by the step limit.
+    /// Default 512.
     pub max_depth: usize,
     /// The most nodes the tree holds ([`crate::Tree::node_count`]: the document, every node
     /// under it, template contents and nodes removed from their parent). Default 1,048,576.
@@ -49,8 +51,11 @@ pub struct Limits {
     /// The most entries tree construction visits in its scans of the stack of open elements, of
     /// the list of active formatting elements and of a node's children, and the nodes its walks
     /// for the depth limit visit (a walk up to read a depth, the depths of the stack's entries
-    /// read again after a hook's write or an adoption agency iteration, and the walk of the
-    /// nodes an adoption agency iteration would move deeper), checked after each token
+    /// read again after a hook's write or an adoption agency iteration, each entry read and
+    /// each parent passed to, and the walk of the nodes an adoption agency iteration would move
+    /// deeper), and the stack's own changes (each entry an insertion or a removal moves, each
+    /// scope boundary visited, each entry the `frameset` rule pops; not the pops of "stop
+    /// parsing" at the end), checked after each token
     /// ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
     pub max_steps: usize,
 }

@@ -1692,6 +1692,144 @@ fn the_frameset_rule_reads_the_html_elements_depth_again() {
     assert_eq!(tree.stopped_by(), None);
 }
 
+// The step limit bounds the work on the stack of open elements (fix round 4, ruling 1).
+
+/// A hook that moves the script's parent to the end of the `body` and takes the element that
+/// held it out of the tree: every element of the markup stays open, all but the last without
+/// a parent.
+struct KeepOpen;
+
+impl ScriptHook for KeepOpen {
+    fn run(&mut self, tree: &mut Tree, script: NodeId) {
+        let element = tree.parent(script).unwrap();
+        let held_by = tree.parent(element).unwrap();
+        let html = tree.children(tree.root())[0];
+        let body = tree.children(html)[1];
+        tree.append_child(body, element).unwrap();
+        if held_by != body {
+            tree.remove_node(held_by).unwrap();
+        }
+    }
+
+    fn skip(&mut self, _: &Tree, _: NodeId, _: NotRun) {}
+}
+
+/// Each entry of the stack of open elements read again after a hook run is a step, also an
+/// entry with no parent, which no hop reaches: with [`KeepOpen`], run `k` reads about `k`
+/// entries, so 200 rounds more after 200 take at least 200 × 200 steps more.
+#[test]
+fn each_entry_read_again_after_a_hook_run_is_a_step() {
+    let steps = |rounds: usize| {
+        let input = format!("<body>{}", "<span><script>x</script>".repeat(rounds));
+        let tree = parse_document_with_hook(&input, &deep(512), &mut KeepOpen);
+        assert_eq!(tree.stopped_by(), None);
+        tree.steps()
+    };
+    let (two, four) = (steps(200), steps(400));
+    assert!(
+        four - two >= 200 * 200,
+        "{two} steps at 200 rounds, {four} at 400"
+    );
+}
+
+/// The page of the fourth review's red case with the default limits: 40,000 rounds of
+/// `<span><script>x</script>` (960 KB) with [`KeepOpen`] would read about 8 × 10^8 entries;
+/// the step limit (2^27) ends the parse at `Steps` after about 16,000 runs, within 10 s in a
+/// test build (1.4 s measured).
+#[test]
+fn a_hook_that_keeps_every_element_open_ends_at_the_step_limit() {
+    const ROUNDS: usize = 40_000;
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let input = format!("<body>{}", "<span><script>x</script>".repeat(ROUNDS));
+        let start = std::time::Instant::now();
+        let tree = parse_document_with_hook(&input, &scripted(), &mut KeepOpen);
+        let _ = send.send((tree.stopped_by(), tree.steps(), start.elapsed()));
+    });
+    let (stopped, steps, elapsed) = receive
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the parse ends within 10 s");
+    eprintln!("stopped by {stopped:?}, {steps} steps, {elapsed:?}");
+    assert_eq!(stopped, Some(Limit::Steps));
+}
+
+/// Each scope boundary the adoption agency's changes to the stack of open elements visit is a
+/// step (the fourth review's probe `oremove:K:A`): K `object` elements kept open by
+/// [`KeepOpen`], each a boundary of "has an element in scope", then A times
+/// `<b><p>x</b></p>`, an adoption agency run each, which removes an entry and inserts one.
+/// The steps of the A runs grow with K times A.
+#[test]
+fn each_scope_boundary_the_adoption_agency_visits_is_a_step() {
+    const A: usize = 50;
+    let steps = |k: usize, a: usize| {
+        let input = format!(
+            "<body>{}{}",
+            "<object><script>x</script>".repeat(k),
+            "<b><p>x</b></p>".repeat(a)
+        );
+        let tree = parse_document_with_hook(&input, &deep(512), &mut KeepOpen);
+        assert_eq!(tree.stopped_by(), None);
+        tree.steps()
+    };
+    let runs = |k: usize| steps(k, A) - steps(k, 0);
+    let (few, many) = (runs(20), runs(200));
+    assert!(
+        many - few >= (200 - 20) * A,
+        "{few} steps for {A} runs over 20 objects, {many} over 200"
+    );
+}
+
+/// Each entry above the furthest block that the adoption agency's changes to the stack move is
+/// a step: `</a>` over `a`, `span`, `div` and k `span` costs 10 steps more for each `span`
+/// above the `div`. First outer iteration: the stack down to the `a` (4.4) and the scope (4.5)
+/// 1 each; removing the lower `span` (4.18.5) and the `a` (4.26) moves it, 1 each, and
+/// inserting the new `a` (4.26) 1; its depth read again, the entry and its parent, 2. Second
+/// outer iteration (the new `a`, no furthest block): the stack down to it, the scope and the
+/// search for a furthest block, 1 each. From 1 `span` on (the `div`'s one child, which step
+/// 4.30 moves, is there from the first).
+#[test]
+fn each_entry_the_adoption_agency_moves_on_the_stack_is_a_step() {
+    let steps = |input: &str| parse_document(input, &deep(512)).steps();
+    let run = |k: usize| {
+        let prefix = format!("<a><span><div>{}", "<span>".repeat(k));
+        steps(&format!("{prefix}</a>")) - steps(&prefix)
+    };
+    assert_eq!(run(9) - run(1), 8 * 10);
+}
+
+/// A scope boundary above an entry removed from inside the stack keeps its place: after head,
+/// a `template` start tag puts the `head` back on the stack, pushes the `template` above it and
+/// removes the `head` from under it. The `input` in the template contents asks whether a
+/// `select` is in scope, which reads the lowest boundary, the `template`.
+#[test]
+fn a_boundary_above_an_entry_removed_keeps_its_place() {
+    let tree = parse_document("<head></head><template><input id=i></template>", &deep(512));
+    let input = tree
+        .descendants(tree.root())
+        .into_iter()
+        .chain(
+            tree.descendants(tree.root())
+                .into_iter()
+                .filter_map(|n| contents_of(&tree, n))
+                .flat_map(|c| tree.descendants(c)),
+        )
+        .find(|&n| attribute(&tree, n, "id") == Some("i"));
+    assert!(input.is_some());
+}
+
+/// The `frameset` rule pops the `body` and every entry above it, a step each: with k `div`
+/// open (k ≥ 1, so that a `body` is made), the `frameset` costs one step more for each `div`
+/// than the parse without it.
+#[test]
+fn the_pops_of_the_frameset_rule_are_steps() {
+    let steps = |input: &str| parse_document(input, &deep(512)).steps();
+    let frameset = |k: usize| {
+        let divs = "<div>".repeat(k);
+        steps(&format!("{divs}<frameset>")) as isize - steps(&divs) as isize
+    };
+    assert_eq!(frameset(8) - frameset(1), 7);
+}
+
 /// A tiny xorshift generator: the property test is seeded and gives the same inputs each run.
 struct Rng(u64);
 

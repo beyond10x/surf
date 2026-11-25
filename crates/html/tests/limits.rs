@@ -568,10 +568,12 @@ fn steps_count_each_inner_loop_iteration_of_the_adoption_agency() {
     // iterations and the `span`'s missing entry 1 (4.18), removing the `div` from the `span`
     // (4.22) 1, the walk from the `body` to the root (4.23) 3, the formatting element's entry
     // (4.25) 1, the depths of the entries from the formatting element's place up read again,
-    // the `div` and the new `a`, each from its parent, 2. Second outer iteration: the entry,
-    // the stack and the scope, 1 each; no furthest block. 23 in all, 2 of them the inner
-    // loop's own.
-    assert_eq!(steps("<a><span><div></a>") - steps("<a><span><div>"), 23);
+    // the `div` and the new `a`, each from its parent 2 and each entry 2. The stack's changes,
+    // each entry above the place moved and each scope boundary (the `html`) visited: the
+    // `span` removed (4.18.5) 2, the `a` removed (4.26) 2, the new `a` inserted at the top
+    // (4.26) 0. Second outer iteration: the entry, the stack and the scope, 1 each; no
+    // furthest block. 29 in all, 2 of them the inner loop's own.
+    assert_eq!(steps("<a><span><div></a>") - steps("<a><span><div>"), 29);
 }
 
 #[test]

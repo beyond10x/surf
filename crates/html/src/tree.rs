@@ -28,7 +28,7 @@
 //! [`Limits::max_depth`] answers [`Limit::Depth`]; a node out of the tree is counted from the
 //! top of its own tree. No record keeps a depth: the parser keeps the depth of each entry of its
 //! stack of open elements and reads it again from the tree after a write that moved or removed
-//! an element ([`Tree::take_moved`]).
+//! an element (`Tree::take_moved`).
 //!
 //! Offsets and counts of character data are in UTF-16 code units, as the DOM's; an offset that
 //! falls between the two units of a surrogate pair answers [`WriteError::IndexSize`], since a

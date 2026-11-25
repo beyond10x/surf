@@ -411,6 +411,15 @@ no node deeper walks nothing of what it moves. The `selectedcontent` update coun
 of each `selectedcontent` on its walk down the document. Every parent or host a walk up passes
 to, and every node the adoption agency's walk down visits, is a step.
 
+The stack of open elements without a bound of its own (fix round 4): a hook's writes can keep
+every element of the markup open with no parent, so the stack is as long as the node limit lets
+it be (a node is on it at most once). The step limit bounds every read of it: each entry whose
+depth is read again is a step, also one with no parent, which no walk up reaches; an insertion
+into the stack or a removal from it counts each entry it moves and each scope boundary of the
+stack's list of them it visits; the `frameset` rule counts each entry it pops. The pops of
+"stop parsing" are not counted: they come once, after the last token, and a count there would
+change what the step limit checked for that token.
+
 Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
 tree holds, element local names, attribute names, prefixes and values, text, comment data,
 doctype fields, processing instruction targets and data. Names count as well as values because

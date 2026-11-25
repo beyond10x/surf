@@ -574,6 +574,9 @@ impl TreeBuilder {
                 }
                 let body = self.open[1];
                 self.tree.remove(body, &self.steps);
+                // "Pop all the nodes from the bottom of the stack of open elements, from the
+                // current node up to, but not including, the root html element": a step each.
+                self.add_steps(self.open.len() - 1);
                 self.open.truncate(1);
                 // The `html` element is under the `body` only on a stack that is not ordered
                 // (a hook's writes put it there).

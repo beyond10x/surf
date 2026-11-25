@@ -452,20 +452,14 @@ impl OpenElements {
         self.boundaries.last().map(|&at| self.stack[at])
     }
 
-    /// Adds `at` to the boundaries when `node`, the entry now at `at`, is one; the boundaries
-    /// at or after `at` were moved already.
-    fn add_boundary(&mut self, at: usize, node: NodeId) {
-        if self.is_boundary(node) {
-            let place = self.boundaries.partition_point(|&b| b < at);
-            self.boundaries.insert(place, at);
-        }
-    }
-
     /// Pushes `node` with the depth of its entry; `None` leaves it [`UNSETTLED`] for the
-    /// caller to settle.
+    /// caller to settle. A boundary is added at the end of the boundaries: the only place
+    /// one is added.
     fn push(&mut self, node: NodeId, depth: Option<usize>) {
         self.entered(node, entry_value(depth));
-        self.add_boundary(self.stack.len(), node);
+        if self.is_boundary(node) {
+            self.boundaries.push(self.stack.len());
+        }
         self.stack.push(node);
     }
 
@@ -478,6 +472,9 @@ impl OpenElements {
         Some(node)
     }
 
+    /// Pops the entries above the first `len`. Not a step: the caller counted the entries it
+    /// pops (the scan that found `len`, or the `frameset` rule), except "stop parsing"
+    /// ([`TreeBuilder::stop_parsing`]).
     fn truncate(&mut self, len: usize) {
         while self.stack.len() > len {
             self.pop();
@@ -488,10 +485,19 @@ impl OpenElements {
         self.truncate(0);
     }
 
-    fn remove(&mut self, at: usize) -> NodeId {
+    /// Removes the entry at `at`. A step for each entry above it, which moves down one place,
+    /// and for each boundary, visited once to move it. The entry removed is never a boundary:
+    /// the rules that remove an entry from inside the stack remove the `head`, a `form`, an
+    /// `a`, the formatting element of the adoption agency algorithm and the elements between
+    /// it and the furthest block, none of them of the element types of the default scope.
+    fn remove(&mut self, at: usize, steps: &Cell<usize>) -> NodeId {
         let node = self.stack.remove(at);
+        debug_assert!(
+            !self.is_boundary(node),
+            "no rule removes a boundary from inside"
+        );
+        count_steps(steps, self.stack.len() - at + self.boundaries.len());
         self.left(node);
-        self.boundaries.retain(|&b| b != at);
         for b in &mut self.boundaries {
             if *b > at {
                 *b -= 1;
@@ -500,31 +506,44 @@ impl OpenElements {
         node
     }
 
-    /// Inserts `node` at `at`, its depth [`UNSETTLED`] for the caller to settle.
-    fn insert(&mut self, at: usize, node: NodeId) {
+    /// Inserts `node` at `at`, its depth [`UNSETTLED`] for the caller to settle. A step for
+    /// each entry from `at` up, which moves up one place. `node` is the adoption agency's new
+    /// formatting element, never a boundary, and no boundary is at or above `at`: the algorithm
+    /// runs on only when its formatting element is in scope (step 4.5), so no boundary is above
+    /// that element, and `at` is above it. So no boundary moves and none is visited.
+    fn insert(&mut self, at: usize, node: NodeId, steps: &Cell<usize>) {
+        debug_assert!(
+            !self.is_boundary(node),
+            "a formatting element is no boundary"
+        );
+        debug_assert!(
+            self.boundaries.last().is_none_or(|&b| b < at),
+            "no boundary above a formatting element in scope"
+        );
+        count_steps(steps, self.stack.len() - at);
         self.entered(node, UNSETTLED);
-        for b in &mut self.boundaries {
-            if *b >= at {
-                *b += 1;
-            }
-        }
         self.stack.insert(at, node);
-        self.add_boundary(at, node);
     }
 
     /// Puts `node` in the place of the entry at `at`, its depth [`UNSETTLED`] for the caller to
-    /// settle.
+    /// settle. Neither is a boundary (the adoption agency's inner loop: a node below the
+    /// furthest block, so not special, and a new element for a formatting element), so the
+    /// boundaries do not change and no entry is visited.
     fn replace(&mut self, at: usize, node: NodeId) {
+        debug_assert!(!self.is_boundary(node) && !self.is_boundary(self.stack[at]));
         self.entered(node, UNSETTLED);
         let old = std::mem::replace(&mut self.stack[at], node);
         self.left(old);
-        self.boundaries.retain(|&b| b != at);
-        self.add_boundary(at, node);
     }
 }
 
 /// The value of [`OpenElements`]'s `on_stack` for an entry whose depth is being read again.
 const UNSETTLED: u32 = u32::MAX;
+
+/// Adds `n` visits to `steps` ([`TreeBuilder::add_steps`] for the stack's own methods).
+fn count_steps(steps: &Cell<usize>, n: usize) {
+    steps.set(steps.get().saturating_add(n));
+}
 
 /// The value of `on_stack` for an entry of `depth`, [`UNSETTLED`] for `None`. A depth past
 /// `u32::MAX - 2` is kept as that.
@@ -668,7 +687,7 @@ fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parse
             builder.stop_at(Limit::Steps);
         }
     }
-    // "Stop parsing" pops every open element, also after a limit.
+    // "Stop parsing" pops every open element, also after a limit (not steps: `stop_parsing`).
     builder.open.clear();
     if let Some(hook) = hook
         && !builder.open.ended.is_empty()
@@ -1058,7 +1077,10 @@ impl TreeBuilder {
     }
 
     /// Stop parsing (13.2.7, "the end"), as far as it changes the tree: pop every node off the
-    /// stack of open elements.
+    /// stack of open elements. The pops are not steps: the count of a parse up to its last
+    /// token stays what the step limit checked. They run once, at the end, one for each entry
+    /// left, and every entry is an element the parser made (the node limit) or the `head` it
+    /// put back for one token.
     fn stop_parsing(&mut self) {
         self.open.clear();
         self.stopped = true;
@@ -1135,8 +1157,10 @@ impl TreeBuilder {
     /// Reads the depths of the entries of the stack of open elements from `from` up again
     /// from the tree, bottom up, each entry from its parent or host up to the first entry
     /// already read ([`Self::walk_up`]). After the parser's own changes an entry's parent is
-    /// most often the entry below it: one step. From 0 it also finds whether the stack is
-    /// [`Self::ordered`]: a walk that passes an entry above its own is under it.
+    /// most often the entry below it: one step. Each entry read again is a step too, also one
+    /// with no parent, which no hop reaches (the step counts both passes over it). From 0 it
+    /// also finds whether the stack is [`Self::ordered`]: a walk that passes an entry above its
+    /// own is under it.
     fn settle_entries(&mut self, from: usize) {
         for at in from..self.open.len() {
             let node = self.open[at];
@@ -1144,6 +1168,7 @@ impl TreeBuilder {
         }
         let mut ordered = true;
         for at in from..self.open.len() {
+            self.visit();
             let node = self.open[at];
             let (depth, passed_unsettled) = self.walk_up(node);
             ordered &= !passed_unsettled;
@@ -1664,7 +1689,7 @@ impl TreeBuilder {
     /// Removes `element` from the stack of open elements, scanning from the current node.
     fn remove_from_stack(&mut self, element: NodeId) {
         if let Some(at) = self.stack_position(element) {
-            self.open.remove(at);
+            self.open.remove(at, &self.steps);
         }
     }
 
