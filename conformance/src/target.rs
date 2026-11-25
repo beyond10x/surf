@@ -1238,6 +1238,7 @@ fn script_error_kind(kind: ScriptErrorKind) -> &'static str {
         ScriptErrorKind::SyntaxError => "SyntaxError",
         ScriptErrorKind::TypeError => "TypeError",
         ScriptErrorKind::UriError => "UriError",
+        ScriptErrorKind::AggregateError => "AggregateError",
         ScriptErrorKind::Value => "Value",
     }
 }
@@ -1251,6 +1252,7 @@ fn script_error_kind_named(name: &str) -> Option<ScriptErrorKind> {
         ScriptErrorKind::SyntaxError,
         ScriptErrorKind::TypeError,
         ScriptErrorKind::UriError,
+        ScriptErrorKind::AggregateError,
         ScriptErrorKind::Value,
     ]
     .into_iter()

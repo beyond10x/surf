@@ -600,16 +600,16 @@ surf v1 — 9 file(s), 57 scenario(s), valid
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/6faa23ddcf581f77cabfeb61025485e2f9ddb1a57259b1d734bd726dd75f14d4 are current
-Summary [   1.685s] 54 tests run: 54 passed, 0 skipped
+conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
+Summary [   1.685s] 63 tests run: 63 passed, 0 skipped
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 3.3 s of its budget of 120 s
-the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:29892e5537518e2b6290e5e134f03e324991488e6ca271cd5613409b7588dbc6
+the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 206 test files, one test binary each
+test-layout: 26 test directories, 207 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
@@ -659,8 +659,11 @@ specification, suite, conformance, test and test-layout lines count the scenario
 conform`, `task conform-rust`, `task conform-totals`, `task test` and `task test-layout` on its
 tip (57 authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 tests of the
 conformance crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files;
-where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). The
-times are that run's.
+where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). Its
+conformance and test-layout lines, and the two digests, are those of
+`story:script-error-kind-aggregate` on its tip, from `task conform-rust`, `task conform-totals`
+and `task test-layout` (63 tests of the conformance crate and 207 test files, where
+`story:scripts-spec`'s tip had 54 and 206). The times are that run's.
 That run's page tests' line, `72 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at

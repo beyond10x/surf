@@ -95,13 +95,14 @@ const LIMIT_ALONE: [ScriptReason; 6] = [
     ScriptReason::StoredBytes,
 ];
 
-const NOT_SYNTAX: [ScriptErrorKind; 7] = [
+const NOT_SYNTAX: [ScriptErrorKind; 8] = [
     ScriptErrorKind::Error,
     ScriptErrorKind::EvalError,
     ScriptErrorKind::RangeError,
     ScriptErrorKind::ReferenceError,
     ScriptErrorKind::TypeError,
     ScriptErrorKind::UriError,
+    ScriptErrorKind::AggregateError,
     ScriptErrorKind::Value,
 ];
 
@@ -137,7 +138,7 @@ fn terms() -> Vec<Term> {
     ]);
     all.extend(LIMIT_ALONE.iter().map(|word| Term::NotRunWord(*word)));
     all.push(Term::ValueMessage);
-    all.extend(NOT_SYNTAX[..6].iter().map(|kind| Term::RefusedKind(*kind)));
+    all.extend(NOT_SYNTAX[..7].iter().map(|kind| Term::RefusedKind(*kind)));
     all.push(Term::RefusedKind(ScriptErrorKind::Value));
     all.push(Term::LongMessage);
     all.dedup();
