@@ -48,7 +48,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 ---
@@ -572,6 +572,8 @@ no edge.
 `story:scripts-dom-mutation` (`:80`, `crates/swell/src/host/mod.rs:577 @ 0.8.0` is `:604 @ 0.9.0`;
 `:105`) and the epic's "Corrections of 2026-11-24" (`epic/scripts-in-a-page.md:962-971`). Each is a
 statement read at `0.8.0` that stays true there; nobody rewrites it.
+
+Beside `story:scripts-dom-reading` (proposed, `depends_on: story:webidl-bindings` and `story:html-script-hook`): no edge. The two are built in separate trees and merged one after the other. They write the same five files, `AGENTS.md`, `Cargo.lock`, `crates/script/Cargo.toml`, `crates/script/tests/bindings.rs` and `docs/design/scripts.md`, and both rewrite the public surfaces (`README.md`, `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/how-it-is-built.md`, `website/docs/status.md`, `website/docs/what-works.md`). Whichever merges second merges `main` first and takes its numbers from its own log, as for `story:script-error-kind-aggregate` above. The reading story adds the dependency `surf-url` right after `surf-secret` in `crates/script/Cargo.toml` and in the entry of `surf-script` in `Cargo.lock`; this story changes the pin on the next line of `crates/script/Cargo.toml` (line 16) and the swell entries of `Cargo.lock`, so the second merge may conflict in those two files and keeps both changes.
 
 ## Why `epic:scripts-in-a-page`
 
