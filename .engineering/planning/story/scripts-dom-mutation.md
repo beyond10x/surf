@@ -10,6 +10,7 @@ relations:
 - depends_on: story:html-script-hook
 - depends_on: story:scripts-dom-reading
 - depends_on: story:scripts-parse-run
+- depends_on: story:scripts-dom-attributes
 scope:
 - confidence: cited
   path: AGENTS.md
