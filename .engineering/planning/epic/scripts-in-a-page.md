@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 62
+revision: 63
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -1002,28 +1002,30 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 134-136, 743-746 and 762-764 (the deviation texts of the selector members): `story:scripts-dom-selectors` names a second deviation beside the subset. A pseudo-class or pseudo-element that surf recognises by its shape (a colon or two, an identifier, an argument in balanced parentheses) gets the same `SyntaxError` and the same message, that surf does not support it, also where a browser would call the text not valid (`a:hovr`, `a:nth-child(x y z)`), because surf does not validate the name or the argument of a pseudo-class it excludes. The story's acceptance 4a tests both texts and its decision 11 names the deviation beside the nine members.
 - Lines 478-481 (candidate 11): "Writes `crates/script/src/dom/selectors.rs`, `crates/script/src/dom/selector_reads.rs` and their tests." Now: `story:scripts-dom-selectors` writes those two files and their tests (`crates/script/tests/dom_selectors.rs`), and also `crates/script/src/dom/reads.rs` (visibility only: seven items made `pub(super)` and the lifetime of `Reads`, no function changes its body), `crates/script/src/dom/mod.rs` (two lines, `mod selector_reads;` and `pub use selector_reads::Frames;`), `crates/webidl/selection.txt` (one note of two clauses on the nine rows of the slice `selectors`), `crates/script/src/bindings.rs` (regenerated: the nine doc comments and the digest lines), `crates/script/tests/dom_reading.rs` (line 2426, `el.querySelector("p")`, becomes `el.attachShadow({})`), `docs/design/scripts.md` (one row of the table of question 4) and `AGENTS.md` (the entry of `crates/script`). The public numbers (`README.md`, `docs/badges`, `website/docs/how-it-is-built.md`, `website/docs/status.md`, `website/docs/what-works.md`) it changes in its last commit as the epic says at lines 955-961, and they are not in its recorded scope. Decisions 11, 13 and 17 of the story.
 
-2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic (its lines as of plan commit `2e38276`); where
-they differ, the story's decisions win, and the lines named are this file's:
+2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic; where they differ,
+the story's decisions win, and the lines named are this file's at plan commit `929269e`:
 
-- Lines 469-472 (candidate 9): "the 29 mutating members, the setters of `nodeValue`,
+- Lines 472-475 (candidate 9): "the 29 mutating members, the setters of `nodeValue`,
   `textContent` and `document.title`, the constructors of `Text`, `Comment` and
   `DocumentFragment` ... Writes `crates/script/src/dom/mutation.rs` and its tests". Now: 46 member
   rows, four setters and four constructors (`Text`, `Comment`, `DocumentFragment` and
   `ProcessingInstruction`), 54 methods of the trait `Mutation`, in three files (`mutation.rs`,
-  `mutation_reads.rs`, `mutation_writes.rs`). The story also writes `crates/html/src/tree.rs`
-  (visibility and recounted passes), `crates/webidl/src/prelude.rs` and
-  `crates/script/src/bindings.rs` (a bulk node charge, a charge for each item of a variadic
-  list, the refill charged before its copy), `crates/webidl/selection.txt`,
-  `crates/script/src/dom/reads.rs`, the comment of `crates/script/src/runner.rs` at the
-  placeholder arm for `Limit::InputBytes` and `Limit::Steps`, `docs/design/scripts.md`,
-  `AGENTS.md` and the public surfaces.
-- Lines 732-737 ("Tree mutation, 29"): "Every write is held to the parser's limits". Now: held to
-  the parser's limits and to the engine's `memory_bytes`, each write charged by a step for the
-  work it makes the tree do, before the call. At the default limits a script that makes nodes
-  ends `limit: memory` before `limit: nodes`: a created node takes 408 bytes of charge and 423
-  of wrapper (`docs/design/scripts.md:329-332`), so 80,756 nodes fill 67,108,864 bytes. A
-  removed node is not refunded.
-- Lines 753-758 (deviations): three more, each named beside its member in `selection.txt`:
+  `mutation_reads.rs`, `mutation_writes.rs`); it also depends on `story:scripts-dom-attributes`
+  and `story:scripts-parse-run`. The story also writes `crates/html/src/tree.rs` (a validity
+  check, a bulk removal, a work counter), `crates/webidl/src/prelude.rs`,
+  `crates/webidl/src/generate.rs` and `crates/script/src/bindings.rs` (a bulk node charge, a
+  charge for each item of a variadic list, the refill charged before its copy), the selection,
+  `reads.rs`, the comment of `runner.rs` at the arm for `Limit::InputBytes` and `Limit::Steps`,
+  `docs/design/scripts.md` and `AGENTS.md`; the public numbers it changes in its last commit
+  are not its recorded scope (lines 955-961).
+- Lines 736-741 ("Tree mutation, 29"): "Every write is held to the parser's limits". Now: held to
+  the parser's limits and to the engine's `memory_bytes`, each write charged in steps for the
+  passes the tree makes, before the call (the story lists them and a counter in the tree holds
+  the formulas to them). At the default limits a script that makes nodes ends `limit: memory`
+  before `limit: nodes`: a created node takes 408 bytes of charge and 423 of wrapper (80,756
+  nodes, `docs/design/scripts.md:329-332`). A removed node is not refunded; 5,000 removals from
+  the front of one child list end `limit: steps-per-script`.
+- Lines 761-770 (deviations): three more, each named beside its member in `selection.txt`:
   `cloneNode` of a `Document` throws `NotSupportedError` (the standard clones it);
   `createElementNS` with a prefix or a namespace outside the six throws `NotSupportedError` (the
   tree's element has no prefix and no open namespace); a clone of a `script` element is recorded
