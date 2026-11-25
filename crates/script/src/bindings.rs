@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 659f6dde1690fb04ef70def5ad307a102f24994f62498513ea96b415e11d0fd1  crates/webidl/src/prelude.rs
+//! 17deb462db98e39bcc8e1a2a669f29db27db781bc1675f21e9f2eea914d209a0  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: a7ec104654e516af4805f361b4a3a5f307430769b1c4b2ef48b35b1491b24906
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 6c935c7e465ced7fef84baa0d9065d552318a0086257473bab509902f7d6438d
 
 use std::cell::Cell;
 
@@ -1372,6 +1372,7 @@ fn refused(step: Completion<()>) -> Completion<bool> {
 ///   2. the new nodes are defined over the indices `0..new` (define, never set);
 ///   3. the indices `new..old` are deleted, which cannot fail after step 1;
 ///   4. the data and `written` change last.
+///
 /// A step the object refuses (frozen, sealed, non-extensible, an index the script made
 /// non-configurable) puts back what step 2 wrote (the old node at an old index, nothing past
 /// the old length), leaves the data and `written` as they were, and throws a `TypeError`

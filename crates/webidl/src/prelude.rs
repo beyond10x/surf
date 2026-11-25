@@ -1266,6 +1266,7 @@ fn refused(step: Completion<()>) -> Completion<bool> {
 ///   2. the new nodes are defined over the indices `0..new` (define, never set);
 ///   3. the indices `new..old` are deleted, which cannot fail after step 1;
 ///   4. the data and `written` change last.
+///
 /// A step the object refuses (frozen, sealed, non-extensible, an index the script made
 /// non-configurable) puts back what step 2 wrote (the old node at an old index, nothing past
 /// the old length), leaves the data and `written` as they were, and throws a `TypeError`

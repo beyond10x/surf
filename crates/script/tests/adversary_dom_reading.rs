@@ -268,16 +268,16 @@ fn document_element_and_doctype_charge_their_scan() {
     let mut lines = Vec::new();
     let mut flat = Vec::new();
     for source in [
-        "for (var i = 0; i < 100; i++) document.documentElement;",
-        "for (var i = 0; i < 100; i++) document.doctype;",
-        "for (var i = 0; i < 100; i++) document.lookupNamespaceURI(null);",
+        "for (var i = 0; i < 10; i++) document.documentElement;",
+        "for (var i = 0; i < 10; i++) document.doctype;",
+        "for (var i = 0; i < 10; i++) document.lookupNamespaceURI(null);",
     ] {
         let (few, few_time) = read(0, source);
         let (many, many_time) = read(100_000, source);
         lines.push(format!(
             "{source}: 0 comments {few} steps {few_time:?}; 2 x 100,000 comments {many} steps {many_time:?}"
         ));
-        if many < few + 100 * 100_000 {
+        if many < few + 10 * 100_000 {
             flat.push(source);
         }
     }

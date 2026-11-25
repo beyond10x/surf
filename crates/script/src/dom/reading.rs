@@ -5,7 +5,9 @@
 //! Steps. The bindings charge one step per call. A member whose work grows with the tree
 //! charges one step per node it visits and one per 64 bytes of a String it builds, before the
 //! work, so a script over a large tree ends at its step limit and not at the wall clock. The
-//! walks keep their own list of nodes, so a deep tree does not deepen the call stack.
+//! walks keep their own list of nodes, so a deep tree does not deepen the call stack. A member
+//! that reads an element's attributes also charges one step per attribute and per 64 bytes of
+//! them, and its scan or compare of them is linear in those bytes.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
@@ -15,11 +17,14 @@
 //! String past the limit, with the steps of what they visited charged.
 //!
 //! Siblings. The tree has no sibling read: a sibling is found by the node's index among its
-//! parent's children. [`SurfReading`] keeps that index for the last eight parents it answered
+//! parent's children. [`SurfReading`] keeps two such indices (the two last answered, so a parent
+//! read from both ends keeps one for each end) for the last eight parents it answered
 //! about ([`Hints`]). A hint is never trusted: the child at the hinted index, the one before it
 //! and the one after it are compared with the node, and a miss scans the parent's children at
 //! one step per node. So a walk over the children costs one step per sibling read, and a write
 //! between two reads costs a scan, never a wrong answer.
+
+use std::collections::HashMap;
 
 use surf_html::{Namespace, NodeData, NodeId, QuirksMode, Tree};
 use surf_url::Url;
@@ -34,34 +39,36 @@ use super::DocumentInfo;
 /// How many parents the sibling hints remember.
 const HINTS: usize = 8;
 
-/// The index of a child among its parent's children, for the last [`HINTS`] parents a sibling
-/// read answered about; the oldest is replaced first.
+/// Two positions among a parent's children, the two last a sibling read answered about, so a
+/// parent read from both ends keeps a hint for each end; the oldest parent is replaced first.
 #[derive(Debug, Default)]
 struct Hints {
-    entries: [Option<(NodeId, usize)>; HINTS],
+    entries: [Option<(NodeId, [usize; 2])>; HINTS],
     next: usize,
 }
 
 impl Hints {
-    /// The hinted index for `parent`, if any.
-    fn get(&self, parent: NodeId) -> Option<usize> {
+    /// The two hinted positions for `parent`, if any.
+    fn get(&self, parent: NodeId) -> Option<[usize; 2]> {
         self.entries
             .iter()
             .flatten()
             .find(|(hinted, _)| *hinted == parent)
-            .map(|&(_, index)| index)
+            .map(|&(_, positions)| positions)
     }
 
-    /// Remembers `index` for `parent`: in place when `parent` has an entry, else in place of the
-    /// oldest.
+    /// Remembers `index` for `parent`: in place of the nearer of its two positions when
+    /// `parent` has an entry (the read went on from there), else as both positions of a new
+    /// entry in place of the oldest.
     fn set(&mut self, parent: NodeId, index: usize) {
         for (hinted, at) in self.entries.iter_mut().flatten() {
             if *hinted == parent {
-                *at = index;
+                let nearer = usize::from(at[1].abs_diff(index) < at[0].abs_diff(index));
+                at[nearer] = index;
                 return;
             }
         }
-        self.entries[self.next] = Some((parent, index));
+        self.entries[self.next] = Some((parent, [index, index]));
         self.next = (self.next + 1) % HINTS;
     }
 }
@@ -90,7 +97,7 @@ impl SurfReading {
         node: NodeId,
     ) -> DomResult<usize> {
         let children = cx.tree().children(parent);
-        if let Some(hint) = self.hints.get(parent) {
+        for hint in self.hints.get(parent).into_iter().flatten() {
             for candidate in [Some(hint), hint.checked_add(1), hint.checked_sub(1)]
                 .into_iter()
                 .flatten()
@@ -160,7 +167,7 @@ impl SurfReading {
     /// is longer than the URL parser reads, gives the address.
     fn base_url(&self, cx: &mut DomCx<'_, '_>) -> DomResult<String> {
         let root = cx.tree().root();
-        let base = find(cx, root, |tree, node| {
+        let base = find(cx, root, Reads::Attributes, |tree, node| {
             html_element(tree, node, "base") && attribute(tree, node, "href").is_some()
         })?;
         let href = base.and_then(|base| attribute(cx.tree(), base, "href").map(str::to_string));
@@ -306,16 +313,51 @@ fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
     }
 }
 
-/// `node` and the nodes under it in tree order, each charged one step before it is visited,
-/// until `stop` answers true for one: that node. `include` false leaves `node` itself out.
+/// What a walk reads of each node it visits, and so what it charges for it beside its one step.
+#[derive(Clone, Copy)]
+enum Reads {
+    /// The node's kind and names only: one step a node.
+    Names,
+    /// Also the attributes: one step a node, plus [`attribute_steps`].
+    Attributes,
+}
+
+/// The steps of reading `node`'s attributes: one per attribute and one per 64 bytes of their
+/// names and values, so a scan or a compare over them is bounded by its charge.
+fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => {
+            let bytes: usize = attributes
+                .iter()
+                .map(|attribute| attribute.local_name.len() + attribute.value.len())
+                .sum();
+            attributes.len() + bytes / 64
+        }
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => 0,
+    }
+}
+
+/// `node` and the nodes under it in tree order, each charged before it is visited (one step,
+/// and its attributes when the walk `reads` them), until `stop` answers true for one: that
+/// node.
 fn find(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
+    reads: Reads,
     mut stop: impl FnMut(&Tree, NodeId) -> bool,
 ) -> DomResult<Option<NodeId>> {
     let mut pending = vec![node];
     while let Some(next) = pending.pop() {
-        charge(cx, 1)?;
+        let steps = match reads {
+            Reads::Names => 1,
+            Reads::Attributes => 1 + attribute_steps(cx.tree(), next),
+        };
+        charge(cx, steps)?;
         let tree = cx.tree();
         if stop(tree, next) {
             return Ok(Some(next));
@@ -325,15 +367,16 @@ fn find(
     Ok(None)
 }
 
-/// The nodes under `node`, `node` left out, for which `keep` answers true, in tree order; one
-/// step per node visited.
+/// The nodes under `node`, `node` left out, for which `keep` answers true, in tree order;
+/// charged as [`find`].
 fn select(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
+    reads: Reads,
     mut keep: impl FnMut(&Tree, NodeId) -> bool,
 ) -> DomResult<Vec<NodeId>> {
     let mut kept = Vec::new();
-    find(cx, node, |tree, next| {
+    find(cx, node, reads, |tree, next| {
         if next != node && keep(tree, next) {
             kept.push(next);
         }
@@ -352,7 +395,7 @@ fn by_tag_name(
     qualified_name: &str,
 ) -> DomResult<Vec<NodeId>> {
     let lower = qualified_name.to_ascii_lowercase();
-    select(cx, node, |tree, next| match tree.data(next) {
+    select(cx, node, Reads::Names, |tree, next| match tree.data(next) {
         NodeData::Element {
             namespace,
             local_name,
@@ -381,7 +424,7 @@ fn by_tag_name_ns(
     local_name: &str,
 ) -> DomResult<Vec<NodeId>> {
     let namespace = namespace.filter(|namespace| !namespace.is_empty());
-    select(cx, node, |tree, next| match tree.data(next) {
+    select(cx, node, Reads::Names, |tree, next| match tree.data(next) {
         NodeData::Element {
             namespace: own,
             local_name: own_name,
@@ -411,24 +454,50 @@ fn by_class_name(
     node: NodeId,
     class_names: &str,
 ) -> DomResult<Vec<NodeId>> {
-    let wanted: Vec<&str> = class_names.split_ascii_whitespace().collect();
+    // The wanted classes: an ordered set (duplicates dropped), built once, one step per 64
+    // bytes of the argument; in quirks mode each in ASCII lower case.
+    charge(cx, class_names.len() / 64)?;
+    let quirks = cx.tree().quirks_mode() == QuirksMode::Quirks;
+    let mut wanted: HashMap<String, usize> = HashMap::new();
+    for token in class_names.split_ascii_whitespace() {
+        let next = wanted.len();
+        let token = if quirks {
+            token.to_ascii_lowercase()
+        } else {
+            token.to_string()
+        };
+        wanted.entry(token).or_insert(next);
+    }
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    let quirks = cx.tree().quirks_mode() == QuirksMode::Quirks;
-    select(cx, node, |tree, next| {
+    // An element matches when its classes hold every wanted one: one set lookup per class, so
+    // the match is linear in the bytes of its `class`, which the walk charges before it.
+    let mut matched_by = vec![0usize; wanted.len()];
+    let mut element = 0usize;
+    let mut folded = String::new();
+    select(cx, node, Reads::Attributes, |tree, next| {
         let Some(classes) = attribute(tree, next, "class") else {
             return false;
         };
-        wanted.iter().all(|want| {
-            classes.split_ascii_whitespace().any(|class| {
-                if quirks {
-                    class.eq_ignore_ascii_case(want)
-                } else {
-                    class == *want
-                }
-            })
-        })
+        element += 1;
+        let mut matched = 0;
+        for class in classes.split_ascii_whitespace() {
+            let key = if quirks {
+                folded.clear();
+                folded.extend(class.chars().map(|c| c.to_ascii_lowercase()));
+                folded.as_str()
+            } else {
+                class
+            };
+            if let Some(&at) = wanted.get(key)
+                && matched_by[at] != element
+            {
+                matched_by[at] = element;
+                matched += 1;
+            }
+        }
+        matched == wanted.len()
     })
 }
 
@@ -437,7 +506,7 @@ fn by_id(cx: &mut DomCx<'_, '_>, node: NodeId, id: &str) -> DomResult<Option<Nod
     if id.is_empty() {
         return Ok(None);
     }
-    find(cx, node, |tree, next| {
+    find(cx, node, Reads::Attributes, |tree, next| {
         next != node && attribute(tree, next, "id") == Some(id)
     })
 }
@@ -509,27 +578,40 @@ fn parent_element(tree: &Tree, node: NodeId) -> Option<NodeId> {
 /// The element whose namespace lookups `node` answers with (DOM, "locate a namespace" and
 /// "locate a namespace prefix"): itself for an element, the document element for a document,
 /// none for a doctype and a fragment, the parent element for the others.
-fn lookup_start(tree: &Tree, node: NodeId) -> Option<NodeId> {
+fn lookup_start(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Option<NodeId>> {
+    let tree = cx.tree();
     match tree.data(node) {
-        NodeData::Element { .. } => Some(node),
-        NodeData::Document => document_element(tree, node),
-        NodeData::Doctype { .. } | NodeData::DocumentFragment => None,
+        NodeData::Element { .. } => Ok(Some(node)),
+        NodeData::Document => document_child(cx, node, is_element),
+        NodeData::Doctype { .. } | NodeData::DocumentFragment => Ok(None),
         NodeData::Text(_) | NodeData::Comment(_) | NodeData::ProcessingInstruction { .. } => {
-            parent_element(tree, node)
+            Ok(parent_element(tree, node))
         }
     }
 }
 
-/// The first element child of `document`.
-fn document_element(tree: &Tree, document: NodeId) -> Option<NodeId> {
-    tree.children(document)
+/// The first child of `document` for which `wanted` answers true (its document element or its
+/// doctype), one step per child of the document, charged before the scan.
+fn document_child(
+    cx: &mut DomCx<'_, '_>,
+    document: NodeId,
+    wanted: fn(&Tree, NodeId) -> bool,
+) -> DomResult<Option<NodeId>> {
+    charge(cx, cx.tree().children(document).len())?;
+    let tree = cx.tree();
+    Ok(tree
+        .children(document)
         .iter()
         .copied()
-        .find(|&child| is_element(tree, child))
+        .find(|&child| wanted(tree, child)))
+}
+
+fn is_doctype(tree: &Tree, node: NodeId) -> bool {
+    matches!(tree.data(node), NodeData::Doctype { .. })
 }
 
 /// DOM, "locate a namespace" for `prefix` (`None` is null), from `node`'s start, one step per
-/// element passed.
+/// element passed and its attributes.
 fn locate_namespace(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -540,9 +622,10 @@ fn locate_namespace(
         Some("xmlns") => return Ok(Some(Namespace::Xmlns.url().to_string())),
         Some(_) | None => {}
     }
-    let mut at = lookup_start(cx.tree(), node);
+    let mut at = lookup_start(cx, node)?;
     while let Some(element) = at {
-        charge(cx, 1)?;
+        let steps = 1 + attribute_steps(cx.tree(), element);
+        charge(cx, steps)?;
         let tree = cx.tree();
         let NodeData::Element {
             namespace,
@@ -575,15 +658,16 @@ fn locate_namespace(
 }
 
 /// DOM, "locate a namespace prefix" for `namespace`, from `node`'s start, one step per element
-/// passed.
+/// passed and its attributes.
 fn locate_prefix(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
     namespace: &str,
 ) -> DomResult<Option<String>> {
-    let mut at = lookup_start(cx.tree(), node);
+    let mut at = lookup_start(cx, node)?;
     while let Some(element) = at {
-        charge(cx, 1)?;
+        let steps = 1 + attribute_steps(cx.tree(), element);
+        charge(cx, steps)?;
         let tree = cx.tree();
         let NodeData::Element { attributes, .. } = tree.data(element) else {
             break;
@@ -631,18 +715,32 @@ fn shallow_equal(tree: &Tree, a: NodeId, b: NodeId) -> bool {
                 ..
             },
         ) => {
-            fn key(attribute: &surf_html::Attribute) -> (Option<&'static str>, &str, &str) {
-                (
+            // The attribute lists compared as maps from namespace and local name to value: one
+            // hash and one lookup per attribute, linear in their bytes. The lengths first, so
+            // the other list is read no further than this one, which the walk charged.
+            if namespace != other_namespace
+                || local_name != other_name
+                || attributes.len() != other_attributes.len()
+            {
+                return false;
+            }
+            let mine: HashMap<(Option<&str>, &str), &str> = attributes
+                .iter()
+                .map(|attribute| {
+                    let key = (
+                        attribute.namespace.map(Namespace::url),
+                        attribute.local_name.as_str(),
+                    );
+                    (key, attribute.value.as_str())
+                })
+                .collect();
+            other_attributes.iter().all(|attribute| {
+                let key = (
                     attribute.namespace.map(Namespace::url),
                     attribute.local_name.as_str(),
-                    attribute.value.as_str(),
-                )
-            }
-            let mut mine: Vec<_> = attributes.iter().map(key).collect();
-            let mut theirs: Vec<_> = other_attributes.iter().map(key).collect();
-            mine.sort_unstable();
-            theirs.sort_unstable();
-            namespace == other_namespace && local_name == other_name && mine == theirs
+                );
+                mine.get(&key) == Some(&attribute.value.as_str())
+            })
         }
         (NodeData::Text(data), NodeData::Text(other))
         | (NodeData::Comment(data), NodeData::Comment(other)) => data == other,
@@ -666,13 +764,22 @@ fn shallow_equal(tree: &Tree, a: NodeId, b: NodeId) -> bool {
     }
 }
 
-/// The steps of comparing two nodes: one, and one per attribute and per 64 bytes of data.
+/// The steps of comparing `node` with another: one, and one per attribute and per 64 bytes of
+/// the names, values and data compared. A compare of two strings reads no further than the
+/// shorter, so the bytes of `node`'s side bound it.
 fn equal_cost(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
-        NodeData::Element { attributes, .. } => 1 + attributes.len(),
+        NodeData::Element { local_name, .. } => {
+            1 + local_name.len() / 64 + attribute_steps(tree, node)
+        }
         NodeData::Text(data) | NodeData::Comment(data) => 1 + data.len() / 64,
-        NodeData::ProcessingInstruction { data, .. } => 1 + data.len() / 64,
-        NodeData::Document | NodeData::DocumentFragment | NodeData::Doctype { .. } => 1,
+        NodeData::ProcessingInstruction { target, data } => 1 + (target.len() + data.len()) / 64,
+        NodeData::Doctype {
+            name,
+            public_id,
+            system_id,
+        } => 1 + (name.len() + public_id.len() + system_id.len()) / 64,
+        NodeData::Document | NodeData::DocumentFragment => 1,
     }
 }
 
@@ -933,7 +1040,7 @@ impl Reading for SurfReading {
             return Ok(false);
         };
         // An inclusive descendant: the nodes under `this` in tree order, one step each.
-        Ok(find(cx, this, |_, node| node == other)?.is_some())
+        Ok(find(cx, this, Reads::Names, |_, node| node == other)?.is_some())
     }
 
     fn node_lookup_prefix(
@@ -1169,12 +1276,7 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         this: NodeId,
     ) -> DomResult<Option<NodeId>> {
-        let tree = cx.tree();
-        Ok(tree
-            .children(this)
-            .iter()
-            .copied()
-            .find(|&child| matches!(tree.data(child), NodeData::Doctype { .. })))
+        document_child(cx, this, is_doctype)
     }
 
     fn document_document_element(
@@ -1182,7 +1284,7 @@ impl Reading for SurfReading {
         cx: &mut DomCx<'_, '_>,
         this: NodeId,
     ) -> DomResult<Option<NodeId>> {
-        Ok(document_element(cx.tree(), this))
+        document_child(cx, this, is_element)
     }
 
     fn document_get_elements_by_tag_name(
@@ -1257,7 +1359,10 @@ impl Reading for SurfReading {
     fn document_title(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<String> {
         // HTML, "document.title": the child text content of the first `title` element in tree
         // order, with ASCII whitespace stripped and collapsed; the empty string without one.
-        let Some(title) = find(cx, this, |tree, node| html_element(tree, node, "title"))? else {
+        let Some(title) = find(cx, this, Reads::Names, |tree, node| {
+            html_element(tree, node, "title")
+        })?
+        else {
             return Ok(String::new());
         };
         let children = cx.tree().children(title).len();
@@ -1546,9 +1651,12 @@ impl Reading for SurfReading {
         if name.is_empty() {
             return Ok(None);
         }
-        let tree = cx.tree();
-        let found = this.iter().position(|&node| {
-            attribute(tree, node, "id") == Some(name.as_str())
+        // One step per element visited and its attributes, before it is read.
+        for &node in this {
+            let steps = 1 + attribute_steps(cx.tree(), node);
+            charge(cx, steps)?;
+            let tree = cx.tree();
+            if attribute(tree, node, "id") == Some(name.as_str())
                 || (matches!(
                     tree.data(node),
                     NodeData::Element {
@@ -1556,11 +1664,11 @@ impl Reading for SurfReading {
                         ..
                     }
                 ) && attribute(tree, node, "name") == Some(name.as_str()))
-        });
-        let visited = found.map_or(this.len(), |index| index + 1);
-        let answer = found.map(|index| this[index]);
-        charge(cx, visited)?;
-        Ok(answer)
+            {
+                return Ok(Some(node));
+            }
+        }
+        Ok(None)
     }
 
     fn window_window(&mut self, _cx: &mut DomCx<'_, '_>) -> DomResult<TheWindow> {

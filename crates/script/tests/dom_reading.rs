@@ -1698,6 +1698,43 @@ fn steps_in_proportion() {
     assert!(position >= 999, "{position}");
 }
 
+/// A member that reads an element's attributes charges one step per attribute and per 64 bytes
+/// of them before it reads them: an attribute of 128,000 bytes costs at least 1,000 steps more
+/// than one of 64, in each member that scans or compares attribute lists.
+#[test]
+fn attributes_are_charged_where_they_are_read() {
+    let reads = [
+        ("getElementById", "document.getElementById(\"none\");"),
+        (
+            "getElementsByClassName",
+            "document.getElementsByClassName(\"c\");",
+        ),
+        ("namedItem", "all.namedItem(\"none\");"),
+        ("isEqualNode", "a.isEqualNode(b);"),
+        ("lookupPrefix", "a.lookupPrefix(\"urn:x\");"),
+        ("baseURI", "a.baseURI;"),
+    ];
+    let spent = |bytes: usize, read: &str| {
+        let value = "x".repeat(bytes);
+        let page = format!(
+            "<p id=\"a\" title=\"{value}\" class=\"c\"></p><p id=\"b\" title=\"{value}\" class=\"c\"></p>"
+        );
+        with_page(limits(), page, info(), |runner| {
+            ran(
+                runner,
+                r#"var a = document.getElementById("a"), b = document.getElementById("b");
+                   var all = document.getElementsByTagName("*");"#,
+            );
+            steps(runner, read)
+        })
+    };
+    for (name, read) in reads {
+        let (long, short) = (spent(128_000, read), spent(64, read));
+        eprintln!("{name}: an attribute of 128,000 bytes {long} steps, of 64 bytes {short}");
+        assert!(long >= short + 1_000, "{name}: {long} against {short}");
+    }
+}
+
 /// A String a member builds costs a step per 64 bytes.
 #[test]
 fn string_steps() {
