@@ -21,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -76,8 +76,10 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
   This story decides which tree a page with such a `meta` gets when scripts are on and
   holds it with a test on one page whose `meta` names an encoding the sniffing did not
   pick.
-- After a hook has written, the parser's depth limit holds for the tree and no longer for
-  the stack of open elements alone; a parse stopped that way has `stopped_by` `Depth`.
+- In every parse, with a hook or without, the parser's depth limit holds for the tree and no
+  longer for the stack of open elements alone; a parse stopped that way has `stopped_by`
+  `Depth`. A parse that has passed the step limit stops with `stopped_by` `Steps` and names no
+  other limit (`story:html-script-hook`, "As built").
 - The document facts of a page reach the DOM slices through this story. `story:scripts-dom-reading` gives `surf_script::dom` a public `DocumentInfo { address: surf_url::Url, content_type: String, encoding: String }` and `dom::slices(info: DocumentInfo) -> Slices`; the members `URL`, `documentURI`, `baseURI`, `contentType`, `characterSet`, `charset` and `inputEncoding` read it, and `compatMode` comes from the tree (`surf_html::Tree::quirks_mode`, written by the parser). This story builds the `DocumentInfo` of a page: the address as a `surf_url::Url` (the `address` of decision 1, whose type is this story's to state), the response's content type, and the name of the encoding the parse decodes with. It makes the runner at the first script element that runs, while the encoding may still be tentative (the bytes-with-a-hook bullet above); which encoding name it passes then is this story's to decide, with its own critics. The `DocumentInfo` it passes must name the address the document was fetched from, because `baseURI` resolves a `base` element's `href` against it.
 
 ## Decisions taken

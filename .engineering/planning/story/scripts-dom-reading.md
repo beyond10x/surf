@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-reading
 kind: story
-status: proposed
+status: active
 title: The reading members (99 rows) and one wrapper per node
 summary: Node, Element and Document's 73 reading members, 21 of the interfaces they return and the five of Window and Document.title (S6, decided a on 2026-11-24, and Window.event) read a parsed tree as the standards say, with one wrapper per node for the document's life, memory bounded by the engine's budget, sibling reads by position hints, the snapshot and global-this deviations, the four [SameObject] collections held by the generator and Wrap (one object per node and member, refreshed only when the tree's write counter moved), the document's address as a surf_url::Url in a public DocumentInfo, compatMode from the quirks mode the parser writes into the tree where the initial insertion mode decides it (so a script in the parse reads it) and baseURI as the HTML document base URL, the case names asserted equal to the slice's rows.
 relations:
@@ -66,9 +66,10 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
+- {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
 ---
 ## Context
 
