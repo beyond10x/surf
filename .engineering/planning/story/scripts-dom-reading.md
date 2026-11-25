@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -269,7 +269,14 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    (`crates/html/src/tree.rs:455-463`) and is charged by its length. The sibling members are not
    in this list: decision 9 gives them their own rule. A String a member returns is made by
    `Cx::new_string`, which the engine charges, and one beyond `string_length` (16,777,216,
-   `runner.rs:46`) is a `RangeError` (`docs/design/scripts.md:307`). A reading member calls no
+   `runner.rs:46`) is a `RangeError` (`docs/design/scripts.md:307`). swell at the pin applies
+   `string_length` only to a String its own operations create, and `Cx::new_string` does not
+   check it. So the glue's one conversion of a member's String answer throws the `RangeError`
+   itself, before `Cx::new_string`: it counts UTF-16 code units against the limit the agent
+   was made with, and counts only an answer of more bytes than the limit. A member of the slice
+   does not build what is thrown away: a copy of one node's data is checked before the copy,
+   and a member that concatenates stops when what it gathered passes the limit. The error is
+   the realm's `RangeError`, which a script can catch. A reading member calls no
    `to_utf16` and no `to_rust_string_lossy`: its String arguments reach it as Rust strings copied
    by `Copies::copy` (`bindings.rs:553`), with a lone surrogate written U+FFFD
    (`selection.txt:24`).
@@ -637,7 +644,13 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    h. `string_length`: a document of one text of 16,777,217 bytes, parsed under limits raised
       for the case (`max_input_bytes` and `max_stored_bytes`), makes `textContent` throw a
       `RangeError`; if the case does not run within 5 s or ends `limit: memory` first, the report
-      names its time and the end it reached and the case asserts that end instead.
+      names its time and the end it reached and the case asserts that end instead. A text of
+      16,777,216 units is read and its `length` is 16,777,216. The count is in UTF-16 units: a
+      text of more bytes than the limit and at most the limit's units is read, and an astral
+      character counts two. The `data` of one text beyond the limit and the `textContent` of
+      several texts that pass it only together throw the same error. After a caught
+      `RangeError` the same node answers `nodeName` and its parent's `childNodes` reads as
+      before.
    i. The loop `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` over 5,000 children
       ends `Ran`, with the steps under 15 times those of the same loop over 500 children (a
       refresh at each read gives 100 times). The loop calls `length` and reads index properties
