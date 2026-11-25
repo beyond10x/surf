@@ -29,7 +29,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 16}
 ---
@@ -54,7 +54,15 @@ passed`. The crate `surf-html-conformance` depends on `surf-html` only
    `surf_script::run::parse_with_scripts` (`story:scripts-parse-run`) with parser scripting
    enabled; `tags.rs`'s rule keeps the three that use it `not-run:needs-script`. The 14
    `#script-on` cases already run with the flag false and pass (`docs/design/scripts.md`, Q3);
-   their expectations do not change.
+   their expectations do not change. The harness feeds text today
+   (`crates/html-conformance/src/runner.rs:6-7,126 @ a14e3b0` call `parse_document(&str)`);
+   `parse_with_scripts` takes bytes, so the harness passes the case's input as its UTF-8 bytes,
+   in a `Page` with the address `about:blank` and the content type `text/html`, and
+   `Config::SESSION`. An `Err(RunnerError)` is a failure of the harness's host, not a result of
+   the case: the run fails and does not count it as passed or as failed. A case input whose bytes
+   hold a `meta` that names another encoding after 1,024 bytes is parsed twice and runs a script
+   before it twice (`story:scripts-parse-run`, decision 10); no case of the suite is known to
+   do so, and the harness reads the ends of the second parse only.
 2. `surf-html-conformance` depends on `surf-script` (a tooling crate that ships nothing).
    `taskfiles/lock-owners.txt`, which `story:scripts-engine-dependency` writes
    (`docs/design/scripts.md`, Q15), gains the line `surf-script surf-html-conformance` in this

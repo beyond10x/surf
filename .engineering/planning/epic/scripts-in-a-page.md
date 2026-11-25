@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 55
+revision: 56
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -627,6 +627,10 @@ reviews of `docs/design/scripts.md`:
   when written before an argument or a dictionary member and refused before any other member;
   a name defined twice, a partial or a parent of the wrong kind, a cycle of parents and an
   `includes` of the wrong kinds are refused.
+- The limits of a document are limits of one runner. A page whose `meta` changes the encoding is
+  parsed twice, so it runs each per-document limit once for each parse (two parses at most, no
+  third), and its ends, totals and stop are those of the second parse; `story:scripts-parse-run`,
+  decision 10.
 
 ## From the security review of 2026-11-22
 

@@ -13,7 +13,7 @@ scope:
   path: crates/script/tests
 - confidence: cited
   path: crates/session/tests
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 9}
 ---
@@ -27,9 +27,10 @@ constraint "A script never hangs, panics or exhausts the session process" (lines
 answered when a session ends at one, are Q11's and `story:session-process-hardening`'s (S5 decided
 a by the operator session on 2026-11-24). The epic lists `crates/surf/tests/`; by S7 no script runs
 outside a session, so the pages are served to sessions, and the library cases go to `surf-script`'s
-tests. In the test profile a script runs about 1.4 million steps per second (Q4), so under the
-session's limits the wall clock of 5 s ends a long script before `steps_per_entry` (10,000,000) or
-the document's step total (50,000,000) does; the cases of the step limits run through
+tests. Under the session's limits the wall clock of 5 s may end a long script before
+`steps_per_entry` (10,000,000) or the document's step total (50,000,000) does, as the rate of the
+test profile decides (measured by `story:scripts-parse-run`, acceptance 20, and written in Q4);
+the cases of the step limits run through
 `parse_with_scripts` with limits of the test's own, as Q4 says a test does. This story adds tests
 only: every behaviour it shows is written by an earlier story.
 
@@ -63,10 +64,19 @@ only: every behaviour it shows is written by an earlier story.
    - a tree built deep by `appendChild`: `limit: depth`;
    - deep recursion: `threw RangeError "frame_depth exceeded"`;
    - 10,000 script elements: `ran` for the first 1,000 and `not run: scripts-per-document` for each
-     from the 1,001st on;
+     from the 1,001st on, so 10,000 ends in all: the records of a document are bounded by the
+     parser's nodes, not by 1,000;
    - an attribute over the limit: `limit: attributes`, then a value over the stored bytes
      `limit: stored-bytes`;
-   - a script over 524,288 bytes of source: `limit: source-bytes`, and the next script runs.
+   - a script over 524,288 bytes of source: `limit: source-bytes`, and the next script runs;
+   - a page that spends its wall clock before a late `meta` and again after it: the bytes are
+     `<!DOCTYPE html><script>while (true) {}</script><!--`, 1,100 bytes of `x`,
+     `--><meta charset=windows-1251><script>while (true) {}</script>`, with `wall_clock` 200 ms
+     and `steps_per_entry` `u64::MAX` through `parse_with_slices`, whose factory counts its calls.
+     The ends are the second parse's, `limit: wall-clock` then `not run: wall-clock`;
+     `stopped()` is `wall-clock`; the factory was called twice and not a third time; the call
+     took at least 400 ms (the clock of each parse ran its 200 ms) and under 600 ms (two bounds
+     plus the parse), so a third parse would show as a time over 600 ms and a count of 3.
 2. `bound_with_script`: the test sets the address-space bound in `Config` to a constant of the
    case, `AS_BOUND_MIB`, written as the `VmPeak` of a session without scripts on the same page
    (measured once by a probe, the value and probe in the report) plus 64 MiB; a page of a few large

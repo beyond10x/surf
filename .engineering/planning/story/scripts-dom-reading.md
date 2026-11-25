@@ -90,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 41
+revision: 42
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -414,7 +414,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     `surf-url = { path = "../url" }` and its lock line (Context). `story:scripts-parse-run` builds
     the `DocumentInfo` of a page and calls `dom::slices(info)`; that story's own text takes the
     duty (decision 16), and which encoding name it passes when the runner is made while the
-    encoding is still tentative (`scripts-parse-run.md:72-77`) is its to decide.
+    encoding is still tentative (decision 10 of `story:scripts-parse-run`: the runner of each
+    parse gets the name its hook was made with) is its to decide.
 13. `Node.baseURI` is the document base URL as the HTML Standard defines it, read from the tree
     at each call, so a later write to the tree needs no cache. The DOM Standard's getter steps
     (`dom.html:6667-6677`): the node document's "get the base URL" result, or the document's URL
