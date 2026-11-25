@@ -34,7 +34,7 @@ note parser: tables,foreign-content
 
 ## What an answer holds today
 
-The example above shows the whole format. The binaries of release `0.8.0` (`surf-agent`,
+The example above shows the whole format. The binaries of release `0.9.0` (`surf-agent`,
 `surfd`, `surf-session`) print fewer lines:
 
 - the head line, `surf 1 session <id> <state>`;
@@ -51,7 +51,10 @@ The example above shows the whole format. The binaries of release `0.8.0` (`surf
   state (section "Changed");
 - without `--as`, for an HTML page with links, the `now` block of its links and `note
   visibility: hidden attribute only` (section "Now");
-- with `--as`, the `note text:` lines and the `text` block (section "Text").
+- with `--as`, the `note text:` lines and the `text` block (section "Text");
+- since `session-process-hardening`, `note ended: signal <name>` after `did refused
+  session-died` for a session process that ended by a signal `surfd` did not send (section
+  "Note"); ` bound cpu` is never on it, since no session `surf-agent` opens has that bound.
 
 Since `agent-follow-links` a loaded page shows its title; before it, none. A title longer than
 1,024 characters is left out. No `note parser:` line is printed: `surf_html::NOT_YET_PARSED`
