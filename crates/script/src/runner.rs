@@ -626,7 +626,10 @@ impl Runner {
     /// After `faulted`, each later script ends `not run: faulted`; after the first
     /// `limit: memory` the runner calls `collect()` once, and after a second each later script
     /// ends `not run: memory`; a script started after the wall clock ran out ends `not run:
-    /// wall-clock` (Q4). A script not run is not counted. The steps a script that ran spent are
+    /// wall-clock` (Q4). A kept collection is refilled all or nothing for a step the object
+    /// refuses; an end of the run inside a refill ends the document's scripts: after a
+    /// `limit: memory` that cut a refill (`DomState::cut_refill`), each later script ends
+    /// `not run: memory`, as after a second. A script not run is not counted. The steps a script that ran spent are
     /// added to [`Runner::steps`] and the script to [`Runner::scripts`].
     pub fn evaluate(&mut self, source: &str) -> ScriptEnd {
         let faulted = match self.agent.state() {
@@ -661,6 +664,15 @@ impl Runner {
                 self.memory_ends += 1;
                 if self.memory_ends == 1 {
                     self.collect();
+                }
+                // A refill of a kept collection the limit cut: no later script reads it.
+                let host = self.agent.host();
+                if host
+                    .dom
+                    .as_deref()
+                    .is_some_and(|dom| dom.state.cut_refill())
+                {
+                    self.memory_ends = self.memory_ends.max(2);
                 }
             }
             ScriptEnd::Faulted => self.faulted = true,

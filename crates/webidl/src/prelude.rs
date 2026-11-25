@@ -106,6 +106,8 @@ pub struct DomState {
     limits: Limits,
     totals: Totals,
     limit: Option<Limit>,
+    /// Whether an end of the run left a kept collection half refilled ([`DomState::cut_refill`]).
+    cut_refill: bool,
     interrupt: InterruptHandle,
     charges: Vec<HostBytes>,
     /// The message of a `TypeError` noted while the bindings are out of the host
@@ -121,6 +123,7 @@ impl DomState {
             limits,
             totals: Totals::default(),
             limit: None,
+            cut_refill: false,
             interrupt,
             charges: Vec::new(),
             type_error: None,
@@ -140,6 +143,14 @@ impl DomState {
     /// The limit recorded, if any.
     pub fn limit(&self) -> Option<Limit> {
         self.limit
+    }
+
+    /// Whether an end of the run (`Abrupt::Terminated`) cut a refill of a kept collection after
+    /// its first define and before its data was written, so that the object may show two lists.
+    /// Set once and never cleared: no script of the document reads that object again, because
+    /// the runner runs no later script of the document.
+    pub fn cut_refill(&self) -> bool {
+        self.cut_refill
     }
 
     /// The totals of the node charges.
@@ -1277,12 +1288,18 @@ fn refused(step: Completion<()>) -> Completion<bool> {
 ///   3. the indices `new..old` are deleted, which cannot fail after step 1;
 ///   4. the data and `written` change last.
 ///
-/// A step the object refuses (frozen, sealed, non-extensible, an index the script made
-/// non-configurable) puts back what step 2 wrote (the old node at an old index, nothing past
-/// the old length), leaves the data and `written` as they were, and throws a `TypeError`
-/// ([`NOT_REFRESHED`]): the object is the old snapshot, whole, and the next read tries again.
-/// No index is deleted before every define has succeeded, so a put-back never has to add a
-/// property to an object that may refuse new ones.
+/// All or nothing holds for a step the object refuses: such a step (frozen, sealed,
+/// non-extensible, an index the script made non-configurable) puts back what step 2 wrote (the
+/// old node at an old index, nothing past the old length), leaves the data and `written` as
+/// they were, and throws a `TypeError` ([`NOT_REFRESHED`]): the object is the old snapshot,
+/// whole, and the next read tries again. No index is deleted before every define has
+/// succeeded, so a put-back never has to add a property to an object that may refuse new ones.
+///
+/// An end of the run inside a refill ends the document's scripts instead: an
+/// `Abrupt::Terminated` between the first define and the write of the data (the memory limit,
+/// met by a wrapper or a key String) is not put back, since a put-back needs the Strings and
+/// wrappers the limit just refused. It is recorded ([`DomState::cut_refill`]), and the runner
+/// runs no later script of the document, so no script reads the object again.
 fn refresh_collection(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
@@ -1298,31 +1315,17 @@ fn refresh_collection(
         Some(data) => data.nodes.clone(),
         None => return Err(missing()),
     };
-    let old = old_nodes.len();
-    let count = old.saturating_add(nodes.len());
+    let count = old_nodes.len().saturating_add(nodes.len());
     cx.engine
         .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
-    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
-        let key = index_key(cx, index)?;
-        if !engine(cx.engine.has_property(object, key))? {
-            continue;
+    let mut changed = false;
+    match refill(cx, slices, object, &old_nodes, &nodes, &mut changed) {
+        Ok(()) => {}
+        Err(end @ Abrupt::Terminated(_)) if changed => {
+            cx.state.cut_refill = true;
+            return Err(end);
         }
-        let wrapper = slices.wrap.wrap(cx, *node)?;
-        if !define_index(cx, object, index, wrapper)? {
-            return Err(not_refreshed(cx));
-        }
-    }
-    for (index, node) in nodes.iter().enumerate() {
-        let wrapper = slices.wrap.wrap(cx, *node)?;
-        if !define_index(cx, object, index, wrapper)? {
-            put_back(cx, slices, object, &old_nodes, index)?;
-            return Err(not_refreshed(cx));
-        }
-    }
-    for index in nodes.len()..old {
-        if !delete_index(cx, object, index)? {
-            return Err(missing());
-        }
+        Err(abrupt) => return Err(abrupt),
     }
     let written = cx.state.tree.writes();
     match cx
@@ -1337,6 +1340,47 @@ fn refresh_collection(
         }
         None => Err(missing()),
     }
+}
+
+/// Steps 1 to 3 of [`refresh_collection`]. `changed` is true from the first define the object
+/// took until a put-back has restored the old snapshot: while it is, the object may differ from
+/// its data.
+fn refill(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    nodes: &[NodeId],
+    changed: &mut bool,
+) -> Completion<()> {
+    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
+        let key = index_key(cx, index)?;
+        if !engine(cx.engine.has_property(object, key))? {
+            continue;
+        }
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            return Err(not_refreshed(cx));
+        }
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            put_back(cx, slices, object, old_nodes, index)?;
+            *changed = false;
+            return Err(not_refreshed(cx));
+        }
+    }
+    for index in nodes.len()..old_nodes.len() {
+        if !delete_index(cx, object, index)? {
+            return Err(missing());
+        }
+    }
+    Ok(())
 }
 
 /// Puts back what a refill wrote over the indices `0..failed`: the old node at each index of

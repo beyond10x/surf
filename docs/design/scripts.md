@@ -317,7 +317,7 @@ with the reason.
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:107` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:108` (`max_steps: 1 << 27`) | counts tree construction's scans, not a script's writes; read inside each token, before each entry of a scan of the stack of open elements or of the list of active formatting elements and before each write to the tree, so the token that passes the limit is processed only up to the next read; parsing stops (`stopped_by` `Steps`), and no later script element is reached |
 | `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
-| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
+| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory`; so does a `limit: memory` that ends a refill of a kept `[SameObject]` collection after its first define (all or nothing for a step the object refuses; an end of the run inside a refill ends the document's scripts), after the same one collection |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
 wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) bytes plus its
@@ -1075,10 +1075,14 @@ live collections and `WindowProxy` stay deviations; promises, jobs and the micro
 ES5 everything but generators and the sixth slice (`CHANGELOG.md:98-113 @ 0.8.0`).
 
 A `[SameObject]` collection (`childNodes`, `children`) is one snapshot object per node, refreshed
-all or nothing when its getter is read after a write to a child list; when the script froze or
+when its getter is read after a write to a child list: all or nothing for a step the object
+refuses; an end of the run inside a refill ends the document's scripts. When the script froze or
 sealed it, made it non-extensible or made one of its indices non-configurable so that the
 refresh cannot complete, the object stays the old snapshot, whole, and the getter throws a
-`TypeError`, where a browser refuses that change on the collection itself. An `HTMLCollection`
+`TypeError`, where a browser refuses that change on the collection itself. When the memory
+limit ends the run after the refill's first define, nothing is put back (that would need the
+Strings and wrappers the limit refused): the script ends `limit: memory` and each later script
+of the document `not run: memory`, so no script reads the object again. An `HTMLCollection`
 has no named properties (`collection["id"]` is `undefined`, `namedItem` answers), a deviation
 until a later story builds them.
 

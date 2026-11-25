@@ -217,12 +217,11 @@ function done(what) { if (fails.length) throw new Error(fails.length + " wrong: 
 "#;
 
 /// A refill that the memory limit ends in its middle: the getter of a kept `childNodes` makes a
-/// wrapper for each new node while it defines the indices, and the run ends there. The script
-/// ends, the runner collects, and a later script of the same document reads the same kept
-/// object without its getter. The rule: the object is the old snapshot whole, or the new one
-/// whole; no index at or past `length` answers a node the glue put there. `refresh_collection`
-/// propagates a `Terminated` from `wrap` and `index_key` in its step 2 with `?`, after it
-/// defined the first indices and before it wrote the data.
+/// wrapper for each new node while it defines the indices, and the run ends there, after it
+/// defined the first indices and before it wrote the data. A put-back would need the Strings
+/// and wrappers the limit refused, so the rule is that no script reads that object again: the
+/// script ends `limit: memory`, and each later script of the document ends `not run: memory`.
+/// A new document of the same session runs and reads its own collections.
 #[test]
 fn a_refill_ended_by_the_memory_limit_leaves_one_list() {
     let started = Instant::now();
@@ -232,7 +231,7 @@ fn a_refill_ended_by_the_memory_limit_leaves_one_list() {
         "<div id=\"p\"><b></b></div><div id=\"q\">{}</div>",
         "<i></i>".repeat(50)
     );
-    let (refill, seen, wrong) = with_page(small, ADDRESS, page, |runner| {
+    let (refill, mut seen, wrong) = with_page(small, ADDRESS, page, |runner| {
         ran(
             runner,
             "var p = document.getElementById('p'), q = document.getElementById('q');\
@@ -254,12 +253,26 @@ fn a_refill_ended_by_the_memory_limit_leaves_one_list() {
         for (what, source) in checks {
             let end = runner.evaluate(source);
             seen.push(format!("{what}: {end}"));
-            if end != ScriptEnd::Ran {
+            if end != ScriptEnd::NotRun(Reason::Memory) {
                 wrong.push(what);
             }
         }
         (refill, seen, wrong)
     });
+    let next = with_page(
+        small,
+        ADDRESS,
+        "<div id=\"p\"><b></b></div>".to_string(),
+        |runner| {
+            runner.evaluate(
+                "var p = document.getElementById('p'), c = p.childNodes, b = c[0];\
+                 p.appendChild(b.cloneNode(true));\
+                 if (p.childNodes !== c || c.length !== 2 || c[0] !== b || c[1] === undefined \
+                     || c.item(1) !== c[1]) throw 1;",
+            )
+        },
+    );
+    seen.push(format!("a new document: {next}"));
     eprintln!(
         "memory end in a refill ({:?}):\n{}",
         started.elapsed(),
@@ -268,8 +281,9 @@ fn a_refill_ended_by_the_memory_limit_leaves_one_list() {
     assert_eq!(refill, ScriptEnd::Limit(Reason::Memory), "{seen:#?}");
     assert!(
         wrong.is_empty(),
-        "a kept collection shows two lists after a refill the memory limit ended: {seen:#?}"
+        "a script of the document ran after a refill the memory limit cut: {seen:#?}"
     );
+    assert_eq!(next, ScriptEnd::Ran, "{seen:#?}");
 }
 
 /// A refill that the step limit ends: the getter charges the old and the new nodes before any

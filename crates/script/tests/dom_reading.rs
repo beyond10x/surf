@@ -106,6 +106,15 @@ impl Mutation for TestMutation {
         Ok(child)
     }
 
+    fn node_clone_node(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        this: NodeId,
+        subtree: bool,
+    ) -> DomResult<NodeId> {
+        cx.tree_mut().clone_node(this, subtree).map_err(refused)
+    }
+
     fn document_create_document_fragment(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -1736,6 +1745,59 @@ fn wrapper_limit() {
     assert_eq!(later, ScriptEnd::Ran, "the wrappers stay: {later}");
     let wrapper = HOST_OBJECT_LIVE_BYTES + std::mem::size_of::<NodeId>() as u64;
     assert!(after < 1024 * 1024 + wrapper, "{after}");
+}
+
+/// A memory end ends the document's scripts only when it cut a refill of a kept collection.
+/// Outside a refill the runner collects once and the next scripts run and refill the kept
+/// collection; a refill the memory limit cut after its first define makes each later script of
+/// the document `not run: memory`, after the same one collection.
+#[test]
+fn a_memory_end_stops_the_document_only_inside_a_refill() {
+    const KEEP: &str = "var p = document.getElementById('p'), q = document.getElementById('q');\
+                        var c = p.childNodes, b = c[0];";
+    let page = format!(
+        "<div id=\"p\"><b></b></div><div id=\"q\">{}</div>",
+        "<i></i>".repeat(50)
+    );
+    let outside = with_page(small_limits(), page.clone(), info(), |runner| {
+        let ends = [
+            runner.evaluate(KEEP),
+            runner.evaluate("(function () { var a = []; for (;;) a.push([1, 2, 3, 4]); })();"),
+            runner.evaluate(
+                "p.appendChild(b.cloneNode(false));\
+                 if (p.childNodes !== c || c.length !== 2 || c[0] !== b || c.item(1) !== c[1]) \
+                 throw 1;",
+            ),
+            runner.evaluate("if (c.length !== 2 || c[2] !== undefined) throw 1;"),
+        ];
+        (ends, runner.collections())
+    });
+    let inside = with_page(small_limits(), page, info(), |runner| {
+        let ends = [
+            runner.evaluate(KEEP),
+            runner.evaluate(
+                "var f = document.createDocumentFragment();\
+                 while (q.firstChild) f.appendChild(q.firstChild);\
+                 for (var k = 0; k < 120; k++) p.appendChild(f.cloneNode(true));",
+            ),
+            runner.evaluate("p.childNodes;"),
+            runner.evaluate("c.length;"),
+            runner.evaluate("1;"),
+        ];
+        (ends, runner.collections())
+    });
+    eprintln!("a memory end outside a refill: {outside:?}\ninside a refill: {inside:?}");
+    let memory = ScriptEnd::Limit(Reason::Memory);
+    let ran = ScriptEnd::Ran;
+    assert_eq!(
+        outside,
+        ([ran.clone(), memory.clone(), ran.clone(), ran.clone()], 1)
+    );
+    let not_run = ScriptEnd::NotRun(Reason::Memory);
+    assert_eq!(
+        inside,
+        ([ran.clone(), ran, memory, not_run.clone(), not_run], 1)
+    );
 }
 
 /// A script that makes collections without end ends at the budget or at the steps, and the
