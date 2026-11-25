@@ -8,7 +8,7 @@
 use std::time::{Duration, Instant};
 
 use surf_html::limits::Limits as ParserLimits;
-use surf_html::{ParseOptions, Tree, parse_document};
+use surf_html::{Namespace, NodeData, NodeId, ParseOptions, Tree, parse_document};
 use surf_script::dom::{self, DocumentInfo};
 use surf_script::{Document, Mode, Runner, RunnerLimits, ScriptEnd, run_document};
 use surf_url::Url;
@@ -37,6 +37,14 @@ fn info() -> DocumentInfo {
         address: Url::parse("https://example.com/dir/page", None).expect("the address"),
         content_type: "text/html".to_string(),
         encoding: "UTF-8".to_string(),
+    }
+}
+
+/// The parser's bounds with room for 2,097,152 nodes; the others are its defaults.
+fn many_nodes() -> ParserLimits {
+    ParserLimits {
+        max_nodes: 1 << 21,
+        ..ParserLimits::default()
     }
 }
 
@@ -75,6 +83,21 @@ fn parsed_under(page: String, parser: ParserLimits) -> impl FnOnce() -> Tree + S
 /// `page` parsed under the parser's own default bounds.
 fn parsed(page: String) -> impl FnOnce() -> Tree + Send {
     parsed_under(page, ParserLimits::default())
+}
+
+/// The elements named `name`, in tree order.
+fn elements(tree: &Tree, name: &str) -> Vec<NodeId> {
+    let mut found = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(node) = pending.pop() {
+        if let NodeData::Element { local_name, .. } = tree.data(node)
+            && local_name == name
+        {
+            found.push(node);
+        }
+        pending.extend(tree.children(node).iter().rev());
+    }
+    found
 }
 
 /// One measured call: what it is, its steps, its time, and the floor of its steps.
@@ -280,4 +303,377 @@ fn substring_data_passes_bytes_at_the_price_of_code_units() {
         ]
     });
     report("substringData of characters of 3 and 4 bytes", &calls);
+}
+
+/// The lines of `source` that are code: a line comment and the rest of a line after `//` left
+/// out.
+fn code_lines(source: &str) -> Vec<(usize, &str)> {
+    source
+        .lines()
+        .enumerate()
+        .map(|(at, line)| (at + 1, line.split("//").next().unwrap_or("")))
+        .filter(|(_, code)| !code.trim().is_empty())
+        .collect()
+}
+
+/// Held. The round's guard of its structure reads `reading.rs` for the text `tree()`,
+/// `tree_mut()` and `charge(` (`dom_reading_cost.rs:596-601`). These spellings pass it and
+/// still read the tree or charge outside the module of reads: `DomCx::tree(cx)`, `cx.tree ()`,
+/// a closure or a `use` alias of the method, `cx.engine().charge_steps(n)`, and a function of
+/// `reads.rs` that hands the tree (or the engine) out. This guard reads the code of `reading.rs`
+/// and of `mod.rs` for the words `tree`, `Tree`, `charge` and `engine`, and the signatures of
+/// the functions `reads.rs` gives the members for a return type that lends a reference.
+#[test]
+fn the_guard_of_the_reads_holds_against_other_spellings() {
+    let mut found = Vec::new();
+    for (file, source) in [
+        ("reading.rs", include_str!("../src/dom/reading.rs")),
+        ("mod.rs", include_str!("../src/dom/mod.rs")),
+    ] {
+        for (line, code) in code_lines(source) {
+            for word in ["tree", "Tree", "charge", "engine"] {
+                if code.contains(word) {
+                    found.push(format!("{file}:{line}: `{word}` in {:?}", code.trim()));
+                }
+            }
+        }
+    }
+    let reads = include_str!("../src/dom/reads.rs");
+    for (at, _) in reads.match_indices("pub(super) fn ") {
+        let rest = &reads[at..];
+        let signature = &rest[..rest.find('{').unwrap_or(rest.len())];
+        let returns = signature.split("->").nth(1).unwrap_or("");
+        for word in ["&", "Tree", "Cx"] {
+            if returns.contains(word) {
+                found.push(format!(
+                    "reads.rs: `{word}` in the return type of {:?}",
+                    signature.split_whitespace().collect::<Vec<_>>().join(" ")
+                ));
+            }
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+/// Held, and what holds charges no other test holds. Long names (markup the parser admits
+/// under its default bounds): `tagName`, `localName` and `nodeName` of an element named by
+/// 1 MiB (the member's copy and the glue's, one step per 16 bytes each); `isEqualNode` of two
+/// such elements (the name compared); `getElementsByTagName` with a name of 16 KiB against 64
+/// elements whose names are as long and differ in the last byte (each compare reads the name);
+/// and a doctype's public ID of 1 MiB.
+#[test]
+fn long_names_are_charged_where_they_are_read_or_compared() {
+    const LONG: usize = 1 << 20;
+    const SHORT: usize = 16 * 1024;
+    let long = "a".repeat(LONG);
+    let short = format!("{}b", "a".repeat(SHORT - 1));
+    let wanted = format!("{}c", "a".repeat(SHORT - 1));
+    let shorts = format!("<{short}></{short}>").repeat(64);
+    let public = "p".repeat(LONG);
+    let page = format!(
+        "<!DOCTYPE html PUBLIC \"{public}\"><body><{long}></{long}><{long}></{long}>{shorts}"
+    );
+    let calls = with_tree(limits(), ParserLimits::default(), parsed(page), |runner| {
+        ran(
+            runner,
+            "var G = this; G.x = document.documentElement.lastChild.firstChild; \
+             G.y = x.nextSibling;",
+        );
+        let copied = 2 * LONG as u64 / 16;
+        vec![
+            call(runner, "tagName of a name of 1 MiB", "x.tagName;", copied),
+            call(
+                runner,
+                "localName of a name of 1 MiB",
+                "x.localName;",
+                copied,
+            ),
+            call(runner, "nodeName of a name of 1 MiB", "x.nodeName;", copied),
+            call(
+                runner,
+                "isEqualNode of two elements of a name of 1 MiB",
+                "x.isEqualNode(y);",
+                LONG as u64 / 16,
+            ),
+            call(
+                runner,
+                "getElementsByTagName(16 KiB) over 64 names of 16 KiB",
+                &format!("document.getElementsByTagName('{wanted}');"),
+                64 * SHORT as u64 / 16,
+            ),
+            call(
+                runner,
+                "doctype.publicId of 1 MiB",
+                "document.doctype.publicId;",
+                copied,
+            ),
+        ]
+    });
+    report("long names", &calls);
+}
+
+/// Held. A String argument the member reads only for a compare it ends at once: the glue's
+/// copy is charged, one step per 8 code units, for ASCII and for a 2-byte character (whose
+/// copy into UTF-8 writes 2 bytes a unit); `getElementsByTagName` also folds its argument to
+/// ASCII lower case once, one step per 16 bytes.
+#[test]
+fn a_string_argument_of_4_mi_units_that_the_member_hardly_reads() {
+    let calls = with_tree(
+        limits(),
+        ParserLimits::default(),
+        parsed("<!DOCTYPE html><p></p>".to_string()),
+        |runner| {
+            ran(
+                runner,
+                "var G = this; G.big = 'a'; while (big.length < 4194304) big = big + big; \
+                 G.wide = '\\u00e9'; while (wide.length < 4194304) wide = wide + wide; \
+                 G.p = document.documentElement;",
+            );
+            let floor = (4 << 20) * 2 / 16;
+            vec![
+                call(
+                    runner,
+                    "isDefaultNamespace(4 Mi ASCII units)",
+                    "p.isDefaultNamespace(big);",
+                    floor,
+                ),
+                call(
+                    runner,
+                    "isDefaultNamespace(4 Mi units of a 2-byte character)",
+                    "p.isDefaultNamespace(wide);",
+                    floor,
+                ),
+                call(
+                    runner,
+                    "getElementsByTagName(4 Mi ASCII units), folded once",
+                    "document.getElementsByTagName(big);",
+                    floor + (4 << 20) / 16,
+                ),
+            ]
+        },
+    );
+    report("a String argument the member hardly reads", &calls);
+}
+
+/// Held. `string_length` counts UTF-16 code units, not bytes: under a bound of 4,096 units, a
+/// value of exactly 4,096 units of a 2-, 3- or 4-byte character (8,192 to 12,288 bytes, past the
+/// bound in bytes) is answered whole by `data`, `textContent`, `wholeText` and `title`, and one
+/// character more is the realm's `RangeError`.
+#[test]
+fn string_length_in_code_units_at_and_past_its_bound() {
+    const UNITS: usize = 4_096;
+    let mut bounded = limits();
+    bounded.engine.string_length = UNITS as u64;
+    for (character, units) in [("a", 1), ("\u{e9}", 1), ("\u{20ac}", 1), ("\u{1f600}", 2)] {
+        for extra in [0, 1] {
+            let count = UNITS / units + extra;
+            let text = character.repeat(count);
+            let page = format!("<!DOCTYPE html><title>{text}</title><p id=\"l\">{text}</p>");
+            let source = if extra == 0 {
+                format!(
+                    "{CHECK} var l = document.getElementById('l'); var t = l.firstChild; \
+                     check(t.data.length === {UNITS}, 'data ' + t.data.length); \
+                     check(l.textContent.length === {UNITS}, 'textContent'); \
+                     check(t.wholeText.length === {UNITS}, 'wholeText'); \
+                     check(document.title.length === {UNITS}, 'title'); \
+                     check(t.length === {UNITS}, 'length');"
+                )
+            } else {
+                format!(
+                    "{CHECK} var l = document.getElementById('l'); var t = l.firstChild; \
+                     rangeError(function () {{ return t.data; }}, 'data'); \
+                     rangeError(function () {{ return l.textContent; }}, 'textContent'); \
+                     rangeError(function () {{ return t.wholeText; }}, 'wholeText'); \
+                     rangeError(function () {{ return document.title; }}, 'title'); \
+                     check(t.length === {}, 'length');",
+                    UNITS + units
+                )
+            };
+            let end = with_tree(
+                bounded,
+                ParserLimits::default(),
+                parsed(page),
+                move |runner| runner.evaluate(&source),
+            );
+            assert_eq!(end, ScriptEnd::Ran, "{character:?} x {count}: {end}");
+        }
+    }
+}
+
+/// Held. `title` and the shapes of its element: an SVG `title` is not the document's; a `title`
+/// in the body is; no `title` answers the empty String after a walk of the whole tree; a `title`
+/// of 50,000 text children (made through the tree's writes; the parser merges a title's text)
+/// charges a step a child and a step a word; and one word of 2 MiB is charged at one step per
+/// 16 bytes where the member reads it and again where the glue copies it.
+#[test]
+fn title_over_its_shapes() {
+    let answers = with_tree(
+        limits(),
+        ParserLimits::default(),
+        parsed(
+            "<!DOCTYPE html><svg><title>s</title></svg><p>x</p><title> b \t\n c </title>"
+                .to_string(),
+        ),
+        |runner| {
+            runner.evaluate(&format!(
+                "{CHECK} check(document.title === 'b c', 'title: ' + document.title);"
+            ))
+        },
+    );
+    assert_eq!(answers, ScriptEnd::Ran, "{answers}");
+    let none = with_tree(
+        limits(),
+        ParserLimits::default(),
+        parsed("<!DOCTYPE html><svg><title>s</title></svg>".to_string()),
+        |runner| {
+            runner.evaluate(&format!(
+                "{CHECK} check(document.title === '', 'title: ' + document.title);"
+            ))
+        },
+    );
+    assert_eq!(none, ScriptEnd::Ran, "{none}");
+    let mut calls = Vec::new();
+    let tree = || {
+        let mut tree = parsed("<!DOCTYPE html><title></title>".to_string())();
+        let title = elements(&tree, "title")[0];
+        for _ in 0..50_000 {
+            let text = tree.create_text_node(" a").expect("a text");
+            tree.append_child(title, text).expect("appended");
+        }
+        tree
+    };
+    calls.push(with_tree(
+        limits(),
+        ParserLimits::default(),
+        tree,
+        |runner| {
+            call(
+                runner,
+                "title of 50,000 text children of one word",
+                "document.title;",
+                50_000 + 50_000,
+            )
+        },
+    ));
+    let page = format!("<!DOCTYPE html><title>{}</title>", "a".repeat(2 << 20));
+    calls.push(with_tree(
+        limits(),
+        ParserLimits::default(),
+        parsed(page),
+        |runner| {
+            call(
+                runner,
+                "title of one word of 2 MiB",
+                "document.title;",
+                2 * (2 << 20) / 16,
+            )
+        },
+    ));
+    report("title over its shapes", &calls);
+}
+
+/// Held. `baseURI` of a `base` whose `href` is a path of 1 MiB of `é`: the URL parser writes
+/// each as `%C3%A9`, so the answer is 3 MiB. The `href` is charged before it is read, the answer
+/// where the member makes it and where the glue copies it.
+#[test]
+fn base_uri_of_an_href_that_percent_encoding_triples() {
+    let href = format!("/{}", "\u{e9}".repeat(1 << 19));
+    let page = format!("<!DOCTYPE html><base href=\"{href}\"><p></p>");
+    let answer = "https://example.com".len() as u64 + 1 + 3 * (1 << 20);
+    let calls = with_tree(limits(), ParserLimits::default(), parsed(page), |runner| {
+        vec![call(
+            runner,
+            "baseURI of an href of 1 MiB of a 2-byte character",
+            &format!(
+                "{CHECK} var u = document.documentElement.baseURI; \
+                 check(u.length === {answer}, 'length ' + u.length);"
+            ),
+            href.len() as u64 / 16 + 2 * (answer / 16),
+        )]
+    });
+    report("baseURI of an href that percent-encoding triples", &calls);
+}
+
+/// Held, by steps; the walk's copy of a child list is not held by any test (the time is
+/// printed only). A tree of a parent of 1,048,576 children (made through the tree's writes,
+/// under a raised node bound) beside a chain of elements as deep as the depth bound: the calls
+/// that stop at the first child, or reach the deepest element of the chain, charge a step a node
+/// they visit and visit no child of the large parent past the first.
+#[test]
+fn a_parent_of_a_mebi_children_beside_a_chain_at_the_depth_bound() {
+    const CHILDREN: usize = 1 << 20;
+    let depth = ParserLimits::default().max_depth;
+    let tree = move || {
+        let mut tree = parsed_under(
+            "<!DOCTYPE html><div id=\"c\"></div><div id=\"p\"></div>".to_string(),
+            many_nodes(),
+        )();
+        let found = elements(&tree, "div");
+        let mut at = found[0];
+        for _ in 0..depth {
+            let Ok(next) = tree.create_element_ns(Namespace::Html, "i") else {
+                break;
+            };
+            if tree.append_child(at, next).is_err() {
+                break;
+            }
+            at = next;
+        }
+        for _ in 0..CHILDREN {
+            let child = tree
+                .create_element_ns(Namespace::Html, "b")
+                .expect("a child");
+            tree.append_child(found[1], child).expect("appended");
+        }
+        tree
+    };
+    let calls = with_tree(limits(), many_nodes(), tree, |runner| {
+        ran(
+            runner,
+            "var G = this; G.p = document.getElementById('p'); \
+             G.e = document.getElementById('c'); while (e.lastChild) e = e.lastChild; \
+             G.d = document.documentElement;",
+        );
+        vec![
+            call(
+                runner,
+                "p.contains(p.firstChild)",
+                "p.contains(p.firstChild);",
+                2,
+            ),
+            call(runner, "p.firstElementChild", "p.firstElementChild;", 1),
+            call(
+                runner,
+                "d.contains(the deepest of the chain)",
+                "d.contains(e);",
+                400,
+            ),
+            call(
+                runner,
+                "the deepest.compareDocumentPosition(p.lastChild)",
+                "e.compareDocumentPosition(p.lastChild);",
+                400,
+            ),
+            call(
+                runner,
+                "getElementById('c'), the chain's top before the parent",
+                "document.getElementById('c');",
+                4,
+            ),
+        ]
+    });
+    let printed = lines(&calls);
+    eprintln!("a parent of 1,048,576 children:\n{}", printed.join("\n"));
+    // A script of one call costs about ten steps of its own (the entry, the reads of `G`'s
+    // properties, the getters), beside the member's.
+    let most = [64, 64, 2_000, 2_000, 64];
+    for (call, most) in calls.iter().zip(most) {
+        assert!(
+            call.floor <= call.steps && call.steps <= most,
+            "{}: {} steps, not in {}..={most}",
+            call.what,
+            call.steps,
+            call.floor
+        );
+    }
 }
