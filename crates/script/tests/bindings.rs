@@ -629,7 +629,7 @@ fn the_record_of_a_long_dom_exception_copies_only_its_prefix() {
     let mut large = limits();
     large.engine.memory_bytes = 32 << 20;
     large.engine.string_length = 1 << 24;
-    let (end, grown, astral) = with_document(large, surf_document, |runner| {
+    let (end, grown, astral, long_name) = with_document(large, surf_document, |runner| {
         let end = runner.evaluate(r#"this.e = new DOMException("ࠀ".repeat(1 << 22), "N");"#);
         assert_eq!(end, ScriptEnd::Ran, "{end}");
         let collected = runner.agent_and_realm().0.collect();
@@ -641,7 +641,8 @@ fn the_record_of_a_long_dom_exception_copies_only_its_prefix() {
         let end = runner.evaluate("throw this.e;");
         let grown = peak_resident_bytes().saturating_sub(before);
         let astral = runner.evaluate(r#"throw new DOMException("\u{1F600}".repeat(1100), "N");"#);
-        (end, grown, astral)
+        let long_name = runner.evaluate(r#"throw new DOMException("m", "x".repeat(3000));"#);
+        (end, grown, astral, long_name)
     });
     match end {
         ScriptEnd::Threw(error) => {
@@ -658,6 +659,12 @@ fn the_record_of_a_long_dom_exception_copies_only_its_prefix() {
             error.message.as_deref(),
             Some(format!("N: {}", "\u{1F600}".repeat(1_021)).as_str())
         ),
+        other => panic!("{other}"),
+    }
+    match long_name {
+        ScriptEnd::Threw(error) => {
+            assert_eq!(error.message.as_deref(), Some("x".repeat(1_024).as_str()));
+        }
         other => panic!("{other}"),
     }
 }

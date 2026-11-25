@@ -304,10 +304,12 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 /// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
 /// `<name>: <message>`, read from the exception's own data without running script, whether
 /// the bindings or a script made it, a lone surrogate written U+FFFD; `None` for any other
-/// value. At most `chars` characters: of the name and of the message only their first `2 ×
-/// chars` code units are read (`prefix_units`), so no copy of a longer text is made. It runs
-/// after the script's end, where no script runs. `None` too when an engine call fails (the
-/// memory budget spent by the one-unit Strings the read makes).
+/// value. At most `chars` characters: of the name and of the message at most `2 × chars` code
+/// units each are read (`prefix_units`; 2,048 each for the runner's 1,024 characters), so no
+/// copy of a longer text is made. No script of the page runs while they are read: it runs after
+/// the script's end, and a length and an own index property of a String run no code. `None`
+/// too when an engine call fails (the memory budget spent by the one-unit Strings the read
+/// makes).
 pub fn exception_text(cx: &mut Cx<'_, ScriptHost>, value: Value, chars: usize) -> Option<String> {
     let Value::Object(object) = value else {
         return None;

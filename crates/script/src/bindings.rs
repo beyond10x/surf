@@ -56,7 +56,7 @@
 //! 12af9cd4b9912546b2fc1d4b93a0b651bc56194b72751f173c7c03ba549418ad  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 706abde5a8454252222b029851efeac9f2d286ec6402319dd0e84e61a46cca2e  crates/webidl/src/prelude.rs
+//! 3c55f88744f1a46d60f537c2e6e585d3021af0af10aa926fd61081ef6041a3ab  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 2a391cf4484339c983dfa1124e8754b66302035c2e78ad504f517b82a2ecd0b7
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 05df3ae4d8c70ef84fb29ff599d422bc3e5327bdb7bca746ebc7f35c52c74f88
 
 use std::cell::Cell;
 
@@ -371,10 +371,12 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 /// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
 /// `<name>: <message>`, read from the exception's own data without running script, whether
 /// the bindings or a script made it, a lone surrogate written U+FFFD; `None` for any other
-/// value. At most `chars` characters: of the name and of the message only their first `2 ×
-/// chars` code units are read (`prefix_units`), so no copy of a longer text is made. It runs
-/// after the script's end, where no script runs. `None` too when an engine call fails (the
-/// memory budget spent by the one-unit Strings the read makes).
+/// value. At most `chars` characters: of the name and of the message at most `2 × chars` code
+/// units each are read (`prefix_units`; 2,048 each for the runner's 1,024 characters), so no
+/// copy of a longer text is made. No script of the page runs while they are read: it runs after
+/// the script's end, and a length and an own index property of a String run no code. `None`
+/// too when an engine call fails (the memory budget spent by the one-unit Strings the read
+/// makes).
 pub fn exception_text(cx: &mut Cx<'_, ScriptHost>, value: Value, chars: usize) -> Option<String> {
     let Value::Object(object) = value else {
         return None;
