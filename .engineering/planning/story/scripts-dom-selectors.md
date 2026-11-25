@@ -29,7 +29,7 @@ scope:
   path: crates/webidl/selection.txt
 - confidence: cited
   path: docs/design/scripts.md
-revision: 36
+revision: 37
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -1181,7 +1181,7 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        - the further simple selectors of `test_compound`: 17i: 3,700 for 1,000 elements,
          under 500,000.
        - `attribute_count x (name bytes / 16)` of `has_attribute`: 15c, second case: from about
-         251,300 to about 1,030, under 250,000.
+         251,030 to about 1,030, under 250,000.
        - the same charge of `attribute_equals`: 15c, third case: the same figures. (The charge
          is a line of its own in each function, so each has its case.)
        Two charges are one step in a whole walk or chain, and no floor of this
