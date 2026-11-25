@@ -106,8 +106,13 @@ The commands use the gates as the bot, from a checkout of this repository:
    back with `cargo update --offline -p <name> --precise <version of the lock before>`, and the
    lock check passes again (for `0.5.0` and `0.6.0` on 2026-11-23 and again for `0.7.0` and
    `0.8.0` on 2026-11-24, it moved `cc` from 1.11.1 to 1.11.3, which
-   `taskfiles/lock-allow.txt` does not list). Release `0.1.0` shipped the binary from the
-   package `surf`; `surf-cli` starts at that version, so the next release is above it.
+   `taskfiles/lock-allow.txt` does not list). Since `surf-script` takes swell by a git
+   dependency, the command stops offline on a host whose cargo has no checkout of that tag
+   (`unable to update https://github.com/beyond10x/swell?tag=0.8.0`); for `0.9.0` on
+   2026-11-25 the four version lines of `Cargo.lock` were set by hand instead, and
+   `task lock-check` and a build with `--locked` passed on them. Release `0.1.0` shipped the
+   binary from the package `surf`; `surf-cli` starts at that version, so the next release is
+   above it.
 3. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
    put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check-runner` is
    green on that commit, and the gate's output holds no line that starts with `raise:` (a task

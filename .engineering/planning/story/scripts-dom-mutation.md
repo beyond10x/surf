@@ -15,7 +15,7 @@ scope:
   path: crates/script/src/dom/mutation.rs
 - confidence: cited
   path: crates/script/tests/dom_mutation.rs
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -55,6 +55,12 @@ with a test:
   script sees for that refusal.
 - A `NodeId` belongs to one tree. The bindings never hand a node of one document to
   another document's tree.
+- The parser's `Limit::Steps` and `Limit::InputBytes` have no word in Q4 of
+  `docs/design/scripts.md`. `crates/script/src/runner.rs` (`story:webidl-bindings`) leaves the
+  end `limit: wall-clock` when the bindings recorded one of them, and no member of that story
+  records either. This story has the first members that write into the tree: it gives each of
+  the two a word of Q4, in the note and in the specification's `Reason`, or shows with a test
+  that no write reaches it.
 
 ## Change
 

@@ -4,7 +4,7 @@ id: story:scripts-document-port
 kind: story
 status: proposed
 title: A session opened with the scripting option runs a page's inline scripts and shows what they wrote
-summary: A session opened with the option runs each document's scripts through parse_with_scripts and records each end; the epic's two examples, no state between pages and noscript pass; surf <url> runs none; surf-session joins the closed list; the bounds measured again with scripts; on the swell tag the coordinating agent names from Q13.
+summary: A session opened with the option runs each document's scripts through parse_with_scripts and records each end; the epic's two examples, no state between pages and noscript pass; surf <url> runs none; surf-session joins the closed list; the bounds measured again with scripts.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-spec
@@ -16,6 +16,8 @@ relations:
 - depends_on: story:agent-follow-links
 - depends_on: story:scripts-parse-run
 - depends_on: story:scripts-html-conformance
+- depends_on: story:swell-0-9-0
+- depends_on: story:script-error-kind-aggregate
 scope:
 - confidence: cited
   path: Cargo.lock
@@ -34,8 +36,6 @@ scope:
 - confidence: cited
   path: crates/page/src/lib.rs
 - confidence: cited
-  path: crates/script/Cargo.toml
-- confidence: cited
   path: crates/session
 - confidence: cited
   path: crates/surf-cli/tests
@@ -50,8 +50,6 @@ scope:
 - confidence: cited
   path: docs/design/scripts.md
 - confidence: cited
-  path: taskfiles/lock-allow.txt
-- confidence: cited
   path: taskfiles/lock-owners.txt
 - confidence: cited
   path: website/docs/drive-from-an-agent.md
@@ -61,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 32
+revision: 40
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -88,14 +86,11 @@ S5 is decided (option a, the operator session, 2026-11-24): a session with scrip
 `setpriv` and `prlimit`, in the form with scripts of `docs/design/scripts.md`, Q11
 (`story:session-process-hardening`, an edge of this story).
 
-The tag of swell: every story before this one builds and tests on `0.8.0` (Q13). The copies swell
-makes without a memory charge, which it lists as open
-(`docs/plan/second-batch.md:284-285 @ 0.8.0`), are not bounded by `memory_bytes`; the address-space
-bound of Q11 is their only bound. Requirement 11 (`docs/design/scripts.md`, Q18) asks swell to
-charge every copy that is alive while the engine calls into script; its status at `0.8.0` is
-`absent`. Q13's decision (the coordinating agent, 2026-11-24, reversible): this story, the one that
-lets a page's scripts run in a session, waits for the swell tag that holds requirement 11 and takes
-that tag in its first commit.
+The tag of swell: `story:swell-0-9-0` took `0.9.0` (commit
+`d49a09bcc44fbdd155f705f913a90b676518afbc`), which holds requirement 11 (HOST-215), with the
+microtask checkpoint after each script and swell's new error kind and host error;
+`story:script-error-kind-aggregate` took the specification's word `AggregateError`. Both are
+edges of this story; it takes no tag of its own.
 
 Found while `story:scripts-spec` was built (2026-11-24): the session's cap of 256 rows of entries
 per request does not count the event `ScriptEndAdded`. A page may add up to 1,000 script records
@@ -109,12 +104,6 @@ Found by the reviews of `story:session-process-hardening` and `story:scripts-eng
   story the session refuses `open` with `arg scripts` as usage, so every case with scripts ran the
   test stand-in. This story's first test of the option starts the built session through `surfd`
   and reads `/proc/<pid>/limits` and `NoNewPrivs` of it.
-- Three tests of `surf-script` are ignored at swell `0.8.0` (`clock_advances`, `seeds_fixed`,
-  `time_zone`; `Date` and `Math.random` are `pending slice 4`). They hide one claim: that the
-  runner hands its mode's seeds to the agent. The commit that takes a swell tag with those
-  builtins removes the `#[ignore]` lines.
-- `surf-script` matches swell's error types arm by arm, so a tag that adds a variant stops the
-  build where surf must choose the word.
 
 Found by the review of `story:scripts-spec` (2026-11-24), each for this story to hold with a
 test:
@@ -146,19 +135,9 @@ test:
 
 ## Waits for
 
-- waits for a release of swell: the tag that holds requirement 11 (`docs/design/scripts.md`, Q18),
-  as Q13 decides; this story starts when that tag exists and takes it in its first commit. The note
-  records the tag when it comes back from swell (Q11, Q13).
-- with that tag, promises and jobs exist (swell's slice 10 is closed in the same release, as
-  swell's session said on 2026-11-24). The note leaves out step 1 of HTML's steps at a script's
-  end tag, "perform a microtask checkpoint", because "no promise and no job exist before swell's
-  slice 10" (`docs/design/scripts.md`, Q2, row 1, and Q18). So the first commit that takes the
-  tag also decides and writes into the note: the microtask checkpoint after each script, its
-  steps counted in that script's and the document's totals, and its end taken as the script's
-  end. Open until then: which call of the host interface runs the jobs, and what a job that
-  ends at a limit makes of the record of a script that already ended `ran`.
-- with that tag, the host interface's error type gains a variant (swell's session, 2026-11-24);
-  a `match` of surf over the host's errors takes it in.
+Nothing beyond the stories of its edges. The swell tag, the microtask checkpoint and swell's new
+error kind and host error are `story:swell-0-9-0`'s, and the specification's word
+`AggregateError` is `story:script-error-kind-aggregate`'s; both are edges of this story.
 
 ## Decisions taken
 
@@ -175,7 +154,8 @@ test:
    end, after the parse and before `FinishParsing`, in the order the ends happened (Q7's
    `written:`). Without the option, `HtmlParser` as today, and no record.
 3. The bounds of a session with scripts (Q11). This story ships the address space `--as=2147483648`
-   (2 GiB): with the swell tag of requirement 11 the copies are charged to `memory_bytes`, and with
+   (2 GiB): with swell `0.9.0`, which holds requirement 11 (`story:swell-0-9-0`), the copies are
+   charged to `memory_bytes`, and with
    `story:session-memory-bound` keeping the tree of the current document only, Q11's sum for one
    tab is 208,736 kB (the session) + 2 × 536 MiB (the current tree and the one being parsed) +
    8,739,584 bytes (the thread) + 64 MiB (its malloc arena) + 64 MiB (`memory_bytes`) + 64 MiB (an
@@ -216,18 +196,12 @@ test:
    `eval <line>:<column>` when `dynamic` is true. A session without the option prints no `scripts`
    line. This story writes the line into `docs/agent-answer.md`, and `surf-answer` parses and
    renders it.
-7. The tag: the first commit of this story moves swell from `0.8.0` to the tag that holds
-   requirement 11 (`docs/design/scripts.md`, Q18): the dependency line of
-   `crates/script/Cargo.toml`, the six lines of `taskfiles/lock-allow.txt` (address, tag and
-   commit, `none` for the checksum, Q15) and `Cargo.lock`, in one change, and the note records that
-   tag (Q11, Q13).
+7. (moved to `story:swell-0-9-0`.)
 
 ## Change
 
-- `crates/script/Cargo.toml`, `Cargo.lock`, `taskfiles/lock-allow.txt`: the tag of decision 7, in
-  the first commit.
-- `crates/session/` (its `Cargo.toml` included): decisions 1 and 2; `taskfiles/lock-owners.txt`:
-  the line `surf-script surf-session`.
+- `crates/session/` (its `Cargo.toml` included) and `Cargo.lock`: decisions 1 and 2;
+  `taskfiles/lock-owners.txt`: the line `surf-script surf-session`.
 - `crates/surf/src/lib.rs`: what the parser step answers gains the script ends (Q7), so the rows
   are written from the tree the scripts left.
 - `crates/page/src/lib.rs` and `docs/design/html-parser.md`: the hidden rule for `noscript` of
@@ -241,8 +215,8 @@ test:
   session issues; the list gets its new digest from `task conform-slow WRITE=1`.
 - `crates/surf-cli/tests/`: only tests.
 - `crates/surfd/src/daemon.rs`: the shipped address-space bound of decision 3 and the bound of
-  decision 4; `docs/design/scripts.md`: Q11 as decisions 3 and 4 find it, and the tag of decision
-  7.
+  decision 4; `docs/design/scripts.md`: Q11's bound values and the number of sessions with
+  scripts, as decisions 3 and 4 find them.
 - In the last commit, the public surfaces of acceptance 14.
 
 ## Acceptance
@@ -277,7 +251,9 @@ test:
    still shows every other element; its end is recorded `threw` with the kind `Error`, the message
    `boom`, its line and column (Q16), and the answer holds
    `scripts 1 ran 0 threw 1 refused 0 limit 0 faulted 0 not-run 0` and
-   `  1 threw Error "boom" <line>:<column>`.
+   `  1 threw Error "boom" <line>:<column>`. A page whose script throws
+   `new AggregateError([], "m")` is recorded `threw` with the kind `AggregateError` and the
+   message `m`, and the answer holds `  1 threw AggregateError "m" <line>:<column>`.
 8. `scripts_lines`: a page of `<script>1</script>`,
    `<script>throw new Error(Array(201).join("x"))</script>`, `<script>class A {}</script>`,
    `<script>eval("throw new Error(1)")</script>`, ten `<script src=a.js></script>` and a last
@@ -289,10 +265,7 @@ test:
    without the option prints no `scripts` line.
 9. `drift`, `slot task cli` and `slot task conform-rust` pass; `task open` no longer lists the
    marker of `story:scripts-spec`; `sh taskfiles/conform-noticed.sh check` passes.
-10. Decision 7: `slot task lock-check` names swell by the tag that holds requirement 11
-    (`docs/design/scripts.md`, Q18); `git show --stat` of the branch's first commit names
-    `crates/script/Cargo.toml`, `Cargo.lock` and `taskfiles/lock-allow.txt`;
-    `git grep -n -F 0.8.0 -- crates/script/Cargo.toml taskfiles/lock-allow.txt` prints nothing.
+10. (moved to `story:swell-0-9-0`, acceptance 1.)
 11. Decision 3: `/proc/<pid>/limits` of a session opened with the option shows `Max address space`
     2147483648 soft and hard (4294967296 where the report says `story:session-memory-bound` was not
     built before this story), `Max cpu time` 3600 and 3601, `Max open files` 64; on each page of
@@ -335,8 +308,8 @@ external, module, `async` and `defer` scripts; events and timers.
 After `story:scripts-spec`, `story:session-process-hardening`, `story:html-script-hook`,
 `story:scripts-dom-mutation`, `story:scripts-dom-attributes`, `story:scripts-parse-run` and
 `story:scripts-html-conformance` (which writes `Cargo.lock`, `taskfiles/lock-owners.txt` and
-`crates/script/Cargo.toml` before it), and the swell tag that holds requirement 11
-(`docs/design/scripts.md`, Q18). `story:session-memory-bound` is not an edge: built before this
+`crates/script/Cargo.toml` before it), `story:swell-0-9-0` and
+`story:script-error-kind-aggregate`. `story:session-memory-bound` is not an edge: built before this
 story, it lets the story ship the 2 GiB bound of decision 3; otherwise the story keeps the 4 GiB
 backstop and says so. `crates/session`, `crates/surf/src/lib.rs` and `conformance/` are also
 written by active stories outside the epic: never in the same wave.

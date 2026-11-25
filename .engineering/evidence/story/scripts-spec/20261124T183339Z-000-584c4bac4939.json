@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T18:33:39Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-spec",
+  "kind": "story",
+  "revision": 34,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 59161d9, the tip of impl/scripts-spec, through the pool on the build node, 2026-11-24 19:08 CET",
+    "reference": "exit 0 in 86 s; 221 scenarios passed on both runners; conformance crate 54 tests passed; 1619 tests: 1616 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 34.0 s"
+  }
+}
