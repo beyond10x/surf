@@ -9,6 +9,7 @@ mod adversary_3;
 mod adversary_4;
 mod adversary_5;
 mod adversary_same_object;
+mod adversary_same_object_2;
 mod depth;
 mod extraction;
 mod reader;
