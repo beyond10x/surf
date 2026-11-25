@@ -48,7 +48,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 11
+revision: 15
 ---
 ## Context
 
@@ -175,19 +175,23 @@ Where surf meets the changed types, on `main`:
   seven patterns `HostError::Faulted | surf_defect!()` (`:515`, `:562`, `:585`, `:592`, `:625`,
   `:643`, `:656`) are exhaustive at `0.8.0` and are not at `0.9.0`. The macro's doc comment
   (`runner.rs:16-22`) reads "swell's `HostError` at `0.8.0` but `Faulted`" and "Each is a defect of
-  surf's own calls that a page cannot cause". `story:webidl-bindings` (the branch
-  `impl/webidl-bindings`, not on `main`; it moves) keeps seven such patterns in `runner.rs`; its
-  `bindings.rs` reads every `HostError` as a defect without a `match` (`fn defect`,
-  `bindings.rs:461-465` on that branch), and names `WellKnownSymbol` and `HostIntrinsic` variants
-  only as arguments, in no `match`.
-- On that branch `Runner::evaluate` (`runner.rs:612-647`) runs the script (`run_script`,
-  `:680-714`, which reads the error summary and site of a `threw` through `error` and `site`,
-  `:716-747`), passes its end through `Runner::document_end` (`:649-677`, decision 10 of `story:webidl-bindings`: an interrupted end
-  with a limit the bindings recorded becomes that limit's word; after any other end a recorded
-  limit and its interrupt are withdrawn), then adds `last_entry_steps()`, then applies the memory
-  rule. A DOM write over a parser limit records the limit and sets the interrupt "so that the entry
-  ends `Terminated(Interrupted)` at swell's next read of the flag, also under a `catch`"
-  (`bindings.rs:329-333`, `end_with_limit`).
+  surf's own calls that a page cannot cause". `story:webidl-bindings` is on the branch
+  `impl/webidl-bindings`, not on `main`; the branch moves until it is on `main`, so every citation
+  into it below names a function or a test, no line. It keeps seven such patterns in `runner.rs`;
+  its `crates/script/src/bindings.rs` reads every `HostError` as a defect without a `match` (the
+  function `defect`), and names `WellKnownSymbol` and `HostIntrinsic` variants only as arguments,
+  in no `match`.
+- On that branch `Runner::evaluate` runs the script (`Runner::run_script`, which reads the error
+  summary and site of a `threw` through `Runner::error` and `Runner::site`), passes its end
+  through `Runner::document_end`, then adds `last_entry_steps()`, then applies the memory rule.
+  The rule of `document_end` as built on the branch: a limit the bindings recorded during the
+  entry is the script's end, in the words of Q4, whatever swell answered, except `limit: memory`
+  and `faulted`, which keep their own word; the record is cleared and the interrupt withdrawn
+  after every script that recorded one. `story:webidl-bindings` records that rule in its "As
+  built" when it closes. A DOM write over a parser limit goes through the function
+  `end_with_limit` of `crates/script/src/bindings.rs`: it records the limit and ends the entry
+  `Terminated(Interrupted)`, so "no `catch` and no `finally` of the page runs after the limit"
+  (its doc comment).
 - `runner.rs:572` on `main`, `_ => {}`, is a wildcard over surf's own `ScriptEnd`, not over a
   swell enum.
 - `runner.rs:704-716`, `error_kind`, names the seven `ErrorKind` variants with no wildcard; its doc
@@ -239,8 +243,10 @@ merge-base --is-ancestor f27c52e 0.9.0` exits 0) and the tag, no file under `cra
 (`git archive 0.9.0`) and run on 2026-11-24, 19:45 CET, after the tag was published: each of the
 three modes ended with exit status 0; the script that asks for the copy ends `throw RangeError
 "reentry_depth exceeded"` (3,607, 5,154 and 4,130 steps) and the doubling after it `terminated
-StepBudget`; `heap_bytes()` reads 13,052,701, 13,054,051 and 13,054,051; the highest `VmHWM` is
-37,512, 37,716 and 37,740 kB, under an address-space bound of 2 GiB that ended the same three
+StepBudget`; `heap_bytes()` reads 13,052,701, 13,054,051 and 13,054,051; the highest `VmHWM` the
+process prints itself (its `stdout:` lines) is 37,512, 37,716 and 37,740 kB, and the highest the
+sampler beside it read (the `exit 0` line of each mode) is 32,032, 33,116 and 33,656 kB, under an
+address-space bound of 2 GiB that ended the same three
 modes with status 134 at `0.8.0` (the note's Q13). The coordinating agent hands the run's output
 lines to the unit as a file; the unit does not build the probe again.
 
@@ -303,19 +309,21 @@ lines to the unit as a file; the unit does not build the probe again.
    in this order:
    - The script's own end is settled first, as on the branch of `story:webidl-bindings`
      (Context): `run_script` answers the end and reads the error summary and site of a `threw` or
-     `refused`; `Runner::document_end` reads the end with the rule of that story's decision 10
-     (and withdraws a stale interrupt); `last_entry_steps()` is added to the step total. The
+     `refused`; `Runner::document_end` reads the end with the rule as built on the branch
+     (Context: a limit the bindings recorded is the end whatever swell answered, except
+     `limit: memory` and `faulted`; the interrupt is withdrawn); `last_entry_steps()` is added to the step total. The
      checkpoint overwrites what `last_entry_steps()` and `last_entry_error_site()` answer
      (`agent.rs:738-751`, `:754 @ 0.9.0`), so these reads come before it.
    - Then, after a script that ended `ran`, `threw` or `refused` (a parse error is run through
      "run a classic script" too, steps 6 and 8.3), the runner calls
      `Agent::perform_microtask_checkpoint()`. After `limit:` or `faulted` it calls none. A script
      `not run` is not run and gets no checkpoint. A limit a DOM write records ends the script
-     "also under a `catch`" (`bindings.rs:329-333` on the branch; decision 9 of
-     `story:webidl-bindings` as ruled in its fix round 1, held by
-     `no_catch_and_no_finally_runs_after_a_limit`, `tests/bindings.rs:675-679` on the branch), so
-     a script that reaches a DOM limit ends `limit: <word>`, gets no checkpoint, and its queue is
-     cleared (below).
+     whatever the script catches (the function `end_with_limit` of
+     `crates/script/src/bindings.rs` on the branch, held there by the test
+     `no_catch_and_no_finally_runs_after_a_limit` of `crates/script/tests/bindings.rs`; the rule
+     as built on the branch, which `story:webidl-bindings` records in its "As built" when it
+     closes), so a script that reaches a DOM limit ends `limit: <word>`, gets no checkpoint, and
+     its queue is cleared (below).
    - Its budget is swell's: one outermost entry with a step budget of its own, `steps_per_entry`
      (HOST-193). After it the runner adds `last_entry_steps()` to its step total (HOST-197), so
      the document's total of Q4 counts the jobs; the wall-clock bound of the runner is the same
@@ -323,9 +331,9 @@ lines to the unit as a file; the unit does not build the probe again.
      does not rise for the checkpoint.
    - Its end passes through the same rule of `document_end`. `Normal(_)` leaves the script's end
      as it was. `Terminated(StepBudget)`, `Terminated(MemoryBudget)` and `Terminated(Interrupted)`
-     replace it with `limit: steps-per-script`, `limit: memory` and `limit: wall-clock` (or, for
-     an interrupt with a recorded DOM limit, that limit's word, so a job's DOM write over a parser
-     limit ends the script `limit: nodes` or its word), and `Terminated(EngineFault)` with
+     replace it with `limit: steps-per-script`, `limit: memory` and `limit: wall-clock` (or, when
+     a job recorded a DOM limit, that limit's word by the rule of `document_end`, so a job's DOM
+     write over a parser limit ends the script `limit: nodes` or its word), and `Terminated(EngineFault)` with
      `faulted`: the checkpoint is a step of running that script ("run a classic script", step 9),
      and Q7 holds one end per script element. `Throw`, which the checkpoint never answers
      (`agent.rs:765-769 @ 0.9.0`), is read as `faulted`, with that citation.
@@ -440,7 +448,7 @@ lines to the unit as a file; the unit does not build the probe again.
    left, and it names no listed version.
 3. `crates/script/tests/main.rs`, module `engine`, each case with limits of the test's own and
    under 5 s:
-   - `clock_advances` runs and passes; `git grep -n '#\[ignore' -- crates/script/tests` prints two
+   - `clock_advances` runs and passes; `git grep -n -F '#[ignore' -- crates/script/tests` prints two
      lines, `HOST-26` and `HOST-127`;
    - `aggregate_error`: `throw new AggregateError([], "m")` ends `threw AggregateError "m" 1:1`;
    - `every_error_constructor_keeps_its_word`: the script
@@ -472,7 +480,7 @@ lines to the unit as a file; the unit does not build the probe again.
 4. `crates/script/tests/main.rs`, module `adversary`: `every_error_kind_keeps_its_word` holds eight
    kinds, `AggregateError` thrown as `new AggregateError([], "m")` ending
    `threw AggregateError "m" 1:1`. In `crates/script/tests/bindings.rs` (the test file of
-   `story:webidl-bindings`), two cases beside its `limit_end` (`:655` on the branch), each in its
+   `story:webidl-bindings`), two cases beside its test `limit_end`, each in its
    test document whose `createElement` answers `DomEnd::Limit(Nodes)`:
    - `dom_limit_drops_the_jobs`: a script queues a job that sets a global
      (`Promise.resolve().then(function () { globalThis.q = 1; })`), then calls `createElement`; it
@@ -483,8 +491,8 @@ lines to the unit as a file; the unit does not build the probe again.
 5. `git grep -n -F '_ => ScriptErrorKind::Error' -- crates/script/src/runner.rs` prints one line,
    inside `error_kind`, under a comment that names what it swallows, what the test of acceptance 3
    cannot notice, and that test; the other wildcard of that file, `_ => {}` over surf's own
-   `ScriptEnd` (`runner.rs:572` on `main`), is not over a swell enum. `git grep -n -E
-   '\| HostError::MemoryBudget' -- crates/script/src/runner.rs` prints one line, inside the macro
+   `ScriptEnd` (`runner.rs:572` on `main`), is not over a swell enum. `git grep -n -F
+   '| HostError::MemoryBudget' -- crates/script/src/runner.rs` prints one line, inside the macro
    `surf_defect!`; the seven patterns `HostError::Faulted | surf_defect!()` build without another
    arm (acceptance 7).
 6. The coordinating agent hands over the probe's output as one file of 18 lines (per mode one
@@ -513,11 +521,12 @@ lines to the unit as a file; the unit does not build the probe again.
 9. Decisions 8, 9 and 11 in the text: `git grep -c -F '@ 0.8.0' -- crates/script/src/runner.rs
    crates/script/tests/engine.rs` prints nothing (2 and 10 lines on `main`); `git grep -n -F
    'requirements.txt:85-87 @ 0.9.0' -- crates/script/src/runner.rs` prints the comment of decision
-   8; in `docs/design/scripts.md`, `git grep -n -F 'eight kinds'` prints a line of Q7 (none on
-   `main`), `git grep -n -F '215 lines, 148 `test`, 67 `pending`'` prints one line of Q18,
-   `git grep -c -F 'Deviation from HTML'` counts 3 (none on `main`), and `git grep -n -F
-   '{name: AggregateError, summary: "AggregateError"}'` prints one line, in the note's copy of
-   the enum.
+   8; `git grep -n -F 'eight kinds' -- docs/design/scripts.md` prints a line of Q7 (nothing on
+   `main`); `git grep -n -F '215 lines, 148 `test`, 67 `pending`' -- docs/design/scripts.md`
+   prints one line of Q18 (nothing on `main`); `git grep -o -F 'Deviation from HTML' --
+   docs/design/scripts.md | wc -l` prints 3, counting occurrences (0 on `main`); and `git grep -n
+   -F '{name: AggregateError, summary: "AggregateError"}' -- docs/design/scripts.md` prints one
+   line, in the note's copy of the enum (nothing on `main`).
 10. The report lists what no test of this story holds at `0.9.0`: the reading of a checkpoint's
     `Throw` and of its `Terminated(EngineFault)` as `faulted`, that the script count does not rise
     for a checkpoint, and that the clear comes before the collection after `limit: memory`.
@@ -552,10 +561,15 @@ numbers from its own log. Before `story:scripts-parse-run`, which depends on thi
 `crates/script/src/runner.rs` and `docs/design/scripts.md`, and measures Q4 on `0.9.0`). Beside
 `story:conformance-lock-and-lints` (draft, `epic:headless-rust-target`), which writes `AGENTS.md`,
 `website/docs/status.md` and `crates/surf/tests`: whichever merges second merges `main` first.
+Beside `story:html-script-hook` (active, not on `main`), which rewrites two rows of Q2 in
+`docs/design/scripts.md` on its branch (`git diff --stat main...impl/html-script-hook --
+docs/design/scripts.md`: 2 lines added, 2 removed): whichever merges second merges `main` first;
+no edge.
 `story:scripts-document-port` depends on this story and takes no tag of its own. The texts that cite
-`0.8.0` as the tag of a statement and follow it: `story:scripts-dom-reading` (`:77`),
+`0.8.0` as the tag of a statement: `story:scripts-dom-reading` (`:77`),
 `story:scripts-dom-mutation` (`:80`, `crates/swell/src/host/mod.rs:577 @ 0.8.0` is `:604 @ 0.9.0`;
-`:105`) and the epic's "Corrections of 2026-11-24" (`epic/scripts-in-a-page.md:960-969`).
+`:105`) and the epic's "Corrections of 2026-11-24" (`epic/scripts-in-a-page.md:962-971`). Each is a
+statement read at `0.8.0` that stays true there; nobody rewrites it.
 
 ## Why `epic:scripts-in-a-page`
 

@@ -25,7 +25,7 @@ scope:
   path: spec/scenarios/document-records-every-error-kind.yaml
 - confidence: cited
   path: website/docs/how-it-is-built.md
-revision: 10
+revision: 12
 ---
 ## Context
 
@@ -97,8 +97,9 @@ refusal and no guard; whether it changes the synthesis time is measured, not ass
    `UriErrorStoredAsError` stays the one defect that stores a kind as another, and the
    scenario's position 9 holds the new word. So the number of planted defects, 31, does not
    change, and `conformance/tests/adversary.rs` does not change. `task conform-slow WRITE=1`
-   writes `conformance/tests/noticed.txt` again; it changes in its first line only, the digest of
-   its sources.
+   writes `conformance/tests/noticed.txt` again; the expectation is that it changes in its first
+   line only, the digest of its sources. Where more lines change, the report says which and why (a
+   scenario the synthesis added can move the first three scenarios a planted defect lists).
 7. The synthesis time is the gate of this story: the bound is 4.65 s, the number
    `story:scripts-spec` set. Over it, the unit stops before merging and reports the ten times;
    no other form of the change is tried without the coordinating agent.
@@ -125,8 +126,11 @@ refusal and no guard; whether it changes the synthesis time is measured, not ass
    `git grep -c -F 'error_kind: AggregateError' --
    spec/scenarios/document-records-every-error-kind.yaml` prints 2 (the step and its `contains`).
 3. `slot task conform-slow` (without `WRITE`) exits 0 against the committed
-   `conformance/tests/noticed.txt`; `git diff --numstat <base> -- conformance/tests/noticed.txt`
-   prints 1 line added and 1 deleted (its first line, the digest); `git diff --stat <base> -- conformance/tests/adversary.rs`
+   `conformance/tests/noticed.txt`: its byte comparison is the check. The expected
+   `git diff --numstat <base> -- conformance/tests/noticed.txt` is 1 line added and 1 deleted (its
+   first line, the digest); where it differs, the report says which lines changed and why (a
+   scenario the synthesis added can move the first three scenarios a planted defect lists).
+   `git diff --stat <base> -- conformance/tests/adversary.rs`
    prints nothing; `git grep -n -F '31 planted defects' -- README.md` prints the lines it prints on
    the base.
 4. The synthesis is timed: `ess verify conform synthesize --path spec --scenarios spec --out
@@ -139,7 +143,11 @@ refusal and no guard; whether it changes the synthesis time is measured, not ass
    `website/docs/how-it-is-built.md:47` on `main`) and the suite's digest (`README.md:596`,
    `website/docs/how-it-is-built.md:51` on `main`), and nothing else unless that log shows another
    number changed (the number of scenarios, 221 on `main`, among them); the old strings are read
-   by `git grep -n` on the base and listed in the report with their new values.
+   by `git grep -n` on the base and listed in the report with their new values. After the story,
+   `git grep -n -F '6faa23ddcf581f77cabfeb61025485e2f9ddb1a57259b1d734bd726dd75f14d4' -- README.md
+   website/docs AGENTS.md` (the sources digest of `README.md:592` on `main`) and
+   `git grep -n -F '29892e5537518e2b6290e5e134f03e324991488e6ca271cd5613409b7588dbc6' -- README.md
+   website/docs AGENTS.md` (the suite digest of `README.md:596` on `main`) print nothing.
 6. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; every build and test runs through `slot`, and a job in
    the pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes;
