@@ -50,13 +50,13 @@
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! 540de6b344c7f7949904f2387271ef345433f6e1b566821959f4488277ce2711  crates/webidl/src/generate.rs
+//! 2b1a9f8b6f90e47981a808676407736b576ecf38db67cecd66bbb64363cae255  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 12af9cd4b9912546b2fc1d4b93a0b651bc56194b72751f173c7c03ba549418ad  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 3f1c097f71fc482f809857f677a982f03cc9867d6553ca058a8a9b4e0de3dae0  crates/webidl/src/prelude.rs
+//! 706abde5a8454252222b029851efeac9f2d286ec6402319dd0e84e61a46cca2e  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 68ee19471eadfb0ed6219f25ea2ab69a2403331b5959bf70c514e2805e11f606
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 2a391cf4484339c983dfa1124e8754b66302035c2e78ad504f517b82a2ecd0b7
 
 use std::cell::Cell;
 
@@ -85,7 +85,7 @@ use crate::runner::ScriptHost;
 
 /// A `DOMException` as the Rust side holds it: its name (an error name of Web IDL's table,
 /// `NotSupportedError`) and its message. Thrown to a script as a `DOMException` object of the
-/// realm, with an [[ErrorData]] slot.
+/// realm, with an \[\[ErrorData\]\] slot.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DomException {
     /// The name.
@@ -327,7 +327,7 @@ impl HostData for ExceptionData {
 /// The most bytes of the name and of the message of a `DOMException` the bindings make
 /// themselves (a member's label with its reason from `selection.txt`, a fixed sentence, or the
 /// [`DomException`] a slice answers): a longer text is cut at a character's boundary. The text
-/// lives in surf only until [`new_exception`] made it the engine's String, before any script
+/// lives in surf only until `new_exception` made it the engine's String, before any script
 /// runs.
 pub const EXCEPTION_TEXT_BYTES: usize = 1024;
 
@@ -371,17 +371,56 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 /// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
 /// `<name>: <message>`, read from the exception's own data without running script, whether
 /// the bindings or a script made it, a lone surrogate written U+FFFD; `None` for any other
-/// value. It runs after the script's end, where no script runs; the runner cuts the text.
-pub fn exception_text(cx: &Cx<'_, ScriptHost>, value: Value) -> Option<String> {
+/// value. At most `chars` characters: of the name and of the message only their first `2 ×
+/// chars` code units are read (`prefix_units`), so no copy of a longer text is made. It runs
+/// after the script's end, where no script runs. `None` too when an engine call fails (the
+/// memory budget spent by the one-unit Strings the read makes).
+pub fn exception_text(cx: &mut Cx<'_, ScriptHost>, value: Value, chars: usize) -> Option<String> {
     let Value::Object(object) = value else {
         return None;
     };
     let data = *cx
         .host_data::<ExceptionData>(object, Interface::DomException.brand())
         .ok()??;
-    let name = cx.to_rust_string_lossy(data.name).ok()?;
-    let message = cx.to_rust_string_lossy(data.message).ok()?;
-    Some(format!("{name}: {message}"))
+    let units = u32::try_from(chars.saturating_mul(2)).unwrap_or(u32::MAX);
+    let name = prefix_units(cx, data.name, units).ok()?;
+    let message = prefix_units(cx, data.message, units).ok()?;
+    let text = format!(
+        "{}: {}",
+        String::from_utf16_lossy(&name),
+        String::from_utf16_lossy(&message)
+    );
+    Some(text.chars().take(chars).collect())
+}
+
+/// The first `units` code units of `string`, or all of them when it has no more. A longer
+/// String is not copied: each of its first `units` code units is read as an own index property
+/// of its String object (`ToObject` and a Get: StringGetOwnProperty, ECMA-262 10.4.3.5, runs no
+/// script), a String of one code unit on swell's heap, and copied alone.
+fn prefix_units(
+    cx: &mut Cx<'_, ScriptHost>,
+    string: StringRef,
+    units: u32,
+) -> Completion<Vec<u16>> {
+    if string_length(cx, string)? <= f64::from(units) {
+        return cx.to_utf16(string).map_err(defect);
+    }
+    let object = engine(cx.to_object(Value::String(string)))?;
+    let mut out = Vec::new();
+    for index in 0..units {
+        let key = PropertyKey::String(cx.new_string(&index.to_string())?);
+        match engine(cx.get_property(object, key))? {
+            Value::String(unit) => out.extend(cx.to_utf16(unit).map_err(defect)?),
+            Value::Undefined
+            | Value::Null
+            | Value::Boolean(_)
+            | Value::Number(_)
+            | Value::Symbol(_)
+            | Value::BigInt(_)
+            | Value::Object(_) => return Err(missing()),
+        }
+    }
+    Ok(out)
 }
 
 /// The throw of `exception`: a new `DOMException` object of the realm.
@@ -610,7 +649,7 @@ fn throw_exception(
 }
 
 /// A `DOMException` object with `prototype`, `name` and `message`: a host object of the brand
-/// of `DOMException` with an [[ErrorData]] slot (`HostObjectSpec::error_kind`), whose data
+/// of `DOMException` with an \[\[ErrorData\]\] slot (`HostObjectSpec::error_kind`), whose data
 /// holds the two Strings ([`ExceptionData`]).
 fn new_exception(
     cx: &mut Cx<'_, ScriptHost>,
@@ -1565,10 +1604,18 @@ fn dom_exception_message(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
     Ok(Value::String(data.message))
 }
 
-/// The legacy code of the name: the name is copied for the comparison with the ledger of
-/// [`Copies`] (a step per 64 bytes), and the copy is gone when the getter returns.
+/// The code units of the longest legacy name, `NoModificationAllowedError`.
+const LEGACY_NAME_UNITS: f64 = 26.0;
+
+/// The legacy code of the name. A name longer than [`LEGACY_NAME_UNITS`] code units, read with
+/// [`string_length`], which copies nothing, has none: 0 without a copy. A shorter name is
+/// copied for the comparison with the ledger of [`Copies`] (a step per 64 bytes), and the copy
+/// is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;
+    if string_length(cx, data.name)? > LEGACY_NAME_UNITS {
+        return Ok(number(0.0));
+    }
     let mut copies = Copies::new();
     let name = copies.copy(cx, data.name)?;
     Ok(number(f64::from(legacy_code(&name))))
@@ -1854,21 +1901,15 @@ fn convert_element_creation_options(
     member: &str,
 ) -> Completion<RawElementCreationOptions> {
     let object = to_dictionary(cx, value, member)?;
-    let custom_element_registry = dictionary_member(cx, object, "customElementRegistry")?;
-    absent_member(
-        cx,
-        custom_element_registry,
-        true,
-        member,
-        "CustomElementRegistry",
-    )?;
-    let is = dictionary_member(cx, object, "is")?;
-    let is = if let Value::Undefined = is {
+    let m0 = dictionary_member(cx, object, "customElementRegistry")?;
+    absent_member(cx, m0, true, member, "CustomElementRegistry")?;
+    let m1 = dictionary_member(cx, object, "is")?;
+    let m1 = if let Value::Undefined = m1 {
         None
     } else {
-        Some(to_string(cx, is)?)
+        Some(to_string(cx, m1)?)
     };
-    Ok(RawElementCreationOptions { is })
+    Ok(RawElementCreationOptions { is: m1 })
 }
 fn finish_element_creation_options(
     cx: &mut DomCx<'_, '_>,
@@ -1898,13 +1939,13 @@ fn convert_get_root_node_options(
     member: &str,
 ) -> Completion<RawGetRootNodeOptions> {
     let object = to_dictionary(cx, value, member)?;
-    let composed = dictionary_member(cx, object, "composed")?;
-    let composed = if let Value::Undefined = composed {
+    let m0 = dictionary_member(cx, object, "composed")?;
+    let m0 = if let Value::Undefined = m0 {
         false
     } else {
-        to_boolean(cx, composed)?
+        to_boolean(cx, m0)?
     };
-    Ok(RawGetRootNodeOptions { composed })
+    Ok(RawGetRootNodeOptions { composed: m0 })
 }
 fn finish_get_root_node_options(
     cx: &mut DomCx<'_, '_>,
@@ -1931,21 +1972,15 @@ fn convert_import_node_options(
     member: &str,
 ) -> Completion<RawImportNodeOptions> {
     let object = to_dictionary(cx, value, member)?;
-    let custom_element_registry = dictionary_member(cx, object, "customElementRegistry")?;
-    absent_member(
-        cx,
-        custom_element_registry,
-        false,
-        member,
-        "CustomElementRegistry",
-    )?;
-    let self_only = dictionary_member(cx, object, "selfOnly")?;
-    let self_only = if let Value::Undefined = self_only {
+    let m0 = dictionary_member(cx, object, "customElementRegistry")?;
+    absent_member(cx, m0, false, member, "CustomElementRegistry")?;
+    let m1 = dictionary_member(cx, object, "selfOnly")?;
+    let m1 = if let Value::Undefined = m1 {
         false
     } else {
-        to_boolean(cx, self_only)?
+        to_boolean(cx, m1)?
     };
-    Ok(RawImportNodeOptions { self_only })
+    Ok(RawImportNodeOptions { self_only: m1 })
 }
 fn finish_import_node_options(
     cx: &mut DomCx<'_, '_>,
@@ -2073,7 +2108,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("Node.hasChildNodes"))
     }
-    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read.
+    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
     fn node_child_nodes(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Node.childNodes"))
@@ -2270,7 +2305,7 @@ pub trait Reading {
         let _ = (cx, this, class_names);
         Err(not_supported("Element.getElementsByClassName"))
     }
-    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read.
+    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
     fn element_children(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Element.children"))
@@ -2431,7 +2466,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("Document.getElementById"))
     }
-    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read.
+    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
     fn document_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,

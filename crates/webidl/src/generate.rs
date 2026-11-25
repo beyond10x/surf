@@ -7,7 +7,11 @@
 //! reads. It refuses, naming the row, a definition the selection does not name, a member the
 //! model does not hold ([`Selection::check`]), a type or a member it does not convert,
 //! `[LegacyUnforgeable]` off the global interface, two arguments of one member that get one
-//! Rust name, and two members that get one Rust name (`fooBar` and `foo_bar`), naming both.
+//! Rust name, and, by one rule, two names that get one Rust name, naming both and inventing no
+//! second name: two members (`fooBar` and `foo_bar`), two interfaces (`HTMLFoo` and
+//! `HtmlFoo`), two members of a dictionary, and a dictionary or a union whose items meet
+//! another's or the prelude's. Web IDL enums, callbacks and constants get no Rust name: enums
+//! and callbacks are not generated, and a constant is written as a string.
 //!
 //! What it writes from the model and the selection is Rust: a name of the model becomes an
 //! identifier by [`identifier`]'s one rule (`snake` form, `-` written `_`, a keyword raw; `self`,
@@ -257,6 +261,9 @@ struct Generator<'m> {
     /// The Rust name each member of the selection is written with (`<interface>_<member>` in
     /// `snake` form, a setter's with `set_` before it), and the member's label.
     names: BTreeMap<String, String>,
+    /// The Rust items each definition of the selection is written with, and the prelude's
+    /// ([`Generator::take_items`]), each with what it is.
+    items: BTreeMap<String, String>,
     specs: String,
 }
 
@@ -330,6 +337,7 @@ pub fn generate_bindings(
         methods: BTreeMap::new(),
         functions: String::new(),
         names: BTreeMap::new(),
+        items: fixed_items(),
         specs: String::new(),
     };
     generator.order_interfaces()?;
@@ -377,6 +385,46 @@ pub fn camel(name: &str) -> String {
         .collect()
 }
 
+/// The items the file holds whatever the selection: each item of [`crate::prelude`]'s text
+/// written at the start of a line (`fn`, `struct`, `enum`, `trait`, `type`, `const`,
+/// `static`, after an optional `pub`), the enum `Interface` with `GLOBAL` and `legacy_code`,
+/// the table `INTERFACES` and the slices' traits; keyed as [`Generator::take_items`] keys them.
+fn fixed_items() -> BTreeMap<String, String> {
+    let mut items = BTreeMap::new();
+    for line in crate::prelude::PRELUDE.lines() {
+        let line = line.strip_prefix("pub ").unwrap_or(line);
+        let Some((keyword, rest)) = line.split_once(' ') else {
+            continue;
+        };
+        let space = match keyword {
+            "struct" | "enum" | "trait" | "type" => "type",
+            "fn" | "const" | "static" => "value",
+            _ => continue,
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            items.insert(format!("{space} {name}"), "the prelude".to_string());
+        }
+    }
+    let written = [
+        "type Interface",
+        "value GLOBAL",
+        "value legacy_code",
+        "value INTERFACES",
+    ];
+    for item in written
+        .into_iter()
+        .map(str::to_string)
+        .chain(TRAITS.iter().map(|(_, name)| format!("type {name}")))
+    {
+        items.insert(item, "the generator's own item".to_string());
+    }
+    items
+}
+
 /// The names of the parameters [`Generator::write_traits`] gives a slice's method before its
 /// arguments (beside `self`).
 const OWN_PARAMETERS: [&str; 2] = ["cx", "this"];
@@ -411,12 +459,15 @@ fn identifier(name: &str) -> String {
 /// each bidirectional control character rustc's lint `text_direction_codepoint_in_comment`
 /// refuses in a comment (U+202A to U+202E, U+2066 to U+2069) written as its Rust escape
 /// (`\r`, `\u{202e}`), so that the line holds no bare CR, which rustc refuses in a doc comment,
-/// no line break, and no character that lint refuses.
+/// no line break, and no character that lint refuses; and each square bracket with a backslash
+/// before it (`\[`), so that rustdoc reads no link in a note (`[SameObject]`).
 fn doc_text(text: &str) -> String {
     text.chars()
         .map(|c| {
             if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
                 c.escape_default().to_string()
+            } else if c == '[' || c == ']' {
+                format!("\\{c}")
             } else {
                 c.to_string()
             }
@@ -492,6 +543,54 @@ impl Generator<'_> {
         Ok(())
     }
 
+    /// Takes the item names of `label` (`type X` for a struct, an enum or a trait, `value x`
+    /// for a function, a constant or a static, `variant X` for a variant of `Interface`);
+    /// answers, when another definition or the prelude has one of them, what both are and the
+    /// name. No second name is invented.
+    fn take_items(&mut self, label: &str, items: &[String]) -> Result<(), String> {
+        for item in items {
+            if let Some(before) = self.items.get(item) {
+                let rust = item.split_once(' ').map_or(item.as_str(), |(_, name)| name);
+                return Err(format!("{before} and {label} are both written `{rust}`"));
+            }
+        }
+        for item in items {
+            self.items.insert(item.clone(), label.to_string());
+        }
+        Ok(())
+    }
+
+    /// [`Generator::take_items`] for a dictionary and, with `union`, the union of it.
+    fn take_dictionary_items(
+        &mut self,
+        row: &Row,
+        name: &str,
+        union: Option<&Conversion>,
+    ) -> Result<(), SelectionError> {
+        let (label, rust, functions) = match union {
+            Some(union) => {
+                let rust = union_name(union);
+                let functions = vec![format!("value finish_{}", snake(&rust))];
+                (format!("the union `{rust}`"), rust, functions)
+            }
+            None => (
+                format!("the dictionary `{name}`"),
+                camel(name),
+                vec![
+                    format!("value convert_{}", snake(name)),
+                    format!("value finish_{}", snake(name)),
+                ],
+            ),
+        };
+        if self.items.get(&format!("type {rust}")) == Some(&label) {
+            return Ok(());
+        }
+        let mut items = vec![format!("type {rust}"), format!("type Raw{rust}")];
+        items.extend(functions);
+        self.take_items(&label, &items)
+            .map_err(|what| self.refuse(row, what))
+    }
+
     /// The parent of the interface `name` in the model.
     fn parent_of(&self, name: &str) -> Option<String> {
         self.model
@@ -560,6 +659,17 @@ impl Generator<'_> {
                     } else {
                         This::Brand
                     };
+                    let items = [
+                        format!("variant {}", camel(&name)),
+                        format!("value interface_{}", snake(&name)),
+                    ];
+                    if let Err(what) = self.take_items(&format!("the interface `{name}`"), &items) {
+                        return Err(SelectionError {
+                            file: self.selection.file.clone(),
+                            line: self.selection.definitions_line,
+                            what,
+                        });
+                    }
                     self.interfaces.push(Interface {
                         variant: camel(&name),
                         name,
@@ -661,12 +771,14 @@ impl Generator<'_> {
                     ["DOMString", dictionary] if self.is_dictionary(dictionary) => {
                         self.dictionary(row, dictionary)?;
                         let union = Conversion::StringOrDictionary(dictionary.to_string());
+                        self.take_dictionary_items(row, dictionary, Some(&union))?;
                         self.unions.insert(union.clone());
                         union
                     }
                     ["boolean", dictionary] if self.is_dictionary(dictionary) => {
                         self.dictionary(row, dictionary)?;
                         let union = Conversion::BooleanOrDictionary(dictionary.to_string());
+                        self.take_dictionary_items(row, dictionary, Some(&union))?;
                         self.unions.insert(union.clone());
                         union
                     }
@@ -701,6 +813,8 @@ impl Generator<'_> {
         if inherits.is_some() {
             return Err(self.refuse(row, format!("the dictionary `{name}` inherits")));
         }
+        let members = members.clone();
+        self.take_dictionary_items(row, name, None)?;
         let mut sorted: Vec<_> = members.iter().collect();
         sorted.sort_by(|a, b| a.name.cmp(&b.name));
         let mut fields = Vec::new();
@@ -739,6 +853,19 @@ impl Generator<'_> {
             };
             if member.required {
                 return Err(self.refuse(row, format!("a required member of `{name}`")));
+            }
+            let rust = identifier(&member.name);
+            if let Some(before) = fields
+                .iter()
+                .find(|field: &&DictionaryField| identifier(&field.name) == rust)
+            {
+                return Err(self.refuse(
+                    row,
+                    format!(
+                        "the members `{}` and `{}` of `{name}` are both written `{rust}`",
+                        before.name, member.name
+                    ),
+                ));
             }
             fields.push(DictionaryField {
                 name: member.name.clone(),
@@ -1621,10 +1748,12 @@ impl Generator<'_> {
                 "fn convert_{}(cx: &mut Cx<'_, ScriptHost>, value: Value, member: &str) -> Completion<Raw{rust}> {{",
                 snake(&dictionary.name)
             );
+            // Each member is read into a local named by its position (`m0`), never by its name,
+            // so no member meets the converter's own `object`, `cx`, `value` or `member`.
             let _ = writeln!(out, "let object = to_dictionary(cx, value, member)?;");
             let mut fields = Vec::new();
-            for field in &dictionary.members {
-                let name = identifier(&field.name);
+            for (index, field) in dictionary.members.iter().enumerate() {
+                let name = format!("m{index}");
                 let _ = writeln!(
                     out,
                     "let {name} = dictionary_member(cx, object, {:?})?;",
@@ -1660,7 +1789,7 @@ impl Generator<'_> {
                         continue;
                     }
                 }
-                fields.push(name);
+                fields.push(format!("{}: {name}", identifier(&field.name)));
             }
             let _ = writeln!(out, "Ok(Raw{rust} {{ {} }})", fields.join(", "));
             let _ = writeln!(out, "}}");

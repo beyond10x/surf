@@ -555,6 +555,9 @@ pub struct Runner {
     collections: u32,
     memory_ends: u32,
     faulted: bool,
+    /// The steps of the script's entry, read in [`Runner::error`] before the read of a
+    /// `DOMException`'s data, whose engine calls begin entries of their own.
+    thrown_steps: Option<u64>,
 }
 
 impl Runner {
@@ -600,6 +603,7 @@ impl Runner {
             collections: 0,
             memory_ends: 0,
             faulted: false,
+            thrown_steps: None,
         })
     }
 
@@ -629,7 +633,11 @@ impl Runner {
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
         let end = self.document_end(end);
-        match self.agent.last_entry_steps() {
+        let steps = match self.thrown_steps.take() {
+            Some(steps) => Ok(steps),
+            None => self.agent.last_entry_steps(),
+        };
+        match steps {
             Ok(steps) => self.steps = self.steps.saturating_add(steps),
             // A faulted agent answers no count; the script's end says `faulted`.
             Err(HostError::Faulted | surf_defect!()) => {}
@@ -741,7 +749,13 @@ impl Runner {
         // which `last_entry_error_site` answers nothing.
         let site = self.site();
         let message = match kind {
-            ScriptErrorKind::Error => self.exception_text(value).or(message),
+            ScriptErrorKind::Error => {
+                // The steps first too: that read's engine calls begin entries of their own.
+                if let Ok(steps) = self.agent.last_entry_steps() {
+                    self.thrown_steps = Some(steps);
+                }
+                self.exception_text(value).or(message)
+            }
             ScriptErrorKind::EvalError
             | ScriptErrorKind::RangeError
             | ScriptErrorKind::ReferenceError
@@ -758,16 +772,17 @@ impl Runner {
     }
 
     /// The `<name>: <message>` of a `DOMException` a script threw and did not catch, cut to
-    /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`),
-    /// read from its data in a `with_cx` that runs no code (`bindings::exception_text`); `None`
-    /// for a runner without a document and for any other value.
+    /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`; no
+    /// longer prefix is copied), read from its data in a `with_cx` that runs no code
+    /// (`bindings::exception_text`); `None` for a runner without a document and for any other
+    /// value.
     fn exception_text(&mut self, value: &Root) -> Option<String> {
         self.agent.host().dom.as_ref()?;
         let text = self
             .agent
             .with_cx(&self.realm, |cx| {
                 let value = cx.get(value).ok()?;
-                bindings::exception_text(cx, value)
+                bindings::exception_text(cx, value, MESSAGE_CHARS)
             })
             .ok()??;
         Some(text.chars().take(MESSAGE_CHARS).collect())

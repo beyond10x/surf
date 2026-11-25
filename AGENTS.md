@@ -1736,8 +1736,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `surf-webidl` and compares what it writes with `crates/script/src/bindings.rs` byte for
   byte; it needs no `openssl`. No list of files triggers it: `webidl-check` holds what decides
   those bytes (the digests in the header, among them `crates/html/Cargo.toml` and
-  `rustfmt.toml`; no dependency outside the workspace, so `Cargo.lock` decides nothing), and a
-  test of `surf-webidl` compares what `surf-html` reads of the pages with the header. It stays
+  `rustfmt.toml`; and `Cargo.lock`, read and no manifest, holds one `surf-html` without source
+  and dependencies and one `surf-webidl` without source depending on `surf-html` alone, so
+  the lock decides nothing; `task lock-check` and every `--locked` build hold the lock to the
+  manifests), and a test of `surf-webidl` compares what `surf-html` reads of the pages with
+  the header. A digest line recomputed by hand passes `webidl-check`; this byte compare is the
+  check against that. It stays
   the full regeneration with a byte compare, run by hand like the other steps of `task slow`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
   within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
