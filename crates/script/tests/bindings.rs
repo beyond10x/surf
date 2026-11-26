@@ -20,6 +20,7 @@ use surf_script::bindings::{
     Reading, Selectors, Slices, StringOrElementCreationOptions, Wrap, new_wrapper, not_supported,
     uncharged_copies, wrapper_node,
 };
+use surf_script::dom::DocumentInfo;
 use surf_script::{
     Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, ScriptHost, dom,
     run_document,
@@ -229,8 +230,32 @@ fn surf_document() -> Document {
     Document {
         tree: parse_document(PAGE, &ParseOptions::default()),
         limits: ParserLimits::default(),
-        slices: dom::slices(),
+        slices: dom::slices(DocumentInfo::default()),
     }
+}
+
+/// `[SameObject]` is held by the `Wrap` that keeps the objects: with a `TestWrap`, whose
+/// `same_object` is the trait's default, a getter of the four makes a new object at each read.
+#[test]
+fn a_test_wrap_makes_a_new_collection_per_read() {
+    let document = || {
+        let mut slices = dom::slices(DocumentInfo::default());
+        slices.wrap = Box::new(TestWrap);
+        Document {
+            tree: parse_document(PAGE, &ParseOptions::default()),
+            limits: ParserLimits::default(),
+            slices,
+        }
+    };
+    with_document(limits(), document, |runner| {
+        let end = runner.evaluate(
+            r#"var html = this.document.documentElement;
+               if (html.childNodes === html.childNodes) throw new Error("childNodes kept");
+               if (html.children === html.children) throw new Error("children kept");
+               if (html.childNodes.length !== 2) throw new Error("the children");"#,
+        );
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+    });
 }
 
 fn with_document<R: Send>(
@@ -504,8 +529,10 @@ function notSupported(f, message) {
   }
   throw new Error(message + ": no throw");
 }
-notSupported(function () { return G.document; }, "Window.document is not supported");
-notSupported(function () { return G.event; }, "Window.event is not supported");
+notSupported(function () { return G.document.createComment("x"); },
+  "Document.createComment is not supported");
+notSupported(function () { return G.document.appendChild(G.document.firstChild); },
+  "Node.appendChild is not supported");
 notSupported(function () { return new Text("a"); }, "Text constructor is not supported");
 notSupported(function () { return new DocumentFragment(); },
   "DocumentFragment constructor is not supported");
@@ -565,7 +592,7 @@ fn the_strings_of_a_dom_exception_outlive_a_collection() {
         let end = runner.evaluate(
             r#"var G = this;
                G.e = new DOMException(String.fromCharCode(0x6D, 0xD800), String.fromCharCode(0x4E));
-               try { G.document; } catch (x) { G.thrown = x; }"#,
+               try { G.document.createComment("x"); } catch (x) { G.thrown = x; }"#,
         );
         assert_eq!(end, ScriptEnd::Ran, "{end}");
         let collected = runner.agent_and_realm().0.collect();
@@ -577,7 +604,8 @@ fn the_strings_of_a_dom_exception_outlive_a_collection() {
             r#"function check(holds, what) { if (!holds) { throw new Error(what); } }
                check(G.e.message === "m\uD800" && G.e.name === "N" && G.e.code === 0, "made");
                check(G.thrown.name === "NotSupportedError" && G.thrown.code === 9, "thrown");
-               check(G.thrown.message === "Window.document is not supported", G.thrown.message);"#,
+               check(G.thrown.message === "Document.createComment is not supported",
+                     G.thrown.message);"#,
         );
         assert_eq!(end, ScriptEnd::Ran, "{end}");
     });
@@ -739,7 +767,7 @@ fn a_lone_surrogate_reaches_the_slice_as_u_fffd() {
 fn an_uncaught_dom_exception_names_its_name_and_message() {
     let ends = with_document(limits(), surf_document, |runner| {
         [
-            runner.evaluate("this.document;"),
+            runner.evaluate(r#"this.document.createComment("x");"#),
             runner.evaluate(r#"throw new DOMException("m", "SyntaxError");"#),
             runner.evaluate(
                 r#"var s = ""; for (var i = 0; i < 2000; i++) { s += "x"; }
@@ -749,7 +777,7 @@ fn an_uncaught_dom_exception_names_its_name_and_message() {
     });
     let long = format!("E: {}", "x".repeat(1_021));
     let expected = [
-        "NotSupportedError: Window.document is not supported",
+        "NotSupportedError: Document.createComment is not supported",
         "SyntaxError: m",
         long.as_str(),
     ];

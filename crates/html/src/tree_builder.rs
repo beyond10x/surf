@@ -228,11 +228,14 @@ fn prepare(tree: &Tree, script: NodeId) -> Option<NotRun> {
 }
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
-/// DOCTYPE.
+/// DOCTYPE and writes into the tree ([`Tree::quirks_mode`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QuirksMode {
+pub enum QuirksMode {
+    /// "no-quirks": a document's mode until the parser decides it, and a fragment's.
     NoQuirks,
+    /// "limited-quirks".
     LimitedQuirks,
+    /// "quirks".
     Quirks,
 }
 
@@ -573,9 +576,6 @@ pub(crate) struct InputEncoding {
 pub(crate) struct Parsed {
     /// The document.
     pub(crate) tree: Tree,
-    /// The mode the initial insertion mode set.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) quirks_mode: QuirksMode,
     /// The encoding a `meta` changed the encoding to (13.2.3.4, its last step): the parse
     /// stopped at that `meta`, and the caller decodes the same bytes again with this encoding
     /// and parses them with the confidence certain.
@@ -709,7 +709,6 @@ fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parse
     builder.tree.set_steps(builder.steps.get());
     Parsed {
         tree: builder.tree,
-        quirks_mode: builder.quirks_mode,
         reparse_with: builder.reparse_with,
     }
 }
@@ -1958,7 +1957,9 @@ mod tests {
     use super::*;
 
     fn quirks_mode(input: &str) -> QuirksMode {
-        parse(input, &ParseOptions::default(), None).quirks_mode
+        parse(input, &ParseOptions::default(), None)
+            .tree
+            .quirks_mode()
     }
 
     #[test]

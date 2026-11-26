@@ -394,17 +394,17 @@ with the reason.
 
 | limit | value | probe command | output line | outcome when reached |
 |---|---|---|---|---|
-| `steps_per_entry` (one entry with every nested entry; a script element spends at most two entries, the script and its checkpoint, Q2) | 10,000,000, chosen: about half a second of work per script in release | `R limits` and `T limits` | `step budget 10000000: terminated StepBudget after 0.464 s, last_entry_steps 10000000` (release); `... after 7.358 s ...` (test profile, where the wall clock of 5 s ends a script first; a test gives limits of its own) | the script: `limit: steps-per-script` |
+| `steps_per_entry` (one entry with every nested entry; a script element spends at most two entries, the script and its checkpoint, Q2) | 10,000,000, chosen: about half a second of work per script in release | `R limits` and `T limits` | `step budget 10000000: terminated StepBudget after 0.464 s, last_entry_steps 10000000` (release); `... after 7.358 s ...` (test profile, where the wall clock of 5 s ends a script first; a test gives limits of its own). Measured consequences (`dom_reading_cost::an_ordinary_page`): one `documentElement.textContent` read of a page of 50,003 nodes and 950,000 bytes of text costs 168,771 steps, so one script holds 59 such reads; `getElementsByTagName('*')` walked by index over 25,003 elements costs 800,131 steps | the script: `limit: steps-per-script` |
 | `memory_bytes` (the agent's heap over the document's life) | 67,108,864 (64 MiB), swell's test value (`host.rs:73 @ 0.8.0`) | `R limits` | `realm heap_bytes 202424`; `constants ... BINDINGS_REALM_HEAP_BYTES 506112` (the constant from the first round, on the build node) | the script: `limit: memory`; then the row "after `Terminated(MemoryBudget)`". The copies swell held uncharged at `0.8.0` (`docs/plan/second-batch.md:284-285 @ 0.8.0`) are charged to it at `0.10.0` (HOST-215, `conformance/host/requirements.txt:215 @ 0.10.0`; requirement 11, Q13 and Q18) |
 | `frame_depth` | 10,000, swell's test value (`host.rs:74 @ 0.8.0`) | `T limits` | `recursion frames on a stack of min_stack_bytes: throw RangeError "frame_depth exceeded"` | a `RangeError` the script may catch; uncaught, the script: `threw RangeError` |
 | `reentry_depth` | 256, swell's test value (`host.rs:75 @ 0.8.0`) | `T limits` | `recursion json-replacer on a stack of min_stack_bytes: throw RangeError "reentry_depth exceeded"` | a `RangeError`; uncaught: `threw RangeError` |
 | `parser_nesting` | 1,000, swell's test value (`host.rs:76 @ 0.8.0`) | `T limits` | `min_stack_bytes 4006656` (the parser's need at 1,000 levels is inside it, Q5) | a `SyntaxError` naming `parser_nesting` (`crates/swell/src/host/limits.rs:22 @ 0.8.0`), not a refusal (`crates/swell/src/host/agent.rs:266-275 @ 0.8.0`): `threw SyntaxError` |
-| `string_length` | 16,777,216 (2^24), chosen: one String at most 32 MiB of UTF-16, half of `memory_bytes` (swell's tests use 2^30, `host.rs:77 @ 0.8.0`) | `R limits` | `limits Limits { steps_per_entry: 10000000, memory_bytes: 67108864, frame_depth: 10000, reentry_depth: 256, parser_nesting: 1000, string_length: 16777216, bigint_bits: 1048576 }` | a `RangeError`; uncaught: `threw RangeError` |
+| `string_length` | 16,777,216 (2^24), chosen: one String at most 32 MiB of UTF-16, half of `memory_bytes` (swell's tests use 2^30, `host.rs:77 @ 0.8.0`) | `R limits` | `limits Limits { steps_per_entry: 10000000, memory_bytes: 67108864, frame_depth: 10000, reentry_depth: 256, parser_nesting: 1000, string_length: 16777216, bigint_bits: 1048576 }` | a `RangeError`; uncaught: `threw RangeError`. The engine applies it to a String its own operations create; the bindings' glue applies it to a String a DOM member answers, before `Cx::new_string`, with the engine's message (`the string would be longer than string_length`). |
 | `bigint_bits` | 1,048,576 (2^20), swell's test value (`host.rs:78 @ 0.8.0`) | `R limits` | the same `limits` line | a `RangeError`; uncaught: `threw RangeError` |
 | steps per document, summed from `last_entry_steps()` | 50,000,000, chosen: five scripts at `steps_per_entry` | `R limits` | `loop run 0: true after 1.000 s, 19980802 steps, 19978480 steps/s` (2.4 to 2.5 s for the sum at those rates) | the script whose steps take the sum to it keeps its own end; each later script: `not run: steps-per-document` |
 | scripts run per document | 1,000, chosen: it bounds the records of Q7, at most 1,000 per document; the steps, memory and wall clock bound the work already | none: a choice, not a measurement | none: `story:scripts-parse-run` measures again whether a page with more scripts reaches it | the 1,001st script element and each later one: `not run: scripts-per-document` |
 | bytes of one script's source (UTF-8, as the tree holds it) | 524,288 (512 KiB), measured: the largest power of two of the sweep that parsed | `R limits` (the first round's parse sweep, on the build node) | `parse var source of 524260 bytes, 27324 statements, memory_bytes 64 MiB: parsed in 0.106 s, heap_bytes after 11713890`, and `parse var source of 1048540 bytes, 53538 statements, memory_bytes 64 MiB: terminated MemoryBudget in 0.155 s, heap_bytes after 202424` | that script, not parsed: `limit: source-bytes`; later scripts run |
-| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script, and a script that ends while the clock ran out or the interrupt is set: `limit: wall-clock`; each later script: `not run: wall-clock` |
+| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script, and a script that ends while the clock ran out or the interrupt is set: `limit: wall-clock`; each later script: `not run: wall-clock`. The interrupt is taken between member calls, not inside one: one call of a walking member of the bindings is linear in the nodes it visits and in the bytes and attributes it reads, which the parser's node bound (`max_nodes`) and its bound of stored bytes (`max_stored_bytes`) bound, and in the code units of a String argument it copies, which `string_length` bounds |
 | parser: input bytes (`crates/html/src/limits.rs:17-21`) | 16,777,216, the parser's | none: a script adds no input | `crates/html/src/limits.rs:103` (`max_input_bytes: 16 * 1024 * 1024`) | not reached by a script: the first version has no `document.write`; parsing stops as today |
 | parser: depth | 512, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:104` (`max_depth: 512`) | a write that would nest an element deeper: refused, the script: `limit: depth` |
 | parser: nodes | 1,048,576, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:105` (`max_nodes: 1024 * 1024`) | a write that would make one more node: refused, the script: `limit: nodes` |
@@ -412,7 +412,7 @@ with the reason.
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:107` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:108` (`max_steps: 1 << 27`) | counts tree construction's scans, not a script's writes; read inside each token, before each entry of a scan of the stack of open elements or of the list of active formatting elements and before each write to the tree, so the token that passes the limit is processed only up to the next read; parsing stops (`stopped_by` `Steps`), and no later script element is reached |
 | `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2). Since `0.9.0` two more paths make code from source text: `%AsyncFunction%` and `%AsyncGeneratorFunction%`, reached as the `constructor` of an async function's and of an async generator function's prototype, no global (`CHANGELOG.md:115`, `:85 @ 0.10.0`). Both call `create_dynamic_function` (`crates/swell/src/builtins/async_function.rs:88-89 @ 0.10.0`, `builtins/async_generator.rs:196-198 @ 0.10.0`), which asks the same hook with the compilation type `Function` for every kind (`crates/swell/src/dynamic_code.rs:786-793 @ 0.10.0`; the hook `hooks.rs:176-181 @ 0.10.0`), so they end as `Function` does: allowed, a step per code unit of the source as it is copied (`dynamic_code.rs:772 @ 0.10.0`; the test `engine::async_constructors_compile_as_function_does` of `surf-script`) |
-| after `Terminated(MemoryBudget)` | `Agent::clear_microtasks()` first, then `collect()` once, chosen (the clear drops the queued jobs and credits their charge, HOST-200, so the collection finds it free); a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
+| after `Terminated(MemoryBudget)` | `Agent::clear_microtasks()` first, then `collect()` once, chosen (the clear drops the queued jobs and credits their charge, HOST-200, so the collection finds it free); a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory`; so does a `limit: memory` that ends a refill of a kept `[SameObject]` collection after its first define (all or nothing for a step the object refuses; an end of the run inside a refill ends the document's scripts), after the same one collection |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
 wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) bytes plus its
@@ -421,8 +421,10 @@ each node a script creates the bindings charge, with `Cx::charge_host_bytes`
 (`crates/swell/src/host/mod.rs:577 @ 0.8.0`), the node's term of the tree's heap bound, 3 ×
 `NODE_BYTES` (408 bytes), plus twice the bytes it stores (`crates/html/src/limits.rs:45-51`),
 before the write, and keep the `HostBytes` until the agent is dropped. So a script that makes
-nodes ends at `limit: memory` or at a parser limit, whichever comes first; at 256 bytes a wrapper,
-262,144 wrappers alone fill `memory_bytes`.
+nodes ends at `limit: memory` or at a parser limit, whichever comes first. Measured on the
+reading slice (`story:scripts-dom-reading`, 1,000 wrappers grew `heap_bytes()` by 889,447 bytes
+against 465,772 for 1,000 calls that made none): a wrapper with its `NodeData` takes 423 bytes,
+so 158,649 wrappers alone fill `memory_bytes`.
 
 A rule for surf's own bindings: the host interface's reads of a String's units, `Cx::to_utf16`
 and `Cx::to_rust_string_lossy` (`crates/swell/src/host/mod.rs:504-513 @ 0.8.0`, over
@@ -1003,6 +1005,16 @@ system stopped: unmet obligation: context answer `surf.net.RequestId` ...`` with
 stack that overflows ends in `SIGABRT` (Q5). Core files: the workstation's core handler stored
 the cores of two early probe runs made without `--core=0:0` and none of the nine later runs made
 with it (`coredumpctl list`: `COREFILE present`, then `none`).
+A limit of 0 does not stop a dump to a pipe handler: on a host with a pipe pattern a shell ended
+by `SIGABRT`, `SIGXCPU` or `SIGSEGV` under `--core=0:0` showed `(core dumped)` and was waitable
+after 113 to 220 ms, and under `--core=1:1` showed none and was waitable after 3 to 10 ms, so
+`surfd` starts a session with `--core=1:1` where its hard limit allows.
+Under a limit of 1 the kernel does not start a pipe handler for such an end: on one host with a
+pipe pattern the host's crash list (`coredumpctl list` under systemd) held 15 of 15 shells ended
+by these three signals under `--core=0:0` and 0 of 15 under `--core=1:1`, and the kernel's log
+held one line `RLIMIT_CORE is set to 1, aborting core` for each of the first 10 of the latter
+and none for the last 5. What the kernel does under a file pattern or a socket pattern is not
+shown.
 
 What a session holds over its life, the terms of the address-space bound:
 
@@ -1087,17 +1099,23 @@ SIGXCPU bound cpu`.
 | address space (`--as`) | with scripts only | the terms above; no finite sum until `story:session-memory-bound` is closed (requirement 11 is held at `0.10.0`) | 4,294,967,296 (4 GiB), chosen as a backstop for the stories before `story:scripts-document-port`; reached after the use given above; that story ships with 2,147,483,648 (2 GiB), the sum above | `SIGABRT` (the probe's `as 268435456, alloc: exit 134 signal ABRT`) | `story:scripts-document-port` |
 | CPU seconds (`--cpu`) | with scripts only | the CPU time of a session's whole life, behind `surfd`'s 660 s per command and Q4's 5 s per document | 3,600 soft, 3,601 hard, chosen: 720 documents at Q4's wall clock | `SIGXCPU` at the soft value (`cpu soft 1 hard 2, spin: exit 152 signal XCPU`) | `story:scripts-document-port` |
 | open files (`--nofile`) | with scripts only | eight times the descriptors the session held after each page; not for sessions without scripts, because no measure covers every test and agent task (at 10 the second page failed though 8 were open after the first) | 64, chosen (the probe: 8 after each page; four pages loaded at 64) | no end: a load answers `page failed Unreachable`; at 8, the descriptors the session holds between requests, `go` answers `the session's system stopped` with exit status 3; at 7 `open` fails | `story:scripts-document-port` |
-| core size (`--core`) | every session | no core file: a core of a session holds its token and pages | 0 | no end; the workstation's core handler stored no core (`COREFILE none`) | `story:session-process-hardening` (a test reads it) |
+| core size (`--core`) | every session | no core file: a core of a session holds its token and pages; a limit of 1 lets a session that ends by a signal be seen without the wait for the host's core handler | 1 (0 where `surfd`'s own hard limit is 0) | no end; at 0 the workstation's core handler listed each end by a signal that dumps core and stored no core (`COREFILE none`); at 1 the kernel does not start a pipe handler, so the handler records nothing (0 of 15 such ends listed) | `story:session-process-hardening` (a test reads it) |
 | no new privileges (`setpriv --no-new-privs`) | every session | it cannot end a session that works today | `NoNewPrivs: 1` | no end | `story:session-process-hardening` (a test reads it) |
 | processes (`RLIMIT_NPROC`) | none | not set: it counts every process of the user, not the session's own, and a value below the user's count would stop the session from starting a thread; `ulimit -u` was `unlimited` on the build node | not set | not set | `story:scripts-document-port`, if a later review asks for one |
 
 The start, in `Config` with these shipped values (a test can name others), in two forms:
 
-- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=0:0 --
+- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=1:1 --
   <session program> <identity> <socket>`;
 - a session with scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit
-  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=0:0 -- <session program>
+  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=1:1 -- <session program>
   <identity> <socket>`.
+
+Where `surfd`'s own hard core limit is 0 the item is `--core=0:0`, because `prlimit` cannot raise
+a hard limit, and also where `/proc/self/limits` cannot be read or has no line `surfd` can read;
+the session keeps a limit of 0 and, with a pipe pattern, the wait. A process of the
+session can lower its soft limit to 0 and then dumps through a pipe handler again; it cannot raise
+the limit above 1.
 
 Which sessions: the decision on S5 binds a session with scripts, and only such a session gets the
 address-space, CPU and open-files bounds. A session without scripts gets what cannot end a session
@@ -1211,6 +1229,24 @@ microtask checkpoint after each script (Q2). It brings the first wave of `Date`,
 clock (Q6). The override table (HOST-112 and HOST-114 `pending slice 9`,
 `conformance/host/requirements.txt:112 @ 0.10.0`, `:114 @ 0.10.0`) and `Math.random` stay open.
 
+A `[SameObject]` collection (`childNodes`, `children`) is one snapshot object per node, refreshed
+when its getter is read after a write to a child list: all or nothing for a step the object
+refuses; an end of the run inside a refill ends the document's scripts. When the script froze or
+sealed it, made it non-extensible or made one of its indices non-configurable so that the
+refresh cannot complete, the object stays the old snapshot, whole, and the getter throws a
+`TypeError`, where a browser refuses that change on the collection itself. When the memory
+limit ends the run after the refill's first define, nothing is put back (that would need the
+Strings and wrappers the limit refused): the script ends `limit: memory` and each later script
+of the document `not run: memory`, so no script reads the object again. An `HTMLCollection`
+has no named properties (`collection["id"]` is `undefined`, `namedItem` answers), a deviation
+until a later story builds them.
+
+The sibling members find a node's index among its parent's children through a hint of two
+positions for each of the last eight parents; three readers on one parent miss it and scan at
+each read (measured on the reading slice: 500 children read by three cursors in turn cost
+180,250 steps, and 5,000 children end at the step limit), which is charged and never answers a
+wrong sibling; a later story decides the tree's own sibling positions.
+
 Requirement 11 at `0.8.0`. swell listed as open that "`string_units` and `string_units_in` copy
 without a memory charge" and that "The `call` and `new` instructions copy their argument list
 uncharged" (`docs/plan/second-batch.md:284-285 @ 0.8.0`). The copies a script controls, each
@@ -1284,7 +1320,8 @@ The crate graph of the first version:
 - `surf-script` ← nobody when `story:scripts-engine-dependency` lands; `surf-html-conformance`
   from `story:scripts-html-conformance`; `surf-session` from `story:scripts-document-port`. Each
   joins the closed list in its own change, and the lock rule of Q15 holds the list.
-- `surf-script` depends on `surf-html` for the tree and its write surface.
+- `surf-script` depends on `surf-html` for the tree and its write surface, and on `surf-url` for
+  the document's address (`DocumentInfo`, the base URL of `baseURI`).
 - `surf`, `surf-agent` and `surfd` link no swell (S7). `surf-session` depends on `surf`, `surfd`
   and `surf-agent` (`crates/session/Cargo.toml:20-33`), not the other way round; `surfd` depends
   on `surf-agent`, `surf-answer`, `surf-secret` and `surf-view` only

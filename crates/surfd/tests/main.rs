@@ -6,9 +6,11 @@
 mod adversary;
 mod adversary_2;
 mod adversary_controls;
+mod adversary_core;
 mod adversary_link;
 mod built;
 mod common;
+mod first_line;
 mod hardening;
 mod in_process;
 mod log;

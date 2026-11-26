@@ -102,7 +102,7 @@ pub use html::{HTML_DEFINITIONS, HtmlIdl, Skipped, cut_idl_blocks, extract_selec
 pub use model::{
     Argument, ConstValue, Counts, DefaultValue, Definition, DefinitionKind, DictionaryMember,
     ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Reference,
-    Type, TypeKind, Unresolved,
+    Type, TypeKind, Unresolved, definition_visits,
 };
 pub use parser::MAX_TYPE_DEPTH;
 pub use selection::{Note, Row, Selection, SelectionError, Slice};

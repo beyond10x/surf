@@ -26,3 +26,49 @@ tasks:
       vars: [DIR]
     cmds:
       - sh taskfiles/release-smoke.sh '{{.DIR}}' {{if .TARGET}}'{{.TARGET}}'{{end}}
+
+  release-static:
+    desc: Check that an unpacked Linux release archive holds static binaries, as the release workflow does (DIR=<dir> [IMAGE=<image>@sha256:<digest>]).
+    summary: |
+      Check that an unpacked Linux release archive holds static binaries, as the release workflow does.
+
+      Runs taskfiles/release-static.sh on DIR, the unpacked directory surf-<version>-<target>/
+      of a Linux release archive. For surf, surf-agent, surfd and surf-session it fails a binary
+      whose readelf -lW lists an INTERP row, whose readelf -d lists a (NEEDED) entry, or which
+      readelf cannot read. With IMAGE, an image named by digest, it then runs
+      surf-agent help --for-agent from the directory in that image with docker (DOCKER names
+      another program) and requires the version of the directory's name in the first line.
+      docs/releasing.md says when it runs.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/release.yml
+      release-static DIR=<dir>) and included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    requires:
+      vars: [DIR]
+    cmds:
+      - sh taskfiles/release-static.sh '{{.DIR}}' {{if .IMAGE}}--image '{{.IMAGE}}'{{end}}
+
+  release-static-test:
+    desc: Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant fourteen defects in copies of it.
+    summary: |
+      Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant fourteen defects in copies of it.
+
+      Runs taskfiles/release-static-test.sh. It writes five small ELF files with printf under
+      .out/release-static-test/ (static, static-pie, an INTERP header, a NEEDED entry, both),
+      stops when readelf does not read one of them as named, and runs 18 cases on directories
+      named surf-0.0.0-x86_64-unknown-linux-musl, each holding its exit status, a text of the
+      output and, where an image is given, the arguments a stand-in docker recorded. It builds
+      nothing and starts no container. Then it makes fourteen copies of the script with sed, one
+      planted defect each, runs on each copy the cases the defect names and case 1, and fails
+      when an edit finds no line, a copy leaves a case it names decided as expected, or a copy
+      decides case 1 otherwise.
+
+      SCRIPT names the script under test (default taskfiles/release-static.sh), so that a planted
+      defect can be run in a copy; with SCRIPT given the planted defects are not made. It prints
+      one line per case that is decided otherwise and fails, or one line with the count.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    vars:
+      SCRIPT: '{{.SCRIPT | default ""}}'
+    cmds:
+      - sh taskfiles/release-static-test.sh {{if .SCRIPT}}'{{.SCRIPT}}'{{end}}

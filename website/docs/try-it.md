@@ -26,7 +26,7 @@ Each [release](https://github.com/beyond10x/surf/releases) has an archive per ta
 On Linux:
 
 ```console
-$ version=0.9.0 target=x86_64-unknown-linux-musl
+$ version=0.10.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check

@@ -14,9 +14,29 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,397 tests** (1,845, and 552 of the TLS crates in a step of their own): 2,394 pass, and 3
+- **2,568 tests** (2,016, and 552 of the TLS crates in a step of their own): 2,565 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
+
+New with the core limit of a session process and the parser's depth limit on the tree, shipped in
+release `0.10.0`:
+
+- **A session's core limit is 1 byte.** Where `surfd` starts a session through
+  `/usr/bin/setpriv` and `/usr/bin/prlimit`, the session's core file size limit is 1 byte, so a
+  session that ends by a signal is seen without the wait for the host's core handler. On a
+  Linux host whose core pattern is a pipe, the kernel then does not start the handler when such
+  a session ends by a signal that dumps core: the host's crash list (`coredumpctl` under
+  systemd) has no entry for it, and the kernel writes at most one log line for it,
+  `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
+  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
+  started through them keeps a limit of 0, and the wait stays. A session started without them
+  keeps `surfd`'s own core limit.
+- **The HTML parser's depth limit bounds the tree.** Its limit of 512 holds the depth of the
+  document tree in every parse, also where misnested formatting tags or a `selectedcontent`
+  copy move nodes deeper; release `0.9.0` counted the stack of open elements instead. Its step
+  limit counts more of its work and is read inside each token, so a parse past it stops there
+  and names `Steps`. `surf` prints `note limit <document-id> Depth` or `Steps` where a limit
+  stopped a parse.
 
 New with the hardened start of a session process, shipped in release `0.9.0`:
 

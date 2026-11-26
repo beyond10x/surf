@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use surf_agent_tasks::process::END_BOUND;
+use surf_test_process::ended_within;
+
 fn helper() -> PathBuf {
     std::env::var_os("SURF_BIN_DIR")
         .map(PathBuf::from)
@@ -37,26 +40,16 @@ fn bounded(bound: &str, state: &Path, script: &str) -> Output {
         .expect("agent-tasks-serve runs")
 }
 
-/// Whether process `pid` still runs: in /proc and not a zombie.
-fn running(pid: u32) -> bool {
-    match fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Ok(stat) => !matches!(
-            stat.rsplit_once(')')
-                .and_then(|(_, rest)| rest.split_whitespace().next()),
-            Some("Z" | "X" | "x") | None
-        ),
-        Err(_) => false,
-    }
-}
-
-/// The PID the command wrote to `<state>/child`; it is sent SIGKILL if it still runs.
+/// The PID the command wrote to `<state>/child`, when that process has not ended within
+/// `END_BOUND`; it is then sent SIGKILL. Decided by a wait, never by one read: the helper waits
+/// for its group a bounded time only, and a process that is ending still reads as running.
 fn child_left(state: &Path) -> Option<u32> {
     let pid: u32 = fs::read_to_string(state.join("child"))
         .expect("the command wrote its child's PID")
         .trim()
         .parse()
         .unwrap();
-    if running(pid) {
+    if ended_within(pid, END_BOUND).is_err() {
         let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
         return Some(pid);
     }
@@ -126,4 +119,28 @@ fn the_model_script_asks_its_sh_for_nothing_outside_posix() {
         let found: Vec<&&str> = code.iter().filter(|line| line.contains(word)).collect();
         assert!(found.is_empty(), "{word:?} in {found:?}");
     }
+}
+
+/// A case of `child_left` that no other test of this file holds: a child that still runs at the
+/// first read and ends inside the bound is not left. Only a wait answers that; one read of the
+/// state takes the child for one left.
+#[test]
+fn a_child_that_ends_during_the_wait_is_not_left() {
+    let state = state("ends-during-the-wait");
+    let mut child = Command::new("/bin/sleep")
+        .arg("0.5")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("/bin/sleep starts");
+    fs::write(state.join("child"), format!("{}\n", child.id())).unwrap();
+    let left = child_left(&state);
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = fs::remove_dir_all(&state);
+    assert_eq!(
+        left, None,
+        "child_left took a child that ended within its bound for one left"
+    );
 }
