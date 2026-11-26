@@ -347,6 +347,9 @@ tasks:
         fresh elapsed_call_split_in_a_file_without_now_refused
         put "$file" 'fn a(s: std::time::Instant) {' '    assert!(s.elapsed' '        () < LIMIT);' '}'
         refused 2
+        fresh duration_since_in_a_file_without_now_refused
+        put "$file" 'fn a(s: std::time::Instant, e: std::time::Instant) {' '    assert!(e.duration_since (s) < LIMIT);' '}'
+        refused 2
         fresh checked_duration_since_refused
         test_fn '    let took = Instant::now().checked_duration_since(s).unwrap();' '    assert!(took < LIMIT);'
         refused 6
