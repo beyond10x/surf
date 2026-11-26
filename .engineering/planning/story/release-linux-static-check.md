@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:release-linux-static-check
 kind: story
-status: draft
+status: active
 title: Check in the release workflow that each Linux archive holds static binaries and runs one in a container
 summary: A script of its own, run by the workflow before the upload and by a workstation, fails a Linux archive whose binary has an INTERP header, a NEEDED entry or no ELF form, and runs surf-agent help --for-agent in an Alpine container named by digest; a gate test with made ELF files, a stand-in docker and twelve planted defects gives both sides of it.
 scope:
@@ -20,7 +20,10 @@ scope:
   path: taskfiles/release-static.sh
 - confidence: cited
   path: taskfiles/release.yml
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T07:31:43Z", actor: "human:operator", revision: 11}
+- {from: "proposed", to: "active", at: "2026-11-26T07:31:43Z", actor: "human:operator", revision: 12, executor: "agent:implementor"}
 ---
 ## Context
 
