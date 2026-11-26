@@ -8,8 +8,8 @@
 //! ```text
 //! selector-list      = complex-selector [ "," complex-selector ]*         4.1, 16
 //! complex-selector   = compound-selector [ combinator? compound-selector ]*  3.1, 16
-//! combinator         = ">"                       the child combinator, 15.2
-//!                    | whitespace alone          the descendant combinator, 15.1
+//! combinator         = ">"                       the child combinator, 14.2
+//!                    | whitespace alone          the descendant combinator, 14.1
 //! compound-selector  = [ type-selector? subclass-selector* ]!            3.1, 16
 //! type-selector      = ident                     a type selector, 5.1
 //!                    | "*"                       the universal selector, 5.2
@@ -32,14 +32,17 @@
 //! Outside the subset, and valid, a text is refused with a `SyntaxError` that says surf does not
 //! support it, naming the first such construct: a pseudo-class or a pseudo-element, recognised
 //! by its shape (a colon or two, an identifier, an argument in balanced parentheses skipped by
-//! token, its name and argument not validated), the combinators `+` and `~`, an attribute matcher
+//! token, its name and argument not validated; one colon before one of
+//! [`LEGACY_PSEUDO_ELEMENTS`] is a pseudo-element, section 16), the combinators `+` and `~`, an
+//! attribute matcher
 //! other than `=`, a flag after the value, a namespace prefix of `*` or of none, and the nesting
 //! selector `&`. A prefix that is an identifier is an undeclared namespace prefix (3.9) and not
 //! valid, as is `||`. A text with any fault of the grammar is not valid whatever precedes it
 //! (DOM 1.3, "scope-match a selectors string": a failure is a `SyntaxError`).
 //!
 //! The case rules are the HTML Standard's section "Case-sensitivity of selectors" (4.16.2, the
-//! Living Standard of 25 November 2026): a type name and an attribute name are put in ASCII lower
+//! Living Standard of 26 November 2026, commit `0162cee0c42a82267354d38fbc6a2503ee295b77`, as
+//! read): a type name and an attribute name are put in ASCII lower
 //! case for an element of the HTML namespace and then compared exactly, and compared as given
 //! for any other element; an attribute value is compared exactly, but ASCII case-insensitively
 //! on an HTML element for the names of [`SurfSelectors::CASE_INSENSITIVE_VALUES`]; `#id` and
@@ -69,14 +72,18 @@ pub(super) const TEXT_BYTES: usize = 4096;
 /// holds, counted after the parse.
 pub(super) const SIMPLE_SELECTORS: usize = 512;
 
+/// The four pseudo-elements of Level 2, which Selectors 16 parses as pseudo-elements also after
+/// one colon and never as pseudo-classes; their names are ASCII case-insensitive (3.6.1).
+const LEGACY_PSEUDO_ELEMENTS: [&str; 4] = ["before", "after", "first-line", "first-letter"];
+
 /// surf's members of `selectors`. It keeps nothing from one call to the next.
 pub struct SurfSelectors;
 
 impl SurfSelectors {
     /// The names of the attributes whose values a selector compares ASCII case-insensitively on
     /// an element of the HTML namespace: the list of the HTML Standard's section
-    /// "Case-sensitivity of selectors" (4.16.2, the Living Standard of 25 November 2026), in its
-    /// order, which is sorted.
+    /// "Case-sensitivity of selectors" (4.16.2, the Living Standard of 26 November 2026, commit
+    /// `0162cee0c42a82267354d38fbc6a2503ee295b77`, as read), in its order, which is sorted.
     pub const CASE_INSENSITIVE_VALUES: [&'static str; 46] = [
         "accept",
         "accept-charset",
@@ -719,6 +726,15 @@ impl Parser<'_> {
                     self.take(cx)?;
                     if *self.peek(cx, 0)? == Token::Colon {
                         self.take(cx)?;
+                        self.pseudo(cx)?;
+                        self.outside(Unsupported::PseudoElement);
+                        pseudo_element = true;
+                    } else if matches!(
+                        self.peek(cx, 0)?,
+                        Token::Ident(name) if LEGACY_PSEUDO_ELEMENTS
+                            .iter()
+                            .any(|legacy| name.eq_ignore_ascii_case(legacy))
+                    ) {
                         self.pseudo(cx)?;
                         self.outside(Unsupported::PseudoElement);
                         pseudo_element = true;

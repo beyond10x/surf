@@ -348,7 +348,7 @@ const CASES: &[Case] = &[
         "\"s1\"",
     ),
     case("Document.querySelectorAll", "qa(\"p.m\")", "\"\""),
-    // Selectors 15.1, descendant combinator.
+    // Selectors 14.1, descendant combinator.
     case("Document.querySelectorAll", "qa(\"div span\")", "\"s1\""),
     case("Document.querySelectorAll", "qa(\"body i\")", "\"i1\""),
     case(
@@ -356,7 +356,7 @@ const CASES: &[Case] = &[
         "qa(\"html section span\")",
         "\"s2\"",
     ),
-    // Selectors 15.2, child combinator.
+    // Selectors 14.2, child combinator.
     case("Document.querySelectorAll", "qa(\"div > p\")", "\"p1,p2\""),
     case("Document.querySelectorAll", "qa(\"div > span\")", "\"\""),
     case("Document.querySelectorAll", "qa(\"div>p>span\")", "\"s1\""),
@@ -804,7 +804,12 @@ var unsupported = [
   ["a:has(\")\")", "pseudo-class"],
   // A browser calls these two texts not valid: surf recognises a pseudo-class by its shape
   // and validates neither its name nor its argument, a deviation the rows name.
-  ["a:hovr", "pseudo-class"], ["a:nth-child(x y z)", "pseudo-class"]
+  ["a:hovr", "pseudo-class"], ["a:nth-child(x y z)", "pseudo-class"],
+  // Selectors 16: the four pseudo-elements of Level 2 written with one colon are
+  // pseudo-elements, never pseudo-classes, in any case of their names.
+  ["a:before", "pseudo-element"], ["a:after", "pseudo-element"],
+  ["a:first-line", "pseudo-element"], ["a:First-Letter", "pseudo-element"],
+  ["a:before:hover", "pseudo-element"], ["a:hover:before", "pseudo-class"]
 ];
 for (var i = 0; i < unsupported.length; i++) {
   var text = unsupported[i][0];
@@ -813,7 +818,8 @@ for (var i = 0; i < unsupported.length; i++) {
 }
 var invalid = ["", "a[", "a:", "a,", "a >", "> a", "a:hover[", "a b)", "[a=", "[a=\"x\ny\"]",
   "ns|a", "[ns|a]", "a || b", "#123", ".1", "a/**/b", "[a=1]", "a ( b", "[a~b]", "a::", ",a",
-  "a,,b", "[]", "[=b]", "[a=b c]", "a{", "a}", "[a=b]]", "*a", ".a div.", "a::before.b"];
+  "a,,b", "[]", "[=b]", "[a=b c]", "a{", "a}", "[a=b]]", "*a", ".a div.", "a::before.b",
+  "a:before.b", "a:after[x]", "a:first-letter#i"];
 for (var i = 0; i < invalid.length; i++) {
   var got = err(function () { document.querySelector(invalid[i]); });
   check(got === INVALID, JSON.stringify(invalid[i]) + ": " + got);
@@ -881,14 +887,20 @@ check(err(function () { document.querySelector(rep("p,", 300) + "a:hover," + rep
   UNSUPPORTED + "pseudo-class", "a construct before the 513th is named");
 "##,
         );
-        // The script that makes the call, its text made by an earlier one: the glue's step and
-        // copy, and the script's own few steps; the slice charges nothing before it refuses.
+        // The script that makes the call, its text made by an earlier one. The glue charges
+        // the call's step and, before the copy, a step for each 16 bytes of the text as the
+        // engine holds it, two bytes a code unit: 4,097 code units are 512 steps, so at least
+        // 513. The script's own few steps sit under the ceiling of 640, and the slice charges
+        // nothing before it refuses: its charge of the text, a step and one for each 16 bytes,
+        // would add 257 and pass the ceiling.
         let over = refusal_steps(runner, "G.over");
         checked(runner, r##"G.huge = rep("a", 1048576);"##);
-        // The glue's copy of 1,048,576 bytes, charged before the slice refuses the text.
+        // The glue's copy of 1,048,576 code units at 8 a step is 131,072 steps, charged before
+        // the slice refuses the text; the call and the script add a few, under 135,000.
         let huge = refusal_steps(runner, "G.huge");
         eprintln!("the call of 4,097 bytes: {over} steps; of 1,048,576 bytes: {huge} steps");
-        assert!(huge >= 65_536, "{huge}");
+        assert!((513..=640).contains(&over), "{over}");
+        assert!((131_072..135_000).contains(&huge), "{huge}");
     });
 }
 
@@ -1162,6 +1174,32 @@ fn the_selectors_read_the_tree_only_through_the_reads() {
         !rest.contains("children("),
         "selector_reads.rs reads a child list outside Frames::next"
     );
+}
+
+/// `selector_reads.rs` lends the members no reference into the tree and no context: no
+/// `pub(super) fn` of it has `&`, `Tree` or `Cx` in its return type, the rule the reading
+/// slice holds for `reads.rs`.
+#[test]
+fn the_selector_reads_answer_no_reference() {
+    let reads = include_str!("../src/dom/selector_reads.rs");
+    let mut found = Vec::new();
+    for (at, _) in reads.match_indices("pub(super) fn ") {
+        let rest = &reads[at..];
+        let signature = &rest[..rest.find('{').unwrap_or(rest.len())];
+        let returns = signature
+            .rfind("->")
+            .map_or("", |arrow| &signature[arrow + 2..]);
+        for word in ["&", "Tree", "Cx"] {
+            if returns.contains(word) {
+                found.push(format!(
+                    "selector_reads.rs: `{word}` in the return type of {:?}",
+                    signature.split_whitespace().collect::<Vec<_>>().join(" ")
+                ));
+            }
+        }
+    }
+    assert!(reads.matches("pub(super) fn ").count() >= 12);
+    assert!(found.is_empty(), "{found:#?}");
 }
 
 /// The nodes under `root` in tree order, `root` left out, read in Rust.
@@ -1482,7 +1520,9 @@ check(p.querySelectorAll("p > i").length === 20000, "20,000");
 
     /// 15b: the parse's charges for the text's bytes and for its tokens. Measured: 4,096 bytes
     /// 795 steps, 16 bytes 30 (a difference of 765: the glue's copy 510, `selector_text` 255);
-    /// 1,000 tokens 1,773, 2 tokens 775 (a difference of 998).
+    /// 1,000 tokens 1,773, 2 tokens 775 (a difference of 998). The floor of the bytes is 700:
+    /// the glue's copy of 4,080 more code units at 8 a step is 510, and the parse's 4,080 more
+    /// bytes at 16 a step are 255 more, so a parse that leaves the bytes out ends under it.
     #[test]
     fn the_parse_charges_bytes_and_tokens() {
         with_tree(
@@ -1525,7 +1565,7 @@ check(G.many.length === 3997 && G.one.length === 3997, "the second pair");
                 let bytes = calls[0].steps - calls[1].steps;
                 let tokens = calls[2].steps - calls[3].steps;
                 eprintln!("15b: {bytes} steps more for the bytes, {tokens} for the tokens");
-                assert!(bytes >= 500, "{bytes}");
+                assert!(bytes >= 700, "{bytes}");
                 assert!(tokens >= 990, "{tokens}");
             },
         );
