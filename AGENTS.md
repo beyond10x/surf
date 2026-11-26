@@ -365,8 +365,13 @@ above, and the list of standards itself was written from memory.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
     swell 0.8.0 agent under surf's limits, and a document's scripts over the generated DOM
     bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`); no
-    crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
-    reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
+    crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 232
+    tests in one test binary: `engine` 18 (3 of them ignored until swell reaches HOST-125,
+    HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,
+    `adversary_5` 7, `adversary_6` 5, `bindings` 18, `dom_reading` 48, `dom_reading_cost` 19,
+    `adversary_dom_reading` 17, `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11,
+    `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10 and `adversary_dom_reading_6` 12;
+    the modules `dom_attributes`, `dom_mutation`, `dom_selectors` and `parse_run` hold none yet.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
