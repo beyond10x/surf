@@ -52,7 +52,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 60
+revision: 61
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -810,8 +810,9 @@ the merged file and resolves what overlaps.
   story through `story:scripts-document-port`. This story reads the merged file.
 - `crates/script/tests/engine.rs`: this story (the pins at `:240-250`), `story:swell-0-9-0`
   (a dependency: three ignored tests at `:341-378` and the cases of its acceptance 3,
-  `swell-0-9-0.md:296,658`) and the draft `story:scripts-seeds-and-time-zone` (removes the
-  `#[ignore]` lines, `scripts-seeds-and-time-zone.md:16,37`, a different region). No new edge;
+  `swell-0-9-0.md:296,658`), `story:swell-0-12-0` (a dependency: it runs `time_zone`) and the
+  draft `story:scripts-seeds-and-time-zone` (removes the last `#[ignore]` line,
+  `scripts-seeds-and-time-zone.md:20,35`, a different region). The edge to the pin is declared;
   the story that merges second takes the merged file.
 - `crates/script/src/bindings.rs` is generated from `crates/webidl/selection.txt`,
   `crates/webidl/src/prelude.rs` and the generator (`crates/webidl/src/`, the files listed at
