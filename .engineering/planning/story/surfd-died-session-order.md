@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:surfd-died-session-order
 kind: story
-status: draft
+status: proposed
 title: Order the session's end and its child's line by an event in two surfd tests
 summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. The story makes the order by an event and changes no product file.
 scope:
@@ -10,7 +10,9 @@ scope:
   path: AGENTS.md
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 3
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 ---
 ## Context
 
