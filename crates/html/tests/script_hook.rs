@@ -1734,23 +1734,29 @@ fn each_entry_read_again_after_a_hook_run_is_a_step() {
 
 /// The page of the fourth review's red case with the default limits: 40,000 rounds of
 /// `<span><script>x</script>` (960 KB) with [`KeepOpen`] would read about 8 × 10^8 entries;
-/// the step limit (2^27) ends the parse at `Steps` after about 16,000 runs, within 10 s in a
-/// test build (1.4 s measured).
+/// the step limit (2^27) ends the parse at `Steps` after about 16,000 runs. The steps at that
+/// end lie in the window the limits document: more than `max_steps`, and fewer than
+/// `4 * max_nodes` past it. The parse runs on the test's own thread; the runner's 60 s bound
+/// is the test's bound.
 #[test]
 fn a_hook_that_keeps_every_element_open_ends_at_the_step_limit() {
     const ROUNDS: usize = 40_000;
-    let (send, receive) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let input = format!("<body>{}", "<span><script>x</script>".repeat(ROUNDS));
-        let start = std::time::Instant::now();
-        let tree = parse_document_with_hook(&input, &scripted(), &mut KeepOpen);
-        let _ = send.send((tree.stopped_by(), tree.steps(), start.elapsed()));
-    });
-    let (stopped, steps, elapsed) = receive
-        .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("the parse ends within 10 s");
-    eprintln!("stopped by {stopped:?}, {steps} steps, {elapsed:?}");
+    let input = format!("<body>{}", "<span><script>x</script>".repeat(ROUNDS));
+    let start = std::time::Instant::now();
+    let tree = parse_document_with_hook(&input, &scripted(), &mut KeepOpen);
+    let (stopped, steps) = (tree.stopped_by(), tree.steps());
+    eprintln!(
+        "stopped by {stopped:?}, {steps} steps, {:?}",
+        start.elapsed()
+    );
     assert_eq!(stopped, Some(Limit::Steps));
+    let limits = Limits::default();
+    assert!(
+        limits.max_steps < steps && steps < limits.max_steps + 4 * limits.max_nodes,
+        "{steps} steps at the end, outside {} < steps < {}",
+        limits.max_steps,
+        limits.max_steps + 4 * limits.max_nodes
+    );
 }
 
 /// Each scope boundary the adoption agency's changes to the stack of open elements visit is a
