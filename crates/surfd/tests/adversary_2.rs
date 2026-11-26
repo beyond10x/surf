@@ -127,18 +127,22 @@ fn a_ready_timeout_of_a_live_session_carries_no_note() {
     assert_eq!(answer.text, "", "{answer:?}");
 }
 
-/// The session process aborts at once; a child it started writes a first line that is not
-/// `ready` once the session shell has ended. The session died by a signal `surfd` did not send
-/// before its first byte (`docs/agent-answer.md`, "from the session's start on"): the answer
-/// names it, and not `bound cpu` (`SIGABRT`).
+/// The session shell ends itself by `SIGUSR1` at once; a child it started writes a first line
+/// that is not `ready` once the session shell has ended. The session died by a signal `surfd`
+/// did not send before its first byte (`docs/agent-answer.md`, "from the session's start on"):
+/// the answer names it, and not `bound cpu`.
+///
+/// The signal is one that dumps no core: after a signal that dumps core the shell is waitable
+/// only once the host's core handler has taken the dump, which can take seconds under load.
 ///
 /// The order is made by an event, not a clock: the child reads `/proc/<pid>/stat` of the shell
 /// (`$$`) every 10 ms until the state after the last `)` is `Z` (ended, its status not yet
-/// collected) or the file is gone, and only then writes. A closed pipe is no such event: the
-/// kernel closes a process's descriptors before the process is waitable. After 300 turns the
-/// child gives up: it makes the file `gave-up` and exits without a line, an end whose answer is
-/// the one asserted here, so the case fails on that file. The ready timeout of 30 s lets the 300
-/// turns end first; a green run answers long before it.
+/// collected) or the file is gone, and only then writes. A read that fails is taken as the
+/// shell's end. A closed pipe is no such event: the kernel closes a process's descriptors
+/// before the process is waitable. After 300 turns the child gives up: it makes the file
+/// `gave-up` and exits without a line, an end whose answer is the one asserted here, so the
+/// case fails on that file. The ready timeout of 30 s lets the 300 turns end first; a green run
+/// answers long before it.
 #[test]
 fn another_first_line_after_the_session_died_by_its_own_signal_names_it() {
     let dir = TestDir::new();
@@ -160,7 +164,7 @@ fn another_first_line_after_the_session_died_by_its_own_signal_names_it() {
              if [ \"$i\" -ge 300 ]; then : > {gave_up}; exit 0; fi\n\
              printf 'x\\n'\n\
              ) &\n\
-             kill -s ABRT $$\n",
+             kill -s USR1 $$\n",
             gave_up = quoted(&gave_up),
         ),
     );
@@ -170,7 +174,7 @@ fn another_first_line_after_the_session_died_by_its_own_signal_names_it() {
     assert_eq!(answer.reason.as_deref(), Some(BEFORE_READY), "{answer:?}");
     assert_eq!(
         answer.text,
-        died_with(&answer, "note ended: signal SIGABRT")
+        died_with(&answer, "note ended: signal SIGUSR1")
     );
     assert!(
         !gave_up.exists(),
@@ -178,22 +182,40 @@ fn another_first_line_after_the_session_died_by_its_own_signal_names_it() {
     );
 }
 
-/// The session process aborts at once; a child it started holds its standard output 3 s, past
-/// the ready timeout of 2 s and within the kill grace of 4 s. The answer names `SIGABRT`.
+/// The session shell ends itself by `SIGUSR1` at once; a child it started holds its standard
+/// output until `surfd` has collected the shell at the ready timeout of 2 s. The answer names
+/// `SIGUSR1`.
 ///
-/// The order is one of clocks: the ready timeout starts inside `open` right after the spawn,
-/// and a test cannot hold it back. The child must hold the output past the ready timeout (a
-/// child that lets go earlier takes the path of a session that wrote nothing) and let go within
-/// `abandon`'s wait of the kill grace. Three margins: the shell has 2 s to end before the ready
-/// timeout runs out, the timeout has 1 s before the child lets go, and the wait has 3 s left
-/// after that. The case lasts about 3 s.
+/// The signal is one that dumps no core: after a signal that dumps core the shell is waitable
+/// only once the host's core handler has taken the dump, which can take seconds under load.
+///
+/// One order is a clock: the shell must have ended before the ready timeout, which starts
+/// inside `open` right after the spawn and which a test cannot hold back; the margin is the
+/// timeout of 2 s for a shell that ends in milliseconds. The other order is an event: the child
+/// must hold the output past the ready timeout (a child that lets go earlier takes the path of
+/// a session that wrote nothing) and let go within `abandon`'s wait. At the timeout `abandon`
+/// collects the ended shell, and from then on `/proc/<pid>/stat` of the shell (`$$`) is gone.
+/// The child tests for that file every 10 ms and exits once it is gone; after 1,000 turns it
+/// gives up and exits, after `abandon`'s wait, and the answer is red. The second margin: the
+/// child must see the file gone and exit within the kill grace of 2 s, against a turn of 10 ms
+/// and the start of one `sleep`. The case lasts about 2 s.
 #[test]
 fn a_ready_timeout_after_the_session_died_by_its_own_signal_names_it() {
     let dir = TestDir::new();
     let mut config = config(&dir);
     config.session_ready_timeout = Duration::from_secs(2);
-    config.kill_grace = Duration::from_secs(4);
-    config.session_program = script(&dir, "session", "( /usr/bin/sleep 3 ) &\nkill -s ABRT $$\n");
+    config.session_program = script(
+        &dir,
+        "session",
+        "(\n\
+         i=0\n\
+         while [ -e /proc/$$/stat ] && [ \"$i\" -lt 1000 ]; do\n\
+         /usr/bin/sleep 0.01\n\
+         i=$((i + 1))\n\
+         done\n\
+         ) &\n\
+         kill -s USR1 $$\n",
+    );
     let _daemon = start(config);
     let answer = call(&dir, &open_request(false));
     assert_eq!(answer.status, 3, "{answer:?}");
@@ -204,7 +226,7 @@ fn a_ready_timeout_after_the_session_died_by_its_own_signal_names_it() {
     );
     assert_eq!(
         answer.text,
-        died_with(&answer, "note ended: signal SIGABRT")
+        died_with(&answer, "note ended: signal SIGUSR1")
     );
 }
 
