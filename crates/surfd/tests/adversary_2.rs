@@ -303,7 +303,10 @@ const KILL_GRACE_OF_SURFD: Duration = surfd::KILL_GRACE;
 fn sigxcpu_without_a_cpu_bound_of_surfd_reads_no_bound_also_with_scripts() {
     let dir = TestDir::new();
     let mut config = config(&dir);
-    config.script_session_bounds = vec!["--nofile=64:64".to_string(), "--core=0:0".to_string()];
+    config.script_session_bounds = vec![
+        "--nofile=64:64".to_string(),
+        config.session_bounds[0].clone(),
+    ];
     let daemon = start(config);
     let answer = call(&dir, &open_request(true));
     assert_eq!(answer.status, 0, "{answer:?}");
@@ -345,12 +348,23 @@ fn sigxfsz_reads_no_bound() {
 /// `surfd` started without `setpriv` (a path naming no file): a session without scripts runs
 /// without either program and so without a CPU bound; ended by `SIGXCPU` it reads no `bound`.
 /// No case before this one had a session without the programs end by a signal, so none read
-/// `cpu_bound` of `open_session` for it (`is_some_and` there turned to `is_none_or`).
+/// `cpu_bound` of `open_session` for it (`is_some_and` there turned to `is_none_or`). The
+/// session program is a sh script that sets the core argument `Config::new` chose on itself with
+/// `prlimit --pid` and execs the stand-in: that limit is the test's own, not one of `surfd`.
 #[test]
 fn sigxcpu_to_a_session_started_without_the_programs_reads_no_bound() {
     let dir = TestDir::new();
     let mut config = config(&dir);
     config.setpriv = dir.path.join("no-setpriv");
+    config.session_program = script(
+        &dir,
+        "session",
+        &format!(
+            "/usr/bin/prlimit {} --pid $$\nexec {} \"$@\"\n",
+            config.session_bounds[0],
+            quoted(&stand_in_program())
+        ),
+    );
     let daemon = start(config);
     let session = open(&dir);
     send(dir.pid_of(&session.id), "XCPU");

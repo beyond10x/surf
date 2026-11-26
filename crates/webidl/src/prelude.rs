@@ -436,8 +436,8 @@ pub fn throw(cx: &mut DomCx<'_, '_>, exception: &DomException) -> Abrupt {
 /// `catch` and no `finally` of the page runs after the limit, and the runner reads the
 /// recorded limit as the script's end (`Runner::document_end`). Should the charge answer `Ok`,
 /// the function answers `Terminated(Interrupted)` itself, which swell takes and makes the
-/// run's termination (`object/builtin_function.rs:497 @ 0.8.0`); that answer works at the tag
-/// but swell does not promise it there.
+/// run's termination with the agent alive (`object/builtin_function.rs:876 @ 0.10.0`); swell
+/// promises that answer since `0.9.1` (HOST-217, `conformance/host/requirements.txt:217 @ 0.10.0`).
 pub fn end_with_limit(cx: &mut DomCx<'_, '_>, limit: Limit) -> Abrupt {
     cx.state.limit = Some(limit);
     cx.state.interrupt.interrupt();

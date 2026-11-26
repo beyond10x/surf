@@ -9,10 +9,13 @@ cited text with its date or commit. A later story that finds a value wrong says 
 report, and the coordinating agent revises the note; Q4, Q5 and Q11 hold starting values that
 `story:scripts-parse-run` and `story:scripts-document-port` measure again.
 
-Every `file:line` of surf is read at the base of this note, `main` at `29945f5`. Every fact about
-swell is read at its tag `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be` (2026-11-24),
-with `git show 0.8.0:<path>` and `git grep -n <pattern> 0.8.0 -- <paths>`, and is written
-`<path>:<line> @ 0.8.0`.
+Every `file:line` of surf is read at the base of this note, `main` at `29945f5`.
+swell is read at its tag `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f` (2026-11-25),
+the tag `story:swell-0-9-0` pins, with `git show <tag>:<path>` and `git grep -n <pattern> <tag> --
+<paths>`, and a fact is written `<path>:<line> @ <tag>`. A citation names its tag: one still
+written `@ 0.8.0` was read at the tag `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be`
+(2026-11-24), and is true there; the sentences the tag `0.10.0` made false are rewritten and cite
+`@ 0.10.0`.
 
 The texts read, all fetched on 2026-11-24:
 
@@ -25,7 +28,7 @@ The texts read, all fetched on 2026-11-24:
 | The Cargo Book, "Profiles" | `https://doc.rust-lang.org/cargo/reference/profiles.html`, sha256 `8ec081e473b74d6b73b5b587ed6e2e7e9f586b9788c905e5949c5bfae2c1d51a` |
 | Apache License 2.0 | `https://www.apache.org/licenses/LICENSE-2.0.txt`, sha256 `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` |
 | GitHub's runner images | `actions/runner-images` `README.md` and `images/ubuntu/Ubuntu2604-Readme.md` at `main` (sha256 `7d8b4625300a10d13cc52db90c92462b1df475fce80247dffca2101e92926d78`, `57a912f70eb971f6d88fa55efbaa926ea45acd8f051f7469cb0663ab10b85d1d`); Ubuntu's package pages of `util-linux` in `resolute` |
-| swell | tag `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be`, `https://github.com/beyond10x/swell` |
+| swell | tag `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, read on 2026-11-25; the citations `@ 0.8.0` at tag `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be`; `https://github.com/beyond10x/swell` |
 
 Section names of the HTML Standard below are its anchors on `https://html.spec.whatwg.org/multipage/`;
 the numbers (4.12.1.1, 13.2.6.4.8) are those of the snapshot above. Steps of "prepare the script
@@ -33,7 +36,9 @@ element" are numbered as the snapshot numbers its ordered list: 38 top-level ste
 list inside step 10 not counted.
 
 The probes are programs that are never committed: a cargo package under `.out/probes/swell-limits/`
-with a `[workspace]` table of its own and swell as a git dependency at `0.8.0`, built with `slot
+with a `[workspace]` table of its own and swell as a git dependency at `0.8.0` (the run of Q13
+that shows requirement 11 held was built against the tree of the tag `0.9.0`, `git archive
+0.9.0`), built with `slot
 cargo build --locked --manifest-path .out/probes/swell-limits/Cargo.toml` (and `--release`) and
 run as `.out/probes/swell-limits/target/<profile>/swell-limits-probe <mode>`; and two POSIX sh
 scripts, `.out/probes/session-bounds.sh` and `.out/probes/session-ends.sh`, which measure and wait and so start without `slot` (`sh
@@ -120,7 +125,7 @@ numbers; the numbers below are this note's, and its 5 and 6 are one paragraph of
 
 | n | step | first version |
 |---|---|---|
-| 1 | perform a microtask checkpoint if no speculative parser and the execution context stack is empty | left out: no promise and no job exist before swell's slice 10 (HOST-192 to HOST-200 are `pending slice 10`, `conformance/host/requirements.txt:192-200 @ 0.8.0`), so the queue is always empty |
+| 1 | perform a microtask checkpoint if no speculative parser and the execution context stack is empty | taken in effect: the runner performs a checkpoint after each script and clears the queue after a limit, so the queue is empty at every end tag (decision 6 of `story:swell-0-9-0`); no call of its own (below the table) |
 | 2 | let script be the current node | taken |
 | 3 | pop the current node | taken |
 | 4 | switch to the original insertion mode | taken |
@@ -131,6 +136,51 @@ numbers; the numbers below are this note's, and its 5 and 6 are one paragraph of
 | 9 | decrement the nesting level; at zero, clear the parser pause flag | left out: the parser never pauses; the hook returns before parsing goes on |
 | 10 | restore the insertion point | left out: the insertion point |
 | 11 | a pending parsing-blocking script: pause when nested, queue a task in the fragment case, else execute the pending parsing-blocking scripts (which spins the event loop) | left out: no pending parsing-blocking script exists, because external scripts are not run (step 35) and no style sheet blocks scripts (step 38.2, surf loads none); spinning the event loop does not arise |
+
+The microtask checkpoint (`story:swell-0-9-0`; swell `0.10.0` runs promises, `async` functions
+and their jobs, HOST-192 to HOST-200 with a test, `conformance/host/requirements.txt:192-200 @
+0.10.0`). "Run a classic script" (`#run-a-classic-script`) calls "clean up after running script"
+(`#clean-up-after-running-script`) after the script ran and after it threw, a parse error
+included (steps 6, 8 and 9), and that step performs a microtask checkpoint when the execution
+context stack is empty (its step 3). The runner (`Runner::evaluate`) does so: after a script
+that ended `ran`, `threw` or `refused`, once the script's end, its steps and its error site are
+read, it calls `Agent::perform_microtask_checkpoint()`, one entry of swell's with a step budget
+of its own, `steps_per_entry` (HOST-193), and adds that entry's `last_entry_steps()` to the
+document's total (HOST-197); the wall clock ends a checkpoint as it ends a script (HOST-198).
+Before it reads a thrown value and before the checkpoint, the runner asks whether the wall clock
+ran out or the interrupt is set; if so, the script ends at that limit and no checkpoint runs, and
+it asks again after a checkpoint that emptied the queue (Q4).
+The checkpoint is a step of running that script, so its end is the script's end:
+`Normal` leaves it, `Terminated(StepBudget)`, `Terminated(MemoryBudget)` and
+`Terminated(Interrupted)` make it `limit: steps-per-script`, `limit: memory` and `limit:
+wall-clock`, a DOM limit a job reached makes it that limit's word (the rule of Q4), and
+`Terminated(EngineFault)`, a `Throw` (which the checkpoint never answers,
+`crates/swell/src/host/agent.rs:765-769 @ 0.10.0`) or `Err(HostError::Faulted)` (on a faulted
+agent, `agent.rs:752 @ 0.10.0`) make it `faulted`. After `limit:` or `faulted` no checkpoint
+runs, and the script count does not rise for one. After any end `limit: <word>`, of a script or
+of its checkpoint, the runner calls `Agent::clear_microtasks()` (HOST-200), which drops every
+queued job unrun. No script code runs between two scripts of a document, so the queue is empty
+at every `script` end tag, and step 1 above is taken with no call of its own.
+
+Deviation from HTML: a promise job that ends in a throw is not reported. HostEnqueuePromiseJob
+(`#hostenqueuepromisejob`, step 2.4) reports the exception; surf keeps swell's default
+`host_clean_up_after_job`, and the script ends as it ended (`story:scripts-job-errors`, draft,
+holds the record of it). Deviation from HTML: a rejected promise no handler took is not
+notified. HTML's HostPromiseRejectionTracker appends it to the global's about-to-be-notified
+list, and "notify about rejected promises" (step 4 of "perform a microtask checkpoint") fires
+`unhandledrejection`; surf keeps swell's default `host_promise_rejection_tracker`, which does
+nothing, and fires no event. Deviation from HTML: the queue is cleared after a limit. HTML stops
+a script without clearing the microtask queue, and swell's note leaves the clear to the host
+("The engine drops none of them: HTML stops a script without clearing the microtask queue",
+`docs/design/host-interface.md:1211-1212 @ 0.10.0`); jobs a script queued before its limit are
+that script's work, and run by the next script's checkpoint they would spend its budget
+(`.engineering/planning/epic/scripts-in-a-page.md`, "The gaps"). So a script element may spend
+two entries' steps, its own and its checkpoint's: one checkpoint is one outermost entry with one
+step budget, however many jobs it runs, each job's calls nested in it
+(`crates/swell/src/host/agent.rs:738-739`, `:963-964 @ 0.10.0`). What the code enforces at this
+tip: `steps_per_entry` for each of the two entries, which stays one number (Q4), and the wall
+clock over all of them. The document's step total (`RunnerLimits::steps_per_runner`) is counted
+(`Runner::steps`) but no caller enforces it yet; `story:scripts-document-port` does.
 
 The steps of "prepare the script element" (4.12.1.1) for an element of the first table:
 
@@ -252,8 +302,9 @@ Settled: the flag, the two insertion modes (HTML Standard 13.2.6.4.4 `#parsing-m
 
 One agent per document (Q5). The agent's seven limits are fixed when it is created
 (`Limits`, `crates/swell/src/host/limits.rs:12-28 @ 0.8.0`; no call changes them after
-`Agent::new`), so a limit of the document is held between two scripts: after each script surf
-adds `last_entry_steps()` to the document's total and counts the script, and a later script
+`Agent::new`), so a limit of the document is held between two scripts: after each script and
+after its microtask checkpoint (Q2) surf adds `last_entry_steps()` to the document's total,
+counts the script once, and a later script
 starts only while each total is under its limit. A DOM write over a parser limit ends its script
 where it is reached: the bindings note the limit's word in the host value, set the
 `InterruptHandle` (`crates/swell/src/host/agent.rs:359 @ 0.8.0`) and read it at once with
@@ -262,7 +313,51 @@ where it is reached: the bindings note the limit's word in the host value, set t
 for the run (HOST-72), so no `catch` and no `finally` of the script runs after the limit. The
 session records the noted word, not `wall-clock`, whatever the entry answered, but for `limit:
 memory` and `faulted`, which keep their own word; the note is cleared and the interrupt withdrawn
-after the entry (`Runner::document_end`, `bindings::end_with_limit`).
+after the entry (`Runner::document_end`, `bindings::end_with_limit`). Since swell `0.9.1` an
+interrupt set by a host function that then throws ends the run the same way, in
+`Terminated(Interrupted)` with no `catch` reached and the flag clear after (HOST-216), and a host
+function may answer `Terminated(Interrupted)` itself, which ends the run with the agent alive
+(HOST-217; `conformance/host/requirements.txt:216-217 @ 0.10.0`). A limit a promise job reaches
+in the checkpoint after a script ends that script with the limit's word (Q2).
+
+An interrupt that is set when a script ends is the script's end (`Runner::evaluate`). Once the
+script's run answered, a normal end or a throw, the runner asks whether the wall clock ran out or
+the interrupt is set, with `InterruptHandle::is_set`, which reads the flag without taking it
+(`crates/swell/src/host/interrupt.rs:28-31 @ 0.10.0`); swell takes it, clears it and ends the run
+in `Terminated(Interrupted)`, at the start of every outermost entry, at each charge of steps and
+in the interpreter's own checks (`crates/swell/src/host/agent.rs:965-993 @ 0.10.0`,
+`crates/swell/src/interp/budget.rs:34-41 @ 0.10.0`). If so, the script ends `limit: wall-clock`,
+or with the limit the bindings recorded (the rule above); no text of a thrown value is read, no
+checkpoint runs, the queue is cleared and the flag withdrawn. A run that throws can answer with
+the flag set: a getter of the bindings that sets it, and then throws or is followed by a
+`throw`, meets no read of it (the tests of `crates/script/tests/run_end.rs`). A run that ends
+normally has the flag taken by swell's read at the script's return; at that end, and at any end,
+the wall clock's thread can set the flag or the clock can run out after swell's last read, and
+the runner's question takes that case. The read of a thrown `DOMException`'s text is a run of
+engine calls, and the first takes a flag set after the question: that read answers that the run
+ended, and the script ends as above, not with a record without a message
+(`Runner::exception_text`). After a checkpoint that emptied the queue the runner asks again. The
+checkpoint reads the flag at its start and before it takes each job off
+(`crates/swell/src/host/agent.rs:747`, `:760`, `:965-973`, `crates/swell/src/host/jobs.rs:295-298
+@ 0.10.0`); after a job's function answered it reads it when that function is a script function,
+and not when it is a host function (`crates/swell/src/ops/promise.rs:436-500`,
+`crates/swell/src/host/jobs.rs:387-411 @ 0.10.0`). So a last job whose function is a host
+function, or the clock run out after the last read, ends the script `limit: wall-clock` by that
+question.
+
+Two of these checks are a second line: at `0.10.0` they never decide an end alone, and they
+stay. The question before the read of a thrown value: without it the read's first engine call,
+or the question before the checkpoint, gives the same end; it keeps the rule that no text is
+read after an interrupt. The flag half of the question before the checkpoint: the checkpoint's
+start takes a set flag and ends at the wall clock the same way, so there only the clock half
+decides. Both decide if a later tag of swell changes where the engine reads the flag.
+
+No script inherits an interrupt: after every script's end, whatever its word, `Runner::evaluate`
+withdraws a set flag in one place before it returns, and no way out of a script returns around
+it (a limit, `faulted`, `not run`, a parse error). The end word of a limit stays what swell or
+the bindings answered. A clock that ran out is known by the clock, not by the flag, so the next
+script of the document is `not run: wall-clock` when the clock ran out (the table's row), and a
+flag set while the clock had not run out leaves the next script to run.
 
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,
@@ -299,17 +394,17 @@ with the reason.
 
 | limit | value | probe command | output line | outcome when reached |
 |---|---|---|---|---|
-| `steps_per_entry` (one script, with every nested entry) | 10,000,000, chosen: about half a second of work per script in release | `R limits` and `T limits` | `step budget 10000000: terminated StepBudget after 0.464 s, last_entry_steps 10000000` (release); `... after 7.358 s ...` (test profile, where the wall clock of 5 s ends a script first; a test gives limits of its own). Measured consequences (`dom_reading_cost::an_ordinary_page`): one `documentElement.textContent` read of a page of 50,003 nodes and 950,000 bytes of text costs 168,771 steps, so one script holds 59 such reads; `getElementsByTagName('*')` walked by index over 25,003 elements costs 800,131 steps | the script: `limit: steps-per-script` |
-| `memory_bytes` (the agent's heap over the document's life) | 67,108,864 (64 MiB), swell's test value (`host.rs:73 @ 0.8.0`) | `R limits` | `realm heap_bytes 202424`; `constants ... BINDINGS_REALM_HEAP_BYTES 506112` (the constant from the first round, on the build node) | the script: `limit: memory`; then the row "after `Terminated(MemoryBudget)`". It does not bound the copies swell lists as open (`docs/plan/second-batch.md:284-285 @ 0.8.0`): the address-space backstop of Q11 is their only bound, and requirement 11 asks swell to charge them (Q13, Q18) |
+| `steps_per_entry` (one entry with every nested entry; a script element spends at most two entries, the script and its checkpoint, Q2) | 10,000,000, chosen: about half a second of work per script in release | `R limits` and `T limits` | `step budget 10000000: terminated StepBudget after 0.464 s, last_entry_steps 10000000` (release); `... after 7.358 s ...` (test profile, where the wall clock of 5 s ends a script first; a test gives limits of its own). Measured consequences (`dom_reading_cost::an_ordinary_page`): one `documentElement.textContent` read of a page of 50,003 nodes and 950,000 bytes of text costs 168,771 steps, so one script holds 59 such reads; `getElementsByTagName('*')` walked by index over 25,003 elements costs 800,131 steps | the script: `limit: steps-per-script` |
+| `memory_bytes` (the agent's heap over the document's life) | 67,108,864 (64 MiB), swell's test value (`host.rs:73 @ 0.8.0`) | `R limits` | `realm heap_bytes 202424`; `constants ... BINDINGS_REALM_HEAP_BYTES 506112` (the constant from the first round, on the build node) | the script: `limit: memory`; then the row "after `Terminated(MemoryBudget)`". The copies swell held uncharged at `0.8.0` (`docs/plan/second-batch.md:284-285 @ 0.8.0`) are charged to it at `0.10.0` (HOST-215, `conformance/host/requirements.txt:215 @ 0.10.0`; requirement 11, Q13 and Q18) |
 | `frame_depth` | 10,000, swell's test value (`host.rs:74 @ 0.8.0`) | `T limits` | `recursion frames on a stack of min_stack_bytes: throw RangeError "frame_depth exceeded"` | a `RangeError` the script may catch; uncaught, the script: `threw RangeError` |
 | `reentry_depth` | 256, swell's test value (`host.rs:75 @ 0.8.0`) | `T limits` | `recursion json-replacer on a stack of min_stack_bytes: throw RangeError "reentry_depth exceeded"` | a `RangeError`; uncaught: `threw RangeError` |
 | `parser_nesting` | 1,000, swell's test value (`host.rs:76 @ 0.8.0`) | `T limits` | `min_stack_bytes 4006656` (the parser's need at 1,000 levels is inside it, Q5) | a `SyntaxError` naming `parser_nesting` (`crates/swell/src/host/limits.rs:22 @ 0.8.0`), not a refusal (`crates/swell/src/host/agent.rs:266-275 @ 0.8.0`): `threw SyntaxError` |
-| `string_length` | 16,777,216 (2^24), chosen: one String at most 32 MiB of UTF-16, half of `memory_bytes` (swell's tests use 2^30, `host.rs:77 @ 0.8.0`) | `R limits` | `limits Limits { steps_per_entry: 10000000, memory_bytes: 67108864, frame_depth: 10000, reentry_depth: 256, parser_nesting: 1000, string_length: 16777216, bigint_bits: 1048576 }` | a `RangeError`; uncaught: `threw RangeError`. The engine applies it to a String its own operations create; the bindings' glue applies it to a String a DOM member answers, before `Cx::new_string`, with the engine's message (`the string would be longer than string_length`). It does not bound the copies swell lists as open (Q13) |
+| `string_length` | 16,777,216 (2^24), chosen: one String at most 32 MiB of UTF-16, half of `memory_bytes` (swell's tests use 2^30, `host.rs:77 @ 0.8.0`) | `R limits` | `limits Limits { steps_per_entry: 10000000, memory_bytes: 67108864, frame_depth: 10000, reentry_depth: 256, parser_nesting: 1000, string_length: 16777216, bigint_bits: 1048576 }` | a `RangeError`; uncaught: `threw RangeError`. The engine applies it to a String its own operations create; the bindings' glue applies it to a String a DOM member answers, before `Cx::new_string`, with the engine's message (`the string would be longer than string_length`). |
 | `bigint_bits` | 1,048,576 (2^20), swell's test value (`host.rs:78 @ 0.8.0`) | `R limits` | the same `limits` line | a `RangeError`; uncaught: `threw RangeError` |
 | steps per document, summed from `last_entry_steps()` | 50,000,000, chosen: five scripts at `steps_per_entry` | `R limits` | `loop run 0: true after 1.000 s, 19980802 steps, 19978480 steps/s` (2.4 to 2.5 s for the sum at those rates) | the script whose steps take the sum to it keeps its own end; each later script: `not run: steps-per-document` |
 | scripts run per document | 1,000, chosen: it bounds the records of Q7, at most 1,000 per document; the steps, memory and wall clock bound the work already | none: a choice, not a measurement | none: `story:scripts-parse-run` measures again whether a page with more scripts reaches it | the 1,001st script element and each later one: `not run: scripts-per-document` |
 | bytes of one script's source (UTF-8, as the tree holds it) | 524,288 (512 KiB), measured: the largest power of two of the sweep that parsed | `R limits` (the first round's parse sweep, on the build node) | `parse var source of 524260 bytes, 27324 statements, memory_bytes 64 MiB: parsed in 0.106 s, heap_bytes after 11713890`, and `parse var source of 1048540 bytes, 53538 statements, memory_bytes 64 MiB: terminated MemoryBudget in 0.155 s, heap_bytes after 202424` | that script, not parsed: `limit: source-bytes`; later scripts run |
-| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script: `limit: wall-clock`; each later script: `not run: wall-clock`. The interrupt is taken between member calls, not inside one: one call of a walking member of the bindings is linear in the nodes it visits and in the bytes and attributes it reads, which the parser's node bound (`max_nodes`) and its bound of stored bytes (`max_stored_bytes`) bound, and in the code units of a String argument it copies, which `string_length` bounds |
+| wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script, and a script that ends while the clock ran out or the interrupt is set: `limit: wall-clock`; each later script: `not run: wall-clock`. The interrupt is taken between member calls, not inside one: one call of a walking member of the bindings is linear in the nodes it visits and in the bytes and attributes it reads, which the parser's node bound (`max_nodes`) and its bound of stored bytes (`max_stored_bytes`) bound, and in the code units of a String argument it copies, which `string_length` bounds |
 | parser: input bytes (`crates/html/src/limits.rs:17-21`) | 16,777,216, the parser's | none: a script adds no input | `crates/html/src/limits.rs:103` (`max_input_bytes: 16 * 1024 * 1024`) | not reached by a script: the first version has no `document.write`; parsing stops as today |
 | parser: depth | 512, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:104` (`max_depth: 512`) | a write that would nest an element deeper: refused, the script: `limit: depth` |
 | parser: nodes | 1,048,576, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:105` (`max_nodes: 1024 * 1024`) | a write that would make one more node: refused, the script: `limit: nodes` |
@@ -317,8 +412,8 @@ with the reason.
 | selector text of `querySelector`, `querySelectorAll`, `closest`, `matches` and `webkitMatchesSelector` | 4,096 bytes of UTF-8 as given and 512 simple selectors, chosen (`story:scripts-dom-selectors`). The glue charges the call and the copy of the argument; the slice charges the parse (`1 + bytes / 16`, a step a token, a type or attribute name's bytes once), a step a node the walk visits, and the matcher's gate, chain, memo and cells, each before the work | none: a choice, not a measurement | `crates/script/src/dom/selectors.rs` (`TEXT_BYTES`, `SIMPLE_SELECTORS`) | a `SyntaxError` whose message says surf does not support the selector, naming `text over 4096 bytes` or `more than 512 simple selectors`; a search the steps end: `limit: steps-per-script` |
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:107` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:108` (`max_steps: 1 << 27`) | counts tree construction's scans, not a script's writes; read inside each token, before each entry of a scan of the stack of open elements or of the list of active formatting elements and before each write to the tree, so the token that passes the limit is processed only up to the next read; parsing stops (`stopped_by` `Steps`), and no later script element is reached |
-| `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
-| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory`; so does a `limit: memory` that ends a refill of a kept `[SameObject]` collection after its first define (all or nothing for a step the object refuses; an end of the run inside a refill ends the document's scripts), after the same one collection |
+| `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2). Since `0.9.0` two more paths make code from source text: `%AsyncFunction%` and `%AsyncGeneratorFunction%`, reached as the `constructor` of an async function's and of an async generator function's prototype, no global (`CHANGELOG.md:115`, `:85 @ 0.10.0`). Both call `create_dynamic_function` (`crates/swell/src/builtins/async_function.rs:88-89 @ 0.10.0`, `builtins/async_generator.rs:196-198 @ 0.10.0`), which asks the same hook with the compilation type `Function` for every kind (`crates/swell/src/dynamic_code.rs:786-793 @ 0.10.0`; the hook `hooks.rs:176-181 @ 0.10.0`), so they end as `Function` does: allowed, a step per code unit of the source as it is copied (`dynamic_code.rs:772 @ 0.10.0`; the test `engine::async_constructors_compile_as_function_does` of `surf-script`) |
+| after `Terminated(MemoryBudget)` | `Agent::clear_microtasks()` first, then `collect()` once, chosen (the clear drops the queued jobs and credits their charge, HOST-200, so the collection finds it free); a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory`; so does a `limit: memory` that ends a refill of a kept `[SameObject]` collection after its first define (all or nothing for a step the object refuses; an end of the run inside a refill ends the document's scripts), after the same one collection |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
 wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) bytes plus its
@@ -340,7 +435,9 @@ engine, or charges the copy with `Cx::charge_host_bytes` before it makes it and 
 `HostBytes` with the copy; no uncharged copy of surf's is alive while script runs.
 `story:webidl-bindings` holds the rule with a test. A `DOMException` holds its `name` and
 `message` as the engine's Strings, which its host data lists in `trace`: they are on swell's heap
-and charged there, and surf keeps no copy of them.
+and charged there, and surf keeps no copy of them. That a String listed in `trace` survives a
+collection is a requirement with a test since swell `0.10.0` (HOST-218,
+`conformance/host/requirements.txt:218 @ 0.10.0`).
 
 A test gives limits of its own, as swell's tests do (`crates/swell/tests/support/host.rs:70-80 @
 0.8.0`): the values above are the session's.
@@ -412,26 +509,44 @@ Settled: the three `probe:` lines above (test profile, release, and the end of a
 
 | hook | HOST ids | in a session | in a test |
 |---|---|---|---|
-| `host_system_utc_epoch_nanoseconds` (`crates/swell/src/host/hooks.rs:308 @ 0.8.0`) | HOST-125 (what `Date.now()` returns), HOST-126 (the clamp to ±8.64 × 10^21) | the system clock: nanoseconds since the Unix epoch of `SystemTime::now()`, so it advances between two calls | a fixed start that advances by 1,000,000 ns (1 ms) on each call, so that a busy wait on `Date.now()` ends (epic, "Answers of the script engine's session", `testharness.js` lines 1257 and 1260) |
+| `host_system_utc_epoch_nanoseconds` (`crates/swell/src/host/hooks.rs:308 @ 0.8.0`) | HOST-125 (what `Date.now()` returns), HOST-126 (the clamp to ±8.64 × 10^21), both `test` at `0.10.0` (`conformance/host/requirements.txt:125-126 @ 0.10.0`) | the system clock: nanoseconds since the Unix epoch of `SystemTime::now()`, so it advances between two calls | a fixed start that advances by 1,000,000 ns (1 ms) on each call, so that a busy wait on `Date.now()` ends (epic, "Answers of the script engine's session", `testharness.js` lines 1257 and 1260) |
 | `system_time_zone_identifier` (`hooks.rs:312-314 @ 0.8.0`) | HOST-127 | the provided default, `"UTC"`: a session reveals no time zone of its host | the same |
 | `get_named_time_zone_offset_nanoseconds` (`hooks.rs:318-324 @ 0.8.0`) | HOST-128 | the provided default, 0 | the same |
-| `Seeds::hash_key`, `Seeds::random_seed` (`crates/swell/src/host/limits.rs:100-106 @ 0.8.0`; `Math.random` and hash order) | HOST-26, HOST-27, HOST-144, HOST-147 (`random_seed` and its uses, pending slice 4); HOST-145 (`hash_key` keys every hash map of the engine, `test`, `conformance/host/requirements.txt:145 @ 0.8.0`; `docs/design/host-interface.md:359 @ 0.8.0`, slice 1) | 48 bytes drawn per agent from `/dev/urandom` through `surf_secret::fill_random` (`crates/secret/src/lib.rs:32`), the source the session's token comes from | fixed: `hash_key` `[7; 16]` and `random_seed` `[11; 32]`, swell's own test values (`crates/swell/tests/support/host.rs:103 @ 0.8.0`, `seeds()`) |
+| `Seeds::hash_key`, `Seeds::random_seed` (`crates/swell/src/host/limits.rs:100-106 @ 0.8.0`; `Math.random` and hash order) | HOST-26, HOST-27, HOST-144, HOST-147 (`random_seed` and its uses, pending slice 4; at `0.10.0` HOST-147 names no `Map`, whose key order is HOST-214, `pending slice 9`); HOST-145 (`hash_key` keys every hash map of the engine, `test`, `conformance/host/requirements.txt:145 @ 0.8.0`; `docs/design/host-interface.md:359 @ 0.8.0`, slice 1) | 48 bytes drawn per agent from `/dev/urandom` through `surf_secret::fill_random` (`crates/secret/src/lib.rs:32`), the source the session's token comes from | fixed: `hash_key` `[7; 16]` and `random_seed` `[11; 32]`, swell's own test values (`crates/swell/tests/support/host.rs:103 @ 0.8.0`, `seeds()`) |
 
 The story names HOST-126 to HOST-128 as the time-zone hooks; at the tag HOST-126 is the clamp of
 the clock's answer and HOST-127 and HOST-128 are the time zone
 (`docs/design/host-interface.md:1933-1939 @ 0.8.0`).
 
-The eight ids of the probe below are `pending slice 4` at the tag, and `Date` and all of `Math`
-but `max` do not exist in 0.8.0 (`CHANGELOG.md:112-113 @ 0.8.0`): the clock, the time zone and
+At `0.8.0` the eight ids of the probe below were `pending slice 4`, and `Date` and all of `Math`
+but `max` did not exist in it (`CHANGELOG.md:112-113 @ 0.8.0`): the clock, the time zone and
 `random_seed` are written now, because the trait requires the clock (`hooks.rs:305-308 @
-0.8.0`) and `Agent::new` takes both seeds, and a script first reaches them once surf takes a tag
-with slice 4. `hash_key` is in use at 0.8.0 already: every hash map of the engine is keyed by it
+0.8.0`) and `Agent::new` takes both seeds, and a script reached none of them before the first
+story of slice 4 (the clock it reaches with `Date` since `0.9.0`, below). `hash_key` is in use at 0.8.0 already: every hash map of the engine is keyed by it
 (HOST-145, held by a test), so the order of its maps differs from session to session and is
 fixed in a test.
 
-probe: (workstation) git -C <swell clone> show 0.8.0:conformance/host/requirements.txt | awk '$1 ~ /^HOST-(26|27|125|126|127|128|144|147)$/' -> HOST-26 pending slice 4 (and the seven others, each `pending slice 4`)
+At `0.10.0` `Date` exists over the host's clock: the constructor, `Date.now()`, `getTime`,
+`setTime` and `valueOf`; `new Date()` and `Date.now()` ask the clock hook once and floor the
+answer to milliseconds, and the other setters, `Date.UTC` and `Date.parse` throw a `TypeError`
+(`CHANGELOG.md:56-62 @ 0.10.0`). So HOST-125 and HOST-126 have a test, and the test
+`engine::clock_advances` of `surf-script` runs: two `Date.now()` of the test clock differ by 1.
+In a session `Date.now()` reads the system clock, so a page can time its own run against the
+wall-clock bound of Q4. What a script reaches grew at `0.9.0` by two more paths that make code
+from source text besides `eval` and `Function`, `%AsyncFunction%` and `%AsyncGeneratorFunction%`;
+they reach no clock, seed or time zone of their own and pass the hook of Q4's row of `eval` and
+`Function`.
+The six other ids are `pending slice 4` still; `Math.random` and all of `Math` but `max`, and the
+getters of a date's fields, do not exist (`CHANGELOG.md:257-264 @ 0.10.0`). New at `0.9.0`,
+pending for slice 4: HOST-209 to HOST-211 (a time-zone offset out of range is clamped, a host
+that answers no instant gets NaN, each clock and time-zone hook call is charged a step) and
+HOST-212 and HOST-213 (the values and the sequence of `Math.random`); and HOST-214, the key
+order of a `Map`, `pending slice 9` (`conformance/host/requirements.txt:209-214 @ 0.10.0`;
+`CHANGELOG.md:218-234 @ 0.10.0`). surf's hooks need no change for them.
 
-Settled: the table above and the `probe:` line, which reads the eight HOST ids of the clock, the time zone and `random_seed` at the tag `0.8.0` of Q13 as `pending slice 4`; HOST-145 (`hash_key`) is held by a test at the tag.
+probe: (workstation) git -C <swell clone> show 0.10.0:conformance/host/requirements.txt | awk '$1 ~ /^HOST-(26|27|125|126|127|128|144|147)$/' -> HOST-125 test swell::date_clock::host_125_date_now_calls_the_clock_hook_once_and_floors_to_milliseconds; HOST-126 test swell::date_clock::host_126_a_clock_answer_out_of_range_is_clamped; HOST-26, HOST-27, HOST-127, HOST-128, HOST-144 and HOST-147 each `pending slice 4` (at `0.8.0` all eight read `pending slice 4`)
+
+Settled: the table above and the `probe:` line, which reads the eight HOST ids of the clock, the time zone and `random_seed` at the tag `0.10.0` of Q13: HOST-125 and HOST-126 `test`, the six others `pending slice 4` (all eight `pending slice 4` at `0.8.0`); HOST-145 (`hash_key`) is held by a test; HOST-209 to HOST-213 `pending slice 4` and HOST-214 `pending slice 9` are new at `0.9.0`.
 
 ## Q7. The specification of a script's end and of the option
 
@@ -452,14 +567,23 @@ reached` among them:
 
 - `ran`.
 - `threw <kind> "<message>" <line>:<column>`: an uncaught throw, or a parse error that is not a
-  refusal. `<kind>` is one of the seven `ErrorKind` variants (`Error`, `EvalError`, `RangeError`,
-  `ReferenceError`, `SyntaxError`, `TypeError`, `URIError`;
-  `crates/swell/src/host/mod.rs:39-48 @ 0.8.0`), or `value` when the thrown value is not an
-  error object (`error_summary` answers `None`); the fields as Q16 bounds them. swell announces
-  the variant `AggregateError` and `#[non_exhaustive]` on `ErrorKind` for the release that
-  brings `Promise.any` (HOST-201, `CHANGELOG.md:87-95 @ 0.8.0`, `pending slice 10`): the tag
-  change that brings it adds the word `AggregateError` to this list and to `ScriptErrorKind`,
-  and a wildcard arm maps a kind surf does not know yet to `Error`.
+  refusal. `<kind>` is one of the eight kinds of swell's `ErrorKind` at `0.10.0` (`Error`,
+  `EvalError`, `RangeError`, `ReferenceError`, `SyntaxError`, `TypeError`, `URIError`,
+  `AggregateError`; `crates/swell/src/host/mod.rs:39-55 @ 0.10.0`), or `value` when the thrown
+  value is not an error object (`error_summary` answers `None`); the fields as Q16 bounds them.
+  `ErrorKind` is `#[non_exhaustive]` since `0.9.0` (HOST-201 has a test,
+  `conformance/host/requirements.txt:201 @ 0.10.0`; `CHANGELOG.md:211-216 @ 0.10.0`), so the
+  runner's `error_kind` names the eight and has one wildcard arm, which maps a kind swell adds
+  later to `Error`. The test `engine::every_error_constructor_keeps_its_word` of `surf-script`
+  notices such a kind: it throws `new <name>([])` for every own property of the global object
+  whose name ends in `Error` and fails naming one whose end reads another word. What it cannot
+  notice: a kind with no global constructor whose name ends in `Error` reaches the wildcard
+  unnoticed. `ErrorKind::ALL` cannot serve: it keeps seven entries, without `AggregateError`.
+  A throw is `threw` only while the run has not ended: when the wall clock ran out or the
+  interrupt is set as the script's run answers, the script ends `limit: wall-clock` (or with the
+  limit the bindings recorded) and no text of the thrown value is read; a read of a
+  `DOMException`'s text that an interrupt ends gives the same end, never a `threw Error` without
+  a message (Q4).
 - `refused "<message>" <line>:<column>`: the parse answered `Parsed::Errors` and the agent's
   `refusals()` rose (`crates/swell/src/host/agent.rs:266-275 @ 0.8.0`): a construct of a later
   delivery slice, whose `SyntaxError` message names the slice (`CHANGELOG.md:104-106 @ 0.8.0`).
@@ -544,6 +668,7 @@ types:
       - {name: SyntaxError, summary: "SyntaxError"}
       - {name: TypeError, summary: "TypeError"}
       - {name: UriError, summary: "URIError"}
+      - {name: AggregateError, summary: "AggregateError"}
       - {name: Value, summary: "a thrown value that is no error object"}
     naming:
       summary: The kind of what a script threw.
@@ -881,6 +1006,16 @@ system stopped: unmet obligation: context answer `surf.net.RequestId` ...`` with
 stack that overflows ends in `SIGABRT` (Q5). Core files: the workstation's core handler stored
 the cores of two early probe runs made without `--core=0:0` and none of the nine later runs made
 with it (`coredumpctl list`: `COREFILE present`, then `none`).
+A limit of 0 does not stop a dump to a pipe handler: on a host with a pipe pattern a shell ended
+by `SIGABRT`, `SIGXCPU` or `SIGSEGV` under `--core=0:0` showed `(core dumped)` and was waitable
+after 113 to 220 ms, and under `--core=1:1` showed none and was waitable after 3 to 10 ms, so
+`surfd` starts a session with `--core=1:1` where its hard limit allows.
+Under a limit of 1 the kernel does not start a pipe handler for such an end: on one host with a
+pipe pattern the host's crash list (`coredumpctl list` under systemd) held 15 of 15 shells ended
+by these three signals under `--core=0:0` and 0 of 15 under `--core=1:1`, and the kernel's log
+held one line `RLIMIT_CORE is set to 1, aborting core` for each of the first 10 of the latter
+and none for the last 5. What the kernel does under a file pattern or a socket pattern is not
+shown.
 
 What a session holds over its life, the terms of the address-space bound:
 
@@ -903,21 +1038,20 @@ What a session holds over its life, the terms of the address-space bound:
   212024 kB` at its end, with several agents and four short threads of its own); `memory_bytes`,
   64 MiB, which holds the agent's heap, the wrappers and the charge of the nodes a script makes
   (Q4);
-- what swell holds without a charge: swell lists as open that "`string_units` and
+- what swell holds without a charge: at `0.8.0` swell listed as open that "`string_units` and
   `string_units_in` copy without a memory charge" and that "The `call` and `new` instructions
-  copy their argument list uncharged" (`docs/plan/second-batch.md:284-285 @ 0.8.0`), and that
-  "The code of the last error site's script stays held without a charge until the next entry"
-  (`:290 @ 0.8.0`). These copies are not bounded by `memory_bytes`, and the address-space
-  backstop is their only bound. Requirement 11 (Q18) asks swell to charge every copy that is
-  alive while the engine calls into script. The measurement and the requirement's detail were
-  handed to swell's session on 2026-11-24 and come back into this note with the tag that closes
-  it.
+  copy their argument list uncharged" (`docs/plan/second-batch.md:284-285 @ 0.8.0`); at
+  `0.10.0` both are charged to `memory_bytes` (HOST-215, `conformance/host/requirements.txt:215
+  @ 0.10.0`), swell lists them as closed (`docs/plan/second-batch.md:302-304 @ 0.10.0`), and
+  requirement 11 is held (Q13, Q18). Still open: "The code of the last error site's script stays
+  held without a charge until the next entry" (`:290 @ 0.8.0`, `:288 @ 0.10.0`), which the
+  address-space backstop bounds.
 
-So the sum has no finite value today: the trees of all documents and swell's uncharged copies are
-not bounded by anything of the session. The address-space bound of a scripted session is
+So the sum has no finite value today: the trees of all documents are not bounded by anything of
+the session. The address-space bound of a scripted session is
 therefore a chosen backstop, 4 GiB (4,294,967,296 bytes). It is the bound a session started by a
 test of the stories before `story:scripts-document-port` runs under; those stories build and test
-on swell `0.8.0` (Q13). After how much use it is reached by honest pages: the room for trees is 4
+on swell `0.8.0`, and from `story:swell-0-9-0` on swell `0.10.0` (Q13). After how much use it is reached by honest pages: the room for trees is 4
 GiB less the session (208,736 kB), the thread (8,739,584 bytes), its arena (64 MiB) and
 `memory_bytes` (64 MiB), about 3,750 MiB: about 7 documents whose trees reach the parser's limits
 (536 MiB each, inferred), or about 35,000 documents of the size of the agent tasks' pages, at the
@@ -925,15 +1059,15 @@ GiB less the session (208,736 kB), the thread (8,739,584 bytes), its arena (64 M
 address space, so an estimate). The agent then reads the session's end with `note ended: signal
 SIGABRT`.
 
-The backstop is real memory of the host, not a reservation: while requirement 11 is open, one
-page in one document can make a session hold it. `surfd` on `main` has no bound on the number of
+The backstop is real memory of the host, not a reservation: the pages of several documents, whose
+trees the session keeps, can make a session hold it. `surfd` on `main` has no bound on the number of
 open sessions: it counts the session processes not yet reaped (`live`, `crates/surfd/src/daemon.rs:358-359`,
 `:1450`) only to wait for them when it stops (`:575`). So k scripted sessions on hostile pages can hold k × 4 GiB of
 the host at once. A bound on the number of scripted sessions is a question for
 `story:scripts-document-port`.
 
-The value `story:scripts-document-port` ships with: it takes the swell tag that holds requirement
-11 (Q13), so swell's copies are charged to `memory_bytes`. With `story:session-memory-bound`
+The value `story:scripts-document-port` ships with: it runs on the swell tag that holds requirement
+11, `0.10.0`, which `story:swell-0-9-0` pins (Q13), so swell's copies are charged to `memory_bytes`. With `story:session-memory-bound`
 keeping the tree of the current document only, the sum for one tab is 208,736 kB + 2 × 536 MiB
 (the current tree and the one being parsed) + 8,739,584 bytes + 64 MiB (the arena) + 64 MiB
 (`memory_bytes`) + 64 MiB (an allowance, chosen, for what swell lists as held without a charge
@@ -963,20 +1097,26 @@ SIGXCPU bound cpu`.
 
 | bound | sessions | rule | starting value | the session's end at the bound, as `surfd` sees it | measured again by |
 |---|---|---|---|---|---|
-| address space (`--as`) | with scripts only | the terms above; no finite sum until `story:session-memory-bound` and requirement 11 are closed | 4,294,967,296 (4 GiB), chosen as a backstop for the stories before `story:scripts-document-port`; reached after the use given above; that story ships with 2,147,483,648 (2 GiB), the sum above | `SIGABRT` (the probe's `as 268435456, alloc: exit 134 signal ABRT`) | `story:scripts-document-port` |
+| address space (`--as`) | with scripts only | the terms above; no finite sum until `story:session-memory-bound` is closed (requirement 11 is held at `0.10.0`) | 4,294,967,296 (4 GiB), chosen as a backstop for the stories before `story:scripts-document-port`; reached after the use given above; that story ships with 2,147,483,648 (2 GiB), the sum above | `SIGABRT` (the probe's `as 268435456, alloc: exit 134 signal ABRT`) | `story:scripts-document-port` |
 | CPU seconds (`--cpu`) | with scripts only | the CPU time of a session's whole life, behind `surfd`'s 660 s per command and Q4's 5 s per document | 3,600 soft, 3,601 hard, chosen: 720 documents at Q4's wall clock | `SIGXCPU` at the soft value (`cpu soft 1 hard 2, spin: exit 152 signal XCPU`) | `story:scripts-document-port` |
 | open files (`--nofile`) | with scripts only | eight times the descriptors the session held after each page; not for sessions without scripts, because no measure covers every test and agent task (at 10 the second page failed though 8 were open after the first) | 64, chosen (the probe: 8 after each page; four pages loaded at 64) | no end: a load answers `page failed Unreachable`; at 8, the descriptors the session holds between requests, `go` answers `the session's system stopped` with exit status 3; at 7 `open` fails | `story:scripts-document-port` |
-| core size (`--core`) | every session | no core file: a core of a session holds its token and pages | 0 | no end; the workstation's core handler stored no core (`COREFILE none`) | `story:session-process-hardening` (a test reads it) |
+| core size (`--core`) | every session | no core file: a core of a session holds its token and pages; a limit of 1 lets a session that ends by a signal be seen without the wait for the host's core handler | 1 (0 where `surfd`'s own hard limit is 0) | no end; at 0 the workstation's core handler listed each end by a signal that dumps core and stored no core (`COREFILE none`); at 1 the kernel does not start a pipe handler, so the handler records nothing (0 of 15 such ends listed) | `story:session-process-hardening` (a test reads it) |
 | no new privileges (`setpriv --no-new-privs`) | every session | it cannot end a session that works today | `NoNewPrivs: 1` | no end | `story:session-process-hardening` (a test reads it) |
 | processes (`RLIMIT_NPROC`) | none | not set: it counts every process of the user, not the session's own, and a value below the user's count would stop the session from starting a thread; `ulimit -u` was `unlimited` on the build node | not set | not set | `story:scripts-document-port`, if a later review asks for one |
 
 The start, in `Config` with these shipped values (a test can name others), in two forms:
 
-- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=0:0 --
+- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=1:1 --
   <session program> <identity> <socket>`;
 - a session with scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit
-  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=0:0 -- <session program>
+  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=1:1 -- <session program>
   <identity> <socket>`.
+
+Where `surfd`'s own hard core limit is 0 the item is `--core=0:0`, because `prlimit` cannot raise
+a hard limit, and also where `/proc/self/limits` cannot be read or has no line `surfd` can read;
+the session keeps a limit of 0 and, with a pipe pattern, the wait. A process of the
+session can lower its soft limit to 0 and then dumps through a pipe handler again; it cannot raise
+the limit above 1.
 
 Which sessions: the decision on S5 binds a session with scripts, and only such a session gets the
 address-space, CPU and open-files bounds. A session without scripts gets what cannot end a session
@@ -1025,20 +1165,29 @@ Settled: S5 = a as decided on 2026-11-24 and quoted above, with what stays open 
 
 ## Q13. The tag of swell
 
-The tag `story:scripts-engine-dependency` pins: `0.8.0`, commit
-`0c1827128b57845e203713e87a0b0949fc8d63be`, released 2026-11-24, the newest tag on that day
-(`0.8.0`, `0.7.0`, `0.6.0` by date). Its root `Cargo.lock` lists 8 packages and no `source`
-line: `swell`, `swell-compiler`, `swell-num`, `swell-regexp`, `swell-syntax`, `swell-unicode`,
-`swell-test262`, `swell-unicode-gen` (`Cargo.lock` @ 0.8.0). A host depends on `swell` alone,
-which brings the other five of the first six by path (`crates/swell/Cargo.toml:12-17 @ 0.8.0`);
-`swell-test262` and `swell-unicode-gen` are tooling. The dependency line is the one swell's
-changelog gives: `swell = { git = "https://github.com/beyond10x/swell", tag = "0.8.0" }`
-(`CHANGELOG.md:135-137 @ 0.8.0`).
+The tag surf pins: `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, released
+2026-11-25, the newest tag on that day (`0.10.0`, `0.9.1`, `0.9.0`, `0.8.0` by date), pinned by
+`story:swell-0-9-0`. It holds `0.9.0` (2026-11-24, commit
+`d49a09bcc44fbdd155f705f913a90b676518afbc`) and `0.9.1` (2026-11-25, commit
+`4e5c98914be5f42ce2908b56c30cae71f5395d24`). Its root `Cargo.lock` lists the same 8 packages as
+at `0.8.0`, at version `0.10.0`, and no `source` line: `swell`, `swell-compiler`, `swell-num`,
+`swell-regexp`, `swell-syntax`, `swell-unicode`, `swell-test262`, `swell-unicode-gen`. A host
+depends on `swell` alone, which brings the other five of the first six by path
+(`crates/swell/Cargo.toml:13-17 @ 0.10.0`); `swell-test262` and `swell-unicode-gen` are tooling.
+The dependency line is the form swell's changelog gives (`CHANGELOG.md:291-293 @ 0.10.0`, for
+`0.9.0`): `swell = { git = "https://github.com/beyond10x/swell", tag = "0.10.0" }`. swell's
+`NOTICE` is the same file at `0.8.0` and `0.10.0`.
+
+probe: (workstation) git -C <swell clone> rev-parse '0.10.0^{commit}'; git show 0.10.0:Cargo.lock | grep -c '^\[\[package\]\]'; git show 0.10.0:Cargo.lock | grep -c '^source'; git diff --quiet 0.8.0 0.10.0 -- NOTICE -> b9d3d46fa7ac4abc982f2248e903e6301e277a9f; lock packages: 8 source lines: 0; NOTICE unchanged (exit 0)
+
+The tag before it, which `story:scripts-engine-dependency` pinned: `0.8.0`, commit
+`0c1827128b57845e203713e87a0b0949fc8d63be`, released 2026-11-24, with the same 8 packages
+(`crates/swell/Cargo.toml:12-17 @ 0.8.0`, `CHANGELOG.md:135-137 @ 0.8.0`).
 
 probe: (workstation) git -C <swell clone> rev-parse '0.8.0^{commit}'; git show 0.8.0:Cargo.lock | grep -c '^\[\[package\]\]'; git show 0.8.0:Cargo.lock | grep -c '^source'; git merge-base --is-ancestor 84522ad 0.8.0 -> 0c1827128b57845e203713e87a0b0949fc8d63be; lock packages: 8 source lines: 0; 84522ad is an ancestor of 0.8.0
 
 The two conditions of "From the security review of 2026-11-22" (epic, that section), each read at
-the tag:
+the tag `0.8.0`:
 
 1. Parsing and compilation charged to the memory budget before they allocate: held. The ledger of
    the frontend: "the lexer, the parser, the early errors, the scope analysis and the compile step
@@ -1069,11 +1218,17 @@ the tag:
    `CHANGELOG.md:768-769 @ 0.8.0` (the 0.2.0 section) and `website/src/pages/index.tsx:159 @
    0.8.0`; the 0.4.0 section says that scan "is gone" (`CHANGELOG.md:612-613 @ 0.8.0`).
 
-What `0.8.0` leaves open for page scripts, beside those exceptions: the override table (HOST-112,
+What `0.8.0` left open for page scripts, beside those exceptions: the override table (HOST-112,
 HOST-114, `pending slice 9`, `conformance/host/requirements.txt:112 @ 0.8.0`, `:114 @ 0.8.0`), so
 live collections and `WindowProxy` stay deviations; promises, jobs and the microtask checkpoint
 (slice 10, HOST-192 to HOST-200); `Date` and `Math.random` (slice 4, Q6); and of what came after
-ES5 everything but generators and the sixth slice (`CHANGELOG.md:98-113 @ 0.8.0`).
+ES5 everything but generators and the sixth slice (`CHANGELOG.md:98-113 @ 0.8.0`). `0.9.0`
+closes slice 10: promises, `async` functions, async generators, `for await` and
+`Array.fromAsync` run (`CHANGELOG.md:48-49 @ 0.10.0`, `:63 @ 0.10.0`), HOST-192 to HOST-200 have
+a test (`conformance/host/requirements.txt:192-200 @ 0.10.0`), and the runner performs the
+microtask checkpoint after each script (Q2). It brings the first wave of `Date`, over the host's
+clock (Q6). The override table (HOST-112 and HOST-114 `pending slice 9`,
+`conformance/host/requirements.txt:112 @ 0.10.0`, `:114 @ 0.10.0`) and `Math.random` stay open.
 
 A `[SameObject]` collection (`childNodes`, `children`) is one snapshot object per node, refreshed
 when its getter is read after a write to a child list: all or nothing for a step the object
@@ -1099,23 +1254,69 @@ outside it where a name goes, such as U+00A0 in `div` U+00A0 `span`, makes the t
 while a string, an escape or a pseudo-class argument that holds it leaves the text valid; the
 first is a place where a browser may answer otherwise.
 
-Of those exceptions, swell lists as open that "`string_units` and `string_units_in` copy without
-a memory charge" and that "The `call` and `new` instructions copy their argument list uncharged"
-(`docs/plan/second-batch.md:284-285 @ 0.8.0`). These copies are not bounded by `memory_bytes`;
-in a session the address-space backstop of Q11 is their only bound, and a session that reaches it
-ends in `SIGABRT`, not in `limit: memory`. Requirement 11 (Q18) asks swell to charge every copy
-that is alive while the engine calls into script. The measurement and the requirement's detail
-were handed to swell's session on 2026-11-24 and come back into this note with the tag that
-closes it. surf's limits are not lowered for it.
+Requirement 11 at `0.8.0`. swell listed as open that "`string_units` and `string_units_in` copy
+without a memory charge" and that "The `call` and `new` instructions copy their argument list
+uncharged" (`docs/plan/second-batch.md:284-285 @ 0.8.0`). The copies a script controls, each
+readable at that tag: the separator of `Array.prototype.join`, copied by `string_units`
+(`crates/swell/src/builtins/array/mod.rs:323-335 @ 0.8.0`; `crates/swell/src/object/string.rs:46-53
+@ 0.8.0`, which charges nothing) and held across `Get` and `ToString` of each element; the String
+an object operand's `toString` returns, held by `sort` without a comparator when that operand
+comes first (`crates/swell/src/builtins/array/mutation.rs:758-759`, `:789-801 @ 0.8.0`); and the
+argument lists of the `call` and `new` instructions (`crates/swell/src/interp/dispatch.rs:1390-1392`,
+`:1469-1471 @ 0.8.0`). These copies were not bounded by `memory_bytes`; in a session the
+address-space backstop of Q11 was their only bound, and the probe's three modes ended with status
+134 under an address-space bound of 2 GiB at `0.8.0`.
+
+Requirement 11 closed at `0.9.0`. "A buffer whose size a script controls and that the engine holds
+while it calls into script [...] is charged to `memory_bytes` before it is made and credited when
+it is dropped, or is not made" (`CHANGELOG.md:178-183 @ 0.10.0`), held by HOST-215
+(`conformance/host/requirements.txt:215 @ 0.10.0`, `test
+swell::budgets::host_215_a_buffer_held_across_a_call_into_script_is_charged`); swell's list of
+open findings says the copies are "Closed after the batch" (`docs/plan/second-batch.md:302-304 @
+0.10.0`). The commit that merged the charged buffers, `f27c52e`, is an ancestor of `0.9.0`, and no
+file under `crates/` changed between it and the tag. The program `swell-limits` was built against
+the tree of the tag `0.9.0` (`git archive 0.9.0`) and run on the workstation on 2026-11-24, 19:45
+CET, with its modes `join`, `sort-xy` and `sort-yx`, Q4's limits and the bound below: each mode
+ended with exit status 0, the script that asks for the copy ends `throw RangeError
+"reentry_depth exceeded"`, the doubling after it `terminated StepBudget`, and `heap_bytes()`
+stays far under `memory_bytes`. Those lines stay the measurement at `0.10.0`, by reading: the
+files of the engine that differ between `0.9.0` and `0.10.0` are `heap/string.rs` (a method
+`len`), `host/mod.rs` (`to_utf16_len`), and `interp/budget.rs`, `interp/dispatch.rs` and
+`interp/spread.rs` (`check_interrupt_after`, which reads the interrupt flag and spends no step);
+a script of the probe sets no interrupt. The `VmHWM` values belong to the process that ran on
+`0.9.0`. surf's limits are not lowered for the copies.
+
+probe: (workstation) .out/probes/swell-limits/target/release/swell-limits-probe <join|sort-xy|sort-yx>, run by m3-copies.sh under prlimit --as=2147483648:2147483648 --core=0:0 with Q4's limits, swell at the tree of the tag 0.9.0 ->
+
+```
+join: exit 0, highest VmHWM sampled 32032 kB
+  stdout: join: start; VmPeak: 6220 kB; VmSize: 6220 kB; VmHWM: 3600 kB
+  stdout: join: script build 2^22: normal after 0.022 s; steps 8389069; heap_bytes 6575579; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 21256 kB
+  stdout: join: script double to 2^23: normal after 0.022 s; steps 8388617; heap_bytes 12866160; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37512 kB
+  stdout: join: script last: throw RangeError "reentry_depth exceeded" after 0.001 s; steps 3607; heap_bytes 13051899; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37512 kB
+  stdout: join: one more doubling, to 2^24: terminated StepBudget; steps 5; heap_bytes 13052701; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37512 kB
+sort-xy: exit 0, highest VmHWM sampled 33116 kB
+  stdout: sort-xy: start; VmPeak: 6220 kB; VmSize: 6220 kB; VmHWM: 3600 kB
+  stdout: sort-xy: script build 2^22: normal after 0.022 s; steps 8389069; heap_bytes 6575579; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 21256 kB
+  stdout: sort-xy: script double to 2^23: normal after 0.022 s; steps 8388617; heap_bytes 12866160; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37716 kB
+  stdout: sort-xy: script last: throw RangeError "reentry_depth exceeded" after 0.001 s; steps 5154; heap_bytes 13053249; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37716 kB
+  stdout: sort-xy: one more doubling, to 2^24: terminated StepBudget; steps 5; heap_bytes 13054051; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37716 kB
+sort-yx: exit 0, highest VmHWM sampled 33656 kB
+  stdout: sort-yx: start; VmPeak: 6220 kB; VmSize: 6220 kB; VmHWM: 3780 kB
+  stdout: sort-yx: script build 2^22: normal after 0.021 s; steps 8389069; heap_bytes 6575579; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 21324 kB
+  stdout: sort-yx: script double to 2^23: normal after 0.022 s; steps 8388617; heap_bytes 12866160; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37740 kB
+  stdout: sort-yx: script last: throw RangeError "reentry_depth exceeded" after 0.001 s; steps 4130; heap_bytes 13053249; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37740 kB
+  stdout: sort-yx: one more doubling, to 2^24: terminated StepBudget; steps 5; heap_bytes 13054051; VmPeak: 141212 kB; VmSize: 75688 kB; VmHWM: 37740 kB
+```
 
 Decided by the coordinating agent on 2026-11-24, reversible: `story:scripts-engine-dependency`
-pins swell `0.8.0`, and every story before `story:scripts-document-port` builds and tests on it,
-its sessions under the 4 GiB backstop of Q11. `story:scripts-document-port`, the story that lets a
-page's scripts run in a session, waits for the swell tag that holds requirement 11 and takes that
-tag in its first commit. The reason: until then the only bound on the copies swell does not charge
-is the address-space backstop.
+pinned swell `0.8.0`, and every story before `story:scripts-document-port` built and tested on
+it, its sessions under the 4 GiB backstop of Q11, while `story:scripts-document-port` was to wait
+for the swell tag that holds requirement 11. Revised on 2026-11-25: `story:swell-0-9-0` takes
+`0.10.0`, the newest tag, which holds requirement 11, and `story:scripts-document-port` takes no
+tag of its own.
 
-Settled: decided on 2026-11-24 (reversible): tag `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be`, 8 packages in its root `Cargo.lock` with no `source` line, six taken by a host, pinned by `story:scripts-engine-dependency` for every story before `story:scripts-document-port`, which waits for the swell tag that holds requirement 11 and takes it in its first commit; both conditions held with the exceptions swell lists (`docs/plan/second-batch.md:284-291 @ 0.8.0`); open for later tags the override table, slice 10, `Date` and `Math.random`; the `probe:` line above gives the `git` commands.
+Settled: decided on 2026-11-24 and revised on 2026-11-25 (reversible): tag `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, 8 packages in its root `Cargo.lock` with no `source` line, six taken by a host, pinned by `story:swell-0-9-0` (before it `0.8.0`, commit `0c1827128b57845e203713e87a0b0949fc8d63be`, pinned by `story:scripts-engine-dependency`); both conditions held at `0.8.0` with the exceptions swell listed (`docs/plan/second-batch.md:284-291 @ 0.8.0`), and the copies of requirement 11 charged since `0.9.0` (HOST-215 and the probe's 18 lines above); slice 10 and the first wave of `Date` closed at `0.9.0`; open for later tags the override table and `Math.random`; the `probe:` lines above give the `git` commands.
 
 ## Q14. Where swell is linked
 
@@ -1278,33 +1479,52 @@ Settled: each of the four statements confirmed or corrected with its citation: H
 ## Q18. Requirements 1 to 10 for the engine
 
 The table of the next section holds requirements 1 to 10 as the epic's last section revised
-them, each with its HOST ids and its status at `0.8.0`, read from
-`conformance/host/requirements.txt` @ 0.8.0, whose line n holds HOST-n (208 lines, 114 `test`,
-94 `pending`). Rows 1 to 10 are `held`. Requirement 7 is a rule of the host interface, not a
-numbered requirement: its row cites the rule and the gate task that holds it. Row 11 is new: it
-asks swell to charge every copy that is alive while the engine calls into script, which
-swell lists as open (Q13); its status at `0.8.0` is `absent`, and `story:scripts-document-port` waits for the tag that holds it.
+them, each with its HOST ids and its status at `0.10.0`, read from
+`conformance/host/requirements.txt` @ 0.10.0, whose line n holds HOST-n: 220 lines, 152 `test`, 68 `pending` (208 lines, 114 `test`, 94 `pending` at `0.8.0`). Rows 1 to 10 are `held`, as they were at `0.8.0`.
+Requirement 7 is a rule of the host interface, not a numbered requirement: its row cites the rule
+and the gate task that holds it. Row 11 came from this note: it asked swell to charge every copy
+that is alive while the engine calls into script, which swell listed as open at `0.8.0` (Q13);
+its status at `0.10.0` is `held`, by HOST-215 and by the probe's run on the tree of `0.9.0`
+(Q13), and `story:swell-0-9-0` pins that tag.
 
 Beside them: swell narrowed HOST-70 (HOST-188 to HOST-190, each with a test,
-`conformance/host/requirements.txt:188-190 @ 0.8.0`), which Q4's row "after
-`Terminated(MemoryBudget)`" uses; and slice 10 (HOST-192 to HOST-200) is `pending slice 10` at the tag (`CHANGELOG.md:81-86 @ 0.8.0`). The first version
-does not need it: no promise exists before slice 10, so no microtask checkpoint is run (Q2, step
-1).
+`conformance/host/requirements.txt:188-190 @ 0.10.0`), which Q4's row "after
+`Terminated(MemoryBudget)`" uses; and slice 10 (HOST-192 to HOST-200) has a test at `0.10.0`
+(`pending slice 10` at `0.8.0`, `CHANGELOG.md:81-86 @ 0.8.0`), which the runner's microtask
+checkpoint uses (Q2, step 1).
 
-Settled: the table of the next section, rows 1 to 10 each with its status and its line of `conformance/host/requirements.txt` at `0.8.0`, and row 11, the new requirement for swell, `absent` at `0.8.0`, which `story:scripts-document-port` waits for (Q13).
+Settled: the table of the next section, rows 1 to 10 each with its status and its line of `conformance/host/requirements.txt` at `0.10.0`, row 11 `held` at `0.10.0` by HOST-215 and the probe of Q13, and the five requirements new at `0.9.1` and `0.10.0` listed after the table.
 
 ## Requirements 1 to 10, handed to the script engine's session, and requirement 11
 
-| n | requirement | HOST ids | status at `0.8.0` | `requirements.txt` @ 0.8.0 |
+| n | requirement | HOST ids | status at `0.10.0` | `requirements.txt` @ 0.10.0 |
 |---|---|---|---|---|
-| 1 | the line and column where a parse error or an uncaught throw arose: `Agent::last_entry_error_site` | HOST-172, HOST-173, HOST-174 | held | `conformance/host/requirements.txt:172-174 @ 0.8.0` (`test swell::scripts::host_172_a_parse_error_names_its_line_and_column` and the two after it) |
-| 2 | every operation whose work grows with its operands charges steps in proportion; parsing and compilation charged to the memory budget before they allocate; property operations charge their work and temporary storage first | HOST-168, HOST-169, HOST-181, HOST-182 | held (the exceptions swell lists are in Q13) | `conformance/host/requirements.txt:168-169 @ 0.8.0`, `:181-182 @ 0.8.0` |
-| 3 | the host charges and credits bytes and charges steps on the engine's one ledger: `charge_host_bytes` answers a `HostBytes`, dropping it credits; `Cx::charge_steps` | HOST-175, HOST-176, HOST-177 | held | `conformance/host/requirements.txt:175-177 @ 0.8.0` |
-| 4 | withdrawn as a need of surf; the engine states what a kept handle does | HOST-178 | held | `conformance/host/requirements.txt:178 @ 0.8.0` (`test swell::host_objects::host_178_a_kept_handle_is_weak`) |
-| 5 | an error's kind and own `message` read without running code; `HostObjectSpec::error_kind` | HOST-179 | held | `conformance/host/requirements.txt:179 @ 0.8.0` |
-| 6 | HOST-17, HOST-152 and HOST-163 hold under the embedder's profiles: shown in the engine's own development and release profiles; surf tests its own profile | HOST-17, HOST-152, HOST-163 | held | `conformance/host/requirements.txt:17 @ 0.8.0`, `:152 @ 0.8.0`, `:163 @ 0.8.0` |
-| 7 | each release names every change to a signature or requirement of the host interface: a committed snapshot of the interface with a gate check | none: a rule, `docs/design/host-interface.md:2123-2139 @ 0.8.0` | held | no line: the rule is held by `host-surface-check` (`Taskfile.yml:107 @ 0.8.0`) against `conformance/host/surface.txt` @ 0.8.0 |
-| 8 | a host function's [[Prototype]] named or set: `Cx::set_prototype_of`, `Cx::get_prototype_of` | HOST-180 | held | `conformance/host/requirements.txt:180 @ 0.8.0` |
-| 9 | a closed list of intrinsics and well-known symbols: `%Error.prototype%`, `%Function.prototype%`, `%Array.prototype.values%`, `entries`, `keys`, `forEach`; `@@toStringTag`, `@@unscopables`, `@@iterator` | HOST-183, HOST-184, HOST-185 | held | `conformance/host/requirements.txt:183-185 @ 0.8.0` |
-| 10 | stated costs of a host function, a host object and a property, and a test of 300 host functions and 40 host objects: `HOST_FUNCTION_LIVE_BYTES`, `HOST_OBJECT_LIVE_BYTES`, `PROPERTY_LIVE_BYTES`, `BINDINGS_REALM_HEAP_BYTES` | HOST-186, HOST-187 | held | `conformance/host/requirements.txt:186-187 @ 0.8.0` |
-| 11 | new, from this note: no copy that is alive while the engine calls into script is left without a charge. Every copy the engine makes of a String's units or of an argument list and holds while it calls back into script is charged to `memory_bytes` before it is made and credited when it is dropped. A test: a page that holds such copies across calls into script ends in `Terminated(MemoryBudget)` with `heap_bytes()` at most `memory_bytes` | none yet | absent | no line at the tag; swell lists the copies as open (`docs/plan/second-batch.md:284-285 @ 0.8.0`) |
+| 1 | the line and column where a parse error or an uncaught throw arose: `Agent::last_entry_error_site` | HOST-172, HOST-173, HOST-174 | held | `conformance/host/requirements.txt:172-174 @ 0.10.0` (`test swell::scripts::host_172_a_parse_error_names_its_line_and_column` and the two after it) |
+| 2 | every operation whose work grows with its operands charges steps in proportion; parsing and compilation charged to the memory budget before they allocate; property operations charge their work and temporary storage first | HOST-168, HOST-169, HOST-181, HOST-182 | held (the exceptions swell lists are in Q13) | `conformance/host/requirements.txt:168-169 @ 0.10.0`, `:181-182 @ 0.10.0` |
+| 3 | the host charges and credits bytes and charges steps on the engine's one ledger: `charge_host_bytes` answers a `HostBytes`, dropping it credits; `Cx::charge_steps` | HOST-175, HOST-176, HOST-177 | held | `conformance/host/requirements.txt:175-177 @ 0.10.0` |
+| 4 | withdrawn as a need of surf; the engine states what a kept handle does | HOST-178 | held | `conformance/host/requirements.txt:178 @ 0.10.0` (`test swell::host_objects::host_178_a_kept_handle_is_weak`) |
+| 5 | an error's kind and own `message` read without running code; `HostObjectSpec::error_kind` | HOST-179 | held | `conformance/host/requirements.txt:179 @ 0.10.0` |
+| 6 | HOST-17, HOST-152 and HOST-163 hold under the embedder's profiles: shown in the engine's own development and release profiles; surf tests its own profile | HOST-17, HOST-152, HOST-163 | held | `conformance/host/requirements.txt:17 @ 0.10.0`, `:152 @ 0.10.0`, `:163 @ 0.10.0` |
+| 7 | each release names every change to a signature or requirement of the host interface: a committed snapshot of the interface with a gate check | none: a rule, `docs/design/host-interface.md:2252 @ 0.10.0` | held | no line: the rule is held by `host-surface-check` (`Taskfile.yml:117 @ 0.10.0`) against `conformance/host/surface.txt` @ 0.10.0 |
+| 8 | a host function's [[Prototype]] named or set: `Cx::set_prototype_of`, `Cx::get_prototype_of` | HOST-180 | held | `conformance/host/requirements.txt:180 @ 0.10.0` |
+| 9 | a closed list of intrinsics and well-known symbols: `%Error.prototype%`, `%Function.prototype%`, `%Array.prototype.values%`, `entries`, `keys`, `forEach`; `@@toStringTag`, `@@unscopables`, `@@iterator` | HOST-183, HOST-184, HOST-185 | held | `conformance/host/requirements.txt:183-185 @ 0.10.0` |
+| 10 | stated costs of a host function, a host object and a property, and a test of 300 host functions and 40 host objects: `HOST_FUNCTION_LIVE_BYTES`, `HOST_OBJECT_LIVE_BYTES`, `PROPERTY_LIVE_BYTES`, `BINDINGS_REALM_HEAP_BYTES` | HOST-186, HOST-187 | held | `conformance/host/requirements.txt:186-187 @ 0.10.0` |
+| 11 | new, from this note: no copy that is alive while the engine calls into script is left without a charge. Every copy the engine makes of a String's units or of an argument list and holds while it calls back into script is charged to `memory_bytes` before it is made and credited when it is dropped. A test: a page that holds such copies across calls into script ends in `Terminated(MemoryBudget)` with `heap_bytes()` at most `memory_bytes` | HOST-215 | held (`absent` at `0.8.0`), and the probe of Q13 on the tree of `0.9.0` | `conformance/host/requirements.txt:215 @ 0.10.0` (`test swell::budgets::host_215_a_buffer_held_across_a_call_into_script_is_charged`) |
+
+The requirements new at `0.9.1` and `0.10.0` (`conformance/host/requirements.txt:216-220 @ 0.10.0`), and what each means for surf:
+
+- HOST-216, `test`: an interrupt set by a host function that then throws ends the run in
+  `Terminated(Interrupted)`, no `catch` reached, the flag clear after. The test slice that sets
+  the interrupt and throws a `DOMException` ends its script `limit: wall-clock` (Q4, the
+  paragraph on a DOM write over a parser limit).
+- HOST-217, `test`: a host function that answers `Terminated(Interrupted)` with the flag clear
+  ends the run, and the agent stays alive. `bindings::end_with_limit` sets the flag and reads it
+  with `Cx::charge_steps(0)`, and answers `Terminated(Interrupted)` itself should the charge
+  answer `Ok` (Q4).
+- HOST-218, `test`: a String or a Symbol that host data lists in its `trace` survives a
+  collection. A `DOMException`'s `name` and `message` rest on it (Q4).
+- HOST-219, `pending slice 12`: the same for a BigInt. surf holds no BigInt in a host object's
+  data.
+- HOST-220, `test`: `to_utf16_len` on `Cx` and `HookCx` answers a String's length in code units
+  without a copy. The generated bindings read a length through `ToObject(string).length`;
+  `story:scripts-utf16-length` (draft) replaces that read.
