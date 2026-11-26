@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-selectors
 kind: story
-status: proposed
+status: active
 title: The 9 selector members over a subset of Selectors Level 4, bounded in text, count and steps
 summary: 'querySelector, querySelectorAll, closest, matches and webkitMatchesSelector on Element and the two of Document and DocumentFragment, for the subset of type, universal, #id, .class, [a], [a=v] (CSS escapes, strings, comments and the newlines CR, FF and CRLF included; an unterminated string or an unclosed block at the end of the text is closed, not an error), compounds, descendant and child combinators and lists, with the case rules of the HTML Standard (a type name and an attribute name lower-cased for an HTML element and compared exactly, the 46-name list of case-insensitive attribute values held as a table) and the tree''s quirks mode, every refusal a SyntaxError (a text that is not valid says so; a valid selector outside the subset or over the bounds of 4,096 bytes and 512 simple selectors says surf does not support it, as does a pseudo-class recognised by its shape even where a browser calls it not valid, two named deviations beside the nine rows), every read of the tree in a file of its own (selector_reads.rs) that charges before the work at one step per 16 bytes, through the glue''s constant, and a step a token, a node, an ancestor, a cell of the matcher and each further simple selector of a compound against the entry''s 10,000,000 steps, the walk keeping a stack of at most 513 frames and copying no list of children, the matcher filling every cell of a two-byte memo of compounds times chain that is charged before it is made, and querySelectorAll a static NodeList that is not a [SameObject] and keeps nothing.'
 relations:
@@ -29,9 +29,10 @@ scope:
   path: crates/webidl/selection.txt
 - confidence: cited
   path: docs/design/scripts.md
-revision: 37
+revision: 38
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-26T07:10:09Z", actor: "human:operator", revision: 38, executor: "agent:implementor"}
 ---
 ## Context
 

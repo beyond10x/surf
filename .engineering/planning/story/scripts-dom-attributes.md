@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-attributes
 kind: story
-status: proposed
+status: active
 title: The attribute members (14 rows), held to the attribute, stored-byte and memory limits and priced by what they scan
 summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the attribute functions of the tree's write surface after the standard's name checks and reads through three public reads and four owners of shared rules that the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned and a read of a value charging its bytes before any count, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in existing nodes charged to the memory budget through one handle that the engine resizes to twice the live bytes, so that a write that removes bytes refunds them, a cost module with a floor of steps on the worst shape of each member and one budget row for each writer and each read that returns a value, a namespace outside the six of the tree named as a deviation, the TrustedType deviation tested, the brand check of the members tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
 relations:
@@ -44,9 +44,10 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 54
+revision: 55
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-26T07:10:09Z", actor: "human:operator", revision: 55, executor: "agent:implementor"}
 ---
 ## Context
 
