@@ -17,6 +17,7 @@ mod adversary_dom_reading_5;
 mod adversary_dom_reading_6;
 mod adversary_dom_selectors;
 mod adversary_dom_selectors_2;
+mod adversary_dom_selectors_3;
 mod bindings;
 mod dom_attributes;
 mod dom_mutation;
