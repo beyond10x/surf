@@ -59,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 41
+revision: 43
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -93,9 +93,11 @@ microtask checkpoint after each script and swell's new error kind and host error
 edges of this story; it takes no tag of its own.
 
 Found while `story:scripts-spec` was built (2026-11-24): the session's cap of 256 rows of entries
-per request does not count the event `ScriptEndAdded`. A page may add up to 1,000 script records
-(Q4), so this story decides whether those events count against the cap or have a bound of their
-own, and holds the answer with a test.
+per request does not count the event `ScriptEndAdded`. A page may add up to one script record for
+each node of its tree, 1,048,576 at most (Q4, the row of scripts run per document, as
+`story:scripts-parse-run` corrects it: a script that did not run has a record too), so this
+story decides whether those events count against the cap or have a bound of their own, and holds
+the answer with a test.
 
 Found by the reviews of `story:session-process-hardening` and `story:scripts-engine-dependency`
 (2026-11-24), each for this story to hold with a test:
@@ -152,7 +154,19 @@ error kind and host error are `story:swell-0-9-0`'s, and the specification's wor
    script element that runs and dropped at the end of its parse, so no state passes from one page
    to the next; the session issues `surf.document.AddScriptEnd` (`story:scripts-spec`) once per
    end, after the parse and before `FinishParsing`, in the order the ends happened (Q7's
-   `written:`). Without the option, `HtmlParser` as today, and no record.
+   `written:`). The call takes the page's bytes, a `Page { address, content_type }` (the address
+   the page was fetched from and the content type of its response, unchanged), the session's
+   `ParseOptions` and a `Config` (`Config::SESSION`, which holds `RunnerLimits::SESSION` and
+   `Mode::Session`), and answers `Result<ScriptedParse, RunnerError>`. `ScriptedParse` carries the
+   tree, the ends, the encoding, the step and script totals and `stopped()`. An `Err(RunnerError)`
+   is a failure of the host (a thread, the seeds, an agent or a realm that could not be made),
+   not of the page: the parse has finished, the session records no end and answers the
+   navigation with its failure answer. A page whose `meta` changes the encoding is parsed twice
+   and runs a script before the `meta` twice (`story:scripts-parse-run`, decision 10); the ends
+   it records are the second parse's. The records of one document are bounded by the parser's
+   nodes and not by 1,000 (`docs/design/scripts.md`, Q4, the row of scripts run per document, as
+   `story:scripts-parse-run` corrects it). Without the option, `HtmlParser` as today, and no
+   record.
 3. The bounds of a session with scripts (Q11). This story ships the address space `--as=2147483648`
    (2 GiB): with swell `0.10.0`, which holds requirement 11 (`story:swell-0-9-0`), the copies are
    charged to `memory_bytes`, and with

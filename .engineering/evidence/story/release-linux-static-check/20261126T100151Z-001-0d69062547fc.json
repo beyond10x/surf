@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:51Z",
+  "actor": "human:operator",
+  "artifact": "story:release-linux-static-check",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 947eb6c, which holds 77957d0 (the merge of impl/release-linux-static-check at c1fc89a), 2026-11-26",
+    "reference": "check 45786991291, Documentation validation 45786991325, Shared source gates 45786991643 and Documentation site 45788969085: each completed success"
+  }
+}

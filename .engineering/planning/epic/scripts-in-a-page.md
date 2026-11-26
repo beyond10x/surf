@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 55
+revision: 68
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -132,7 +132,10 @@ Out, each with its reason:
 - Live collections: until swell's slice 9 (HOST-112 to HOST-114, internal-method overrides) a
   member that returns a live `NodeList` or `HTMLCollection` returns a snapshot with indexed own
   properties, a named deviation recorded beside each such member; selectors beyond the subset of
-  `scripts-dom-selectors` throw `NotSupportedError`, a named deviation.
+  `scripts-dom-selectors`, and selectors over its bounds, throw a `SyntaxError` whose message
+  says surf does not support them, a named deviation (a browser runs them); a pseudo-class or
+  pseudo-element that surf recognises by its shape gets the same message also where a browser
+  calls the text not valid (`a:hovr`), a second named deviation.
 - `document.write` and the rest of HTML's `Document`, `Window` beyond `document`, `window` and
   `self`, and the element interfaces (`HTMLElement`, `HTMLAnchorElement`, ...): an element's
   wrapper is an `Element`, a named deviation. Which HTML definitions are generated is S6.
@@ -472,9 +475,10 @@ story of those waves writes.
    `crates/script/src/dom/mutation.rs` and its tests.
 10. `scripts-dom-attributes`: the 14 attribute members, held to the attribute limits. Depends on 7
     and 8. Writes `crates/script/src/dom/attributes.rs` and its tests. Beside 9 and 11.
-11. `scripts-dom-selectors`: the selector subset for the 7 selector members, `NotSupportedError`
-    outside it. Depends on 8. Writes `crates/script/src/dom/selectors.rs` and its tests. Beside 9
-    and 10.
+11. `scripts-dom-selectors`: the selector subset for the 9 selector members, a `SyntaxError`
+    whose message says surf does not support the selector outside it. Depends on 8. Writes
+    `crates/script/src/dom/selectors.rs`, `crates/script/src/dom/selector_reads.rs` and their
+    tests. Beside 9 and 10.
 12. `scripts-html-conformance`: the harness runs the four DOM-only `needs-script` cases through
     `surf-script` and the expected counts rise. Depends on 9, 10, 11 and
     `story:html-tree-tables`. Writes `crates/html-conformance/` (`src/`, `expected/`,
@@ -627,6 +631,10 @@ reviews of `docs/design/scripts.md`:
   when written before an argument or a dictionary member and refused before any other member;
   a name defined twice, a partial or a parent of the wrong kind, a cycle of parents and an
   `includes` of the wrong kinds are refused.
+- The limits of a document are limits of one runner. A page whose `meta` changes the encoding is
+  parsed twice, so it runs each per-document limit once for each parse (two parses at most, no
+  third), and its ends, totals and stop are those of the second parse; `story:scripts-parse-run`,
+  decision 10.
 
 ## From the security review of 2026-11-22
 
@@ -731,11 +739,15 @@ Behaviour in the first version, by slice (146 members of the table):
   of `ChildNode`; `Document`'s seven `create...` of nodes (`createCDATASection` throws
   `NotSupportedError` in an HTML document, as the standard says), `importNode`, `adoptNode` and
   `ParentNode`'s four. Every write is held to the parser's limits.
-- Selectors, 7: `querySelector` and `querySelectorAll` on both, `closest`, `matches`,
-  `webkitMatchesSelector`, for a subset of Selectors Level 4 that `scripts-decisions` names
-  (type, universal, `#id`, `.class`, attribute presence and equality, compounds, descendant and
-  child combinators, lists); a valid selector outside it throws `NotSupportedError`, a named
-  deviation (a browser would not throw).
+- Selectors, 9: `querySelector` and `querySelectorAll` on `Element`, `Document` and
+  `DocumentFragment`, `closest`, `matches`, `webkitMatchesSelector`, for a subset of Selectors
+  Level 4 that `scripts-dom-selectors` names (type, universal, `#id`, `.class`, attribute
+  presence and equality, compounds, descendant and child combinators, lists); a valid selector
+  outside it, or over its bounds, throws a `SyntaxError` whose message says surf does not
+  support it (the DOM Standard gives these members only `SyntaxError`), a named deviation (a
+  browser would run it); a pseudo-class or pseudo-element that surf recognises by its shape
+  gets the same message also where a browser calls the text not valid (`a:hovr`), a second
+  named deviation.
 - Generated to throw `NotSupportedError`, naming the member and its reason, 23 and both
   constructors: events (`addEventListener`, `removeEventListener`, `dispatchEvent`,
   `createEvent`, `new EventTarget()`), attribute nodes and token lists (`attributes`, `classList`,
@@ -751,7 +763,11 @@ Behaviour in the first version, by slice (146 members of the table):
   `Document`) return a snapshot with
   indexed own properties until swell's slice 9; `[SameObject]` holds for `childNodes` and
   `children` only as the same snapshot object refreshed when it is read; an element's wrapper is
-  an `Element`, not `HTMLAnchorElement` and its kin.
+  an `Element`, not `HTMLAnchorElement` and its kin; a valid selector outside the subset of
+  `scripts-dom-selectors`, or over its bounds, throws a `SyntaxError` whose message says surf
+  does not support it, where a browser runs it; and a pseudo-class or pseudo-element that surf
+  recognises by its shape gets that message too, also where a browser calls the text not valid
+  (`a:hovr`, `a:nth-child(x y z)`), a second deviation of the same members.
 
 How the bindings meet swell's host interface (`docs/design/host-interface.md` sections 7, 14,
 15, and `crates/swell/src/host/` at `6a43e18`):
@@ -981,3 +997,53 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 919-920 ("Where the stories differ": "The table that selects which members are generated lives in `webidl-bindings` alone; each later slice names the members it turns from "throws" to "works""). Now: `scripts-dom-reading` also changes the generator and the table (`generate.rs`, `prelude.rs`, `selection.txt`) for `[SameObject]` and for the notes of `Node baseURI` and `DocumentFragment children`, and regenerates `bindings.rs`; a later story that changes the selection does the same and lists `selection.txt` and `bindings.rs` in its scope. Decision 10.
 - Lines 910 and 925-927 ("Where the stories differ" and "Candidates 12 and 13 are not disjoint (`Cargo.lock`, `crates/script/Cargo.toml`...)"): `Cargo.lock` and `crates/script/Cargo.toml` are no longer only those two stories': `scripts-dom-reading` adds the dependency `surf-url` to `surf-script` (one line in each; `taskfiles/lock-check.sh` and the owners file do not change, because `surf-url` is a crate of this repository and not a dependent of `surf-script`), and `story:swell-0-9-0` changes the pin in the same two files; those two are merged one after the other, the second merging `main` first. Decision 12 and the Placement of the story.
 - Lines 716-724 ("Tree reading, 73"): `compatMode`, `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and `contentType` need the document's facts, which no generated type holds: `surf_script::dom::DocumentInfo` (address as a `surf_url::Url`, content type, encoding name), built by `story:scripts-parse-run`, and the quirks mode, which the parser writes into `surf_html::Tree`. `Node.baseURI` is the HTML document base URL (the first `base` element with an `href`, parsed against the address), with three named deviations. Decisions 11 to 13.
+- Lines 473-474 @ a14e3b0, 476-477 at plan commit aa70366 (candidate 10): "the 14 attribute members, held to the attribute limits. Depends on 7 and 8. Writes `crates/script/src/dom/attributes.rs` and its tests." Now: `story:scripts-dom-attributes` writes three files of `crates/script/src/dom/` (`attributes.rs` for the members, `attribute_reads.rs` for every read of the tree, `attribute_writes.rs` for every write) and its tests, and also `crates/html/src/tree.rs` (three public reads, `attribute_position`, `attribute_position_ns` and `attribute_names`, three owners of rules the tree and the slice share, `Namespace::from_url`, `Tree::namespace_error` and `Attribute::qualified_len`, and `Attribute::stored_bytes`; the five writes that scan call the private owners of the position rule, `position_of` and `position_of_ns`, which the position reads call too, so that a removal makes no copy of the attribute's name before a charge covers it; and `put_attribute` reserves exactly while a list has fewer than four entries), `crates/html/tests/script_hook.rs`, the generator (`crates/webidl/src/prelude.rs`: `charge_stored`, `settle_stored`, the fields `stored`, `live` and `charged` of `DomState`, the variant `DomEnd::Fault` with its arm in `answered` for a defect of the engine's answer, and, in `strings_value`, one charge of 8 steps for each element, made before its loop), `crates/webidl/selection.txt`, `crates/script/src/bindings.rs`, `crates/script/src/dom/reads.rs` (three `pub(super)` tokens), `crates/script/src/dom/mod.rs` (two `mod` lines), `crates/script/tests/dom_reading.rs` (one line), `crates/script/tests/main.rs` (one `mod` line), `crates/script/tests/bindings.rs`, `docs/design/scripts.md` and `AGENTS.md`; the public surfaces it changes in its last commit are not its recorded scope (lines 955-961 @ aa70366). The bytes a script's attribute writes add to nodes that exist are charged to `memory_bytes` through one `HostBytes` handle for the document, not one for each node (the story departs from epic `:880 @ aa70366`, which says surf keeps one handle per node's bytes in the node's host data), which the engine's `resize_host_bytes` sets to twice the net rise of the stored bytes since the parse, never below 0: a grow is charged before the write and ends the script with `limit: memory` when it does not fit, and a write that removes bytes shrinks the handle, which refunds them while the net rise is above 0 (the change in place that surf asked swell for, epic `:880`, and the credit of `:337`, both @ aa70366). A node's own charge is never refunded, because a node is never taken out of the arena. One named deviation: `Element.setAttributeNS` with a namespace outside the six of the tree's `Namespace` throws `NotSupportedError`; `story:html-open-namespace` lifts it. Attribute nodes (`Attr`, `NamedNodeMap`, the attribute node members, `createAttribute`) and token lists (`classList`) stay excluded by this epic (lines 128, 683 and 741 @ a14e3b0); no story. Decisions 3 and 7 to 9 of the story.
+- Lines 134-135, 475-477, 738-742 and 753-758 (the selector members): `story:scripts-dom-selectors` replaces "`NotSupportedError`" for a valid selector outside the subset by a `SyntaxError` whose message says surf does not support it, because the DOM Standard gives `querySelector`, `querySelectorAll`, `closest`, `matches` and `webkitMatchesSelector` only `SyntaxError` and Selectors Level 4 (3.9) says an agent treats a construct it has no usable support for as invalid; the two bounds of the story (4,096 bytes, 512 simple selectors) throw the same kind; the count "7" becomes 9 (`DocumentFragment` adds two) and "that `scripts-decisions` names" becomes "that `scripts-dom-selectors` names". The deviation that stays is the subset itself, named beside the nine members.
+- Lines 134-136, 743-746 and 762-764 (the deviation texts of the selector members): `story:scripts-dom-selectors` names a second deviation beside the subset. A pseudo-class or pseudo-element that surf recognises by its shape (a colon or two, an identifier, an argument in balanced parentheses) gets the same `SyntaxError` and the same message, that surf does not support it, also where a browser would call the text not valid (`a:hovr`, `a:nth-child(x y z)`), because surf does not validate the name or the argument of a pseudo-class it excludes. The story's acceptance 4a tests both texts and its decision 11 names the deviation beside the nine members.
+- Lines 478-481 (candidate 11): "Writes `crates/script/src/dom/selectors.rs`, `crates/script/src/dom/selector_reads.rs` and their tests." Now: `story:scripts-dom-selectors` writes those two files and their tests (`crates/script/tests/dom_selectors.rs`), and also `crates/script/src/dom/reads.rs` (visibility only: seven items made `pub(super)` and the lifetime of `Reads`, no function changes its body), `crates/script/src/dom/mod.rs` (two lines, `mod selector_reads;` and `pub use selector_reads::Frames;`), `crates/webidl/selection.txt` (one note of two clauses on the nine rows of the slice `selectors`), `crates/script/src/bindings.rs` (regenerated: the nine doc comments and the digest lines), `crates/script/tests/dom_reading.rs` (line 2426, `el.querySelector("p")`, becomes `el.attachShadow({})`), `docs/design/scripts.md` (one row of the table of question 4) and `AGENTS.md` (the entry of `crates/script`). The public numbers (`README.md`, `docs/badges`, `website/docs/how-it-is-built.md`, `website/docs/status.md`, `website/docs/what-works.md`) it changes in its last commit as the epic says at lines 955-961, and they are not in its recorded scope. Decisions 11, 13 and 17 of the story.
+
+2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic; where they differ,
+the story's decisions win, and the lines named are this file's at plan commit `9a88a16`:
+
+- Lines 472-475 (candidate 9): "the 29 mutating members, the setters of `nodeValue`,
+  `textContent` and `document.title`, the constructors of `Text`, `Comment` and
+  `DocumentFragment` ... Writes `crates/script/src/dom/mutation.rs` and its tests". Now: 46 member
+  rows, four setters and four constructors (`Text`, `Comment`, `DocumentFragment` and
+  `ProcessingInstruction`), 54 methods of the trait `Mutation`, in three files (`mutation.rs`,
+  `mutation_reads.rs`, `mutation_writes.rs`); it also depends on `story:scripts-dom-attributes`
+  and `story:scripts-parse-run`. The story also writes `crates/html/src/tree.rs` (a validity
+  check, a bulk removal, a public check of an offset, a work counter, a rule for the capacity
+  of a child list that makes a reallocation paid by the writes between two of them, and one
+  read made public, `parent_or_host`), `crates/html/src/limits.rs` (one doc sentence),
+  `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs` and
+  `crates/script/src/bindings.rs` (a bulk node charge settled to what was made, a charge for each
+  item of a variadic list, the refill charged before its copy), the selection, `reads.rs`
+  (visibility only), `crates/script/src/dom/mod.rs` (two `mod` lines), the comment of `runner.rs`
+  at the arm for `Limit::InputBytes` and `Limit::Steps`, `crates/script/tests/dom_reading.rs` (one
+  line), `crates/script/tests/bindings.rs` (three tests and a unit test),
+  `crates/script/tests/main.rs` (one `mod` line), `docs/design/scripts.md` and `AGENTS.md`; the
+  public numbers it changes in its last commit are not its recorded scope (lines 955-961).
+- Lines 736-741 ("Tree mutation, 29"): "Every write is held to the parser's limits". Now: held to
+  the parser's limits and to the engine's `memory_bytes`, each write charged in steps for the
+  passes the tree makes, before the call (the story lists them and a counter in the tree holds
+  the formulas to them). At the default limits a script that makes nodes ends `limit: memory`
+  before `limit: nodes`: a created node takes 408 bytes of charge and 423 of wrapper (80,756
+  nodes, `docs/design/scripts.md:329-332`). A removed node is not refunded. A removal costs two
+  steps for each child behind it, so 5,000 removals from the front of one child list (25,020,000
+  steps) end `limit: steps-per-script` by the 1,127th, and a list of 3,161 children removed
+  whole from the front ends it. A script can also end `limit: steps-per-script` where a browser
+  throws a `DOMException`, because a check that needs a walk runs after the charge of its walk:
+  a named allowance, not a deviation of behaviour (decision 13 of the story).
+- Lines 761-770 (deviations): four more, each named beside its member in `selection.txt`:
+  `createElementNS` with a prefix or a namespace outside the six throws `NotSupportedError` (the
+  tree's element has no prefix and no open namespace); `cloneNode` of a `Document` throws
+  `NotSupportedError` (the standard clones it); a clone of a `script` element is recorded as
+  inserted when it is inserted, where a browser does not prepare a copy of a started script
+  again; an offset between the two units of a surrogate pair throws `IndexSizeError` in
+  `splitText`, `insertData`, `deleteData` and `replaceData` (the tree holds UTF-8; the standard
+  has no such step). `importNode` and `adoptNode` of a `Document` throw as the standard says.
+  Deviations 1 to 4 of the story, in this order.
+- Lines 955-961 (the rule on public numbers): the stories that write the public-number files
+  are also `story:swell-0-9-0` and the reading unit; two units built at once both change them,
+  and the one merged second repeats its numbers commit. The story's last commit changes them
+  from one gate log and does not record them in its scope.

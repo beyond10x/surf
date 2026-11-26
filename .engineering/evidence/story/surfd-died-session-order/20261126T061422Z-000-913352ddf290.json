@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T06:14:22Z",
+  "actor": "human:operator",
+  "artifact": "story:surfd-died-session-order",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on c91b313, the tip of impl/surfd-died-session-order, through the pool on the build host, 2026-11-26 06:30 CET",
+    "reference": "exit 0 in 139 s at a load of 53.91 to 57.18; 1845 tests: 1842 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 76.2 s (test step 31.0 s, tls test step 6.5 s, conformance step 12.7 s, page step 26.0 s); the docs site build exit 0"
+  }
+}

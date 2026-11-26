@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T06:14:23Z",
+  "actor": "human:operator",
+  "artifact": "story:surfd-died-session-order",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at b33aae7 (the merge of impl/surfd-died-session-order at c91b313), 2026-11-26",
+    "reference": "check (run 45763367109), Documentation validation (45763367132), Shared source gates (45763367322) and Documentation site (45765946933): each completed with success, attempt 1"
+  }
+}
