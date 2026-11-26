@@ -8,7 +8,7 @@ summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to 
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-26T04:38:51Z", actor: "human:operator", revision: 10}
@@ -46,9 +46,28 @@ gate that the change did not cause holds a merge.
 event alone. In the first case the clock is no limit on a wait: it orders two events, and no
 factor makes that safe.
 
+Why the shell is slow to end, found in the review of this story's first implementation:
+`SIGABRT` is a signal whose default action dumps core, and on a host whose core pattern is a
+pipe the process is waitable only after the handler has taken the dump. Measured in a test
+job on the build host (core pattern a pipe, at most 16 dumps at once): a shell that ended
+itself by `SIGABRT` was waitable after 142 to 256 ms with nothing else running, and after up
+to 3.5 s with 24 such shells at once; by `SIGTERM` after 3 to 15 ms and at most 68 ms. Every
+test of any repository that dumps core on that host shares the handler. A first
+implementation that kept `SIGABRT` and waited for the shell's end with a limit of 300 turns
+failed in a gate run under load (the turns took 7.5 s and the shell was not waitable), beside
+seven other cases of `crates/surfd/tests` that end a process by such a signal.
+
+What the two cases claim does not need that signal: a session that died by a signal `surfd`
+did not send is named by that signal, and is not read as `bound cpu`, which belongs to
+`SIGXCPU` alone (`daemon.rs:401-409`). `signal_name` (`:309-334`) names `SIGUSR1` like any
+other.
+
 ## Decisions
 
-1. First case: the order is made by an event. The child writes `x` only after the session
+1. Both cases end the session shell by `SIGUSR1` (`kill -s USR1 $$`), a signal whose default
+   action ends the process and dumps no core, and assert `note ended: signal SIGUSR1`. The
+   time until the shell is waitable then does not depend on the host's core handler.
+2. First case: the order is made by an event. The child writes `x` only after the session
    shell is waitable: it reads `/proc/<pid>/stat` of the shell (`$$` names the shell in the
    subshell too) until the state after the last `)` is `Z` or the file is gone, and then
    writes. The file is gone only after the opener collected the shell's status at its ready
@@ -58,7 +77,7 @@ factor makes that safe.
    `try_wait` is empty.
    The loop is a wait for an event with a limit: it sleeps 10 ms a turn (`/usr/bin/sleep
    0.01`; the session's environment is cleared, so commands are named by path) and gives up
-   after 300 turns, a count that is over 10 times the 0.3 s the shell failed to meet. A child
+   after 300 turns, over 10 times the 68 ms measured for a signal that dumps no core. A child
    that gives up must not look like one that wrote: when it exits without a line, `supervise`
    sends `Start::Nothing` (`:1651`), the opener takes `not_started` (`:1476`, `:1575-1590`),
    and the answer for a shell that ended is the same text the case asserts. So the child that
@@ -68,28 +87,33 @@ factor makes that safe.
    to 30 s, so that under load the 300 turns end before the product's timeout and the file,
    not the timeout, decides; a green run answers in milliseconds and never waits for it. The
    loop is sh, so it adds no elapsed value to a Rust test.
-2. Second case: the order stays one of two clocks, because the event the case reaches is the
-   product's ready timeout, which starts inside `open` right after the spawn (`:1409`,
-   `:1474`) and which a test cannot hold back. The child must hold the session's standard
-   output past the ready timeout T (a child that lets go earlier takes the path of
-   `Start::Nothing`, `:1476`), and must let go inside `abandon`'s wait, so its hold S obeys
-   `T < S < T + max(kill_grace, KILL_GRACE)` (`:1331`; `KILL_GRACE` is 2 s, `:43`). The case
-   sets T = 2 s (`session_ready_timeout`), S = 3 s (`/usr/bin/sleep 3`) and `kill_grace` = 4
-   s: the shell has 2 s to end where it had 0.3 s, the timeout has 1 s before the child lets
-   go, and the wait has 3 s left after it. The case lasts about 3 s. Its doc comment says
-   that it orders clocks, with these three margins.
-3. No product file changes. If the implementor finds that `surfd` answers wrongly for an
+3. Second case: one clock stays, and the child's hold becomes an event.
+   - The clock: the shell must have ended before the product's ready timeout T, which starts
+     inside `open` right after the spawn (`:1409`, `:1474`) and which a test cannot hold
+     back. The case sets T = 2 s (`session_ready_timeout`), over 10 times the 68 ms above.
+     Its doc comment says that this is a clock and gives the margin.
+   - The event: the child must hold the session's standard output past T (a child that lets
+     go earlier takes the path of `Start::Nothing`, `:1476`) and let go inside `abandon`'s
+     wait (`:1331`). At the timeout `abandon`'s `Process::kill` collects the ended shell
+     (`:427`), and from then on `/proc/<pid>/stat` of the shell is gone. The child holds the
+     output until that file is gone (`[ -e /proc/$$/stat ]` fails), in turns of 10 ms with a
+     limit of 1,000 turns, and then exits. A child that gives up lets go after `abandon`'s
+     wait has run out, and the case is red by its answer; no file is needed.
+   - `kill_grace` keeps its default. The case lasts about 2 s.
+4. No product file changes. If the implementor finds that `surfd` answers wrongly for an
    order the product must hold, that is a finding for a story of its own, with a failing
    test, and this story stops there.
 
 ## Change
 
-- `crates/surfd/tests/adversary_2.rs`: the two session programs; the settings of both cases (the
-  first case's ready timeout; the second case's ready timeout, hold and kill grace); the first
-  case's assertion on the file `gave-up`; the reason the second case asserts, which names the
-  timeout (`within 0.3 seconds` at `:164-169` becomes `within 2 seconds`); and the doc
-  comments of both cases, which say how the order is made. No case is added or renamed, so no
-  count of `AGENTS.md` moves.
+- `crates/surfd/tests/adversary_2.rs`: the two session programs (the signal, the loop of the
+  first case, the hold of the second); the settings (the first case's ready timeout of 30 s,
+  the second case's of 2 s; no kill grace is set); the first case's assertion on the file
+  `gave-up`; the note both cases assert (`note ended: signal SIGUSR1`); the reason the second
+  case asserts, which names the timeout (`within 0.3 seconds` at `:164-169` becomes `within 2
+  seconds`); and the doc comments of both cases, which say how the order is made and why the
+  signal is one that dumps no core. No case is added or renamed, so no count of `AGENTS.md`
+  moves.
 
 ## Acceptance
 
@@ -98,28 +122,32 @@ factor makes that safe.
    `daemon.rs:1561-1566`, made on the committed tip, run, taken back; `git diff --quiet --
    crates/surfd/src` after), both cases are red.
 2. The first case is green when the session shell is slow to end: with `/usr/bin/sleep 1`
-   written before `kill -s ABRT $$` in its session program (taken back after), the case is
-   green; at `a14e3b0` the same line makes it red. Each shown once.
+   written before `kill -s USR1 $$` in its session program (taken back after), the case is
+   green; at `a14e3b0` the same line before its `kill` makes it red. Each shown once.
 3. The second case is green when the session shell is slow to end: with `/usr/bin/sleep 1`
-   written before `kill -s ABRT $$` in its session program (taken back after), the case is
-   green; at `a14e3b0` the same line makes it red. Each shown once.
-4. The first case is red when the child does not wait: with the loop of decision 1 replaced
+   written before `kill -s USR1 $$` in its session program (taken back after), the case is
+   green; at `a14e3b0` the same line before its `kill` makes it red. Each shown once.
+4. The first case is red when the child does not wait: with the loop of decision 2 replaced
    by nothing (the child writes `x` at once) and `/usr/bin/sleep 1` before the `kill`, the
    case is red. Shown once, taken back.
 5. The first case is red when the loop never sees the shell's end: with the state letter the
    loop waits for changed to a letter no state has (`Q`), the child gives up and the case fails
    at its assertion on `gave-up`, not at an assertion on the answer; the report gives the
    case's time. Shown once, taken back.
-6. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
-   line at `a14e3b0` (`:141`) and nothing after the change, and `git grep -c
-   'from_millis(300)' -- crates/surfd/tests/adversary_2.rs` prints 2 at `a14e3b0` and 1 after
-   (the number after the last colon; the case of the live session at `:118` keeps its
-   timeout).
-7. One pool job after `slot cargo build --workspace --all-targets --locked`, with
+6. The second case is red when the child does not hold: with the hold of decision 3 replaced
+   by nothing (the child exits at once), the case fails at its assertion on the reason.
+   Shown once, taken back.
+7. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
+   line at `a14e3b0` (`:141`) and nothing after the change; `git grep -c 'from_millis(300)'
+   -- crates/surfd/tests/adversary_2.rs` prints 2 at `a14e3b0` and 1 after (the number after
+   the last colon; the case of the live session at `:118` keeps its timeout); `git grep -c
+   'ABRT' -- crates/surfd/tests/adversary_2.rs` prints 6 at `a14e3b0` and no line after; and
+   `git grep -c 'kill -s USR1' -- crates/surfd/tests/adversary_2.rs` prints 2 after.
+8. One pool job after `slot cargo build --workspace --all-targets --locked`, with
    `RUSTFLAGS="-D warnings"` and `SURF_BIN_DIR=<tree>/target/debug` as `task test` sets them:
    `slot cargo nextest run -p surfd --locked` is all green; the two cases are named with their
-   times, the second about 3 s, neither over 5 s.
-8. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
+   times, the second about 2 s, neither over 5 s.
+9. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
    its time with `slot --timeout` (at most 30 minutes), none started again unchanged. Every
    command that compiles or tests carries `slot`; none carries `--local`, `--here`,
    `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`. No Python. A script that measures or waits starts
@@ -127,6 +155,10 @@ factor makes that safe.
 
 ## Out of scope
 
+- The other cases of `crates/surfd/tests` that end a process by a signal whose default
+  action dumps core and wait 5 s or 7 s for it (seven were red in the gate run named in the
+  Context). Some of them claim something about `SIGXCPU` itself, so another signal is not
+  the remedy for all; they get a story of their own.
 - The other clocks of the file: the `thread::sleep` of 500 ms with its two elapsed bounds
   (`:210`, `:220`, `:232`) is listed by no story yet; the check of
   `story:tests-without-wall-time-bounds` finds such bounds, and `story:time-bounds-in-tests`
