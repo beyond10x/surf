@@ -15,6 +15,8 @@ scope:
 - confidence: cited
   path: AGENTS.md
 - confidence: cited
+  path: crates/html/src/limits.rs
+- confidence: cited
   path: crates/html/src/tree.rs
 - confidence: cited
   path: crates/script/src/bindings.rs
@@ -48,7 +50,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 48
+revision: 50
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -60,16 +62,19 @@ interfaces they return, with the DOM Standard's exceptions, held to the parser's
 
 Read for this text:
 
-- The plan at `9a88a16` (branch `plan/round-2`): the epic, the attributes story at `4437ed9`
-  (its revision 7: `charge_to`, `charged_write`, `settle_stored`, `DomEnd::Fault` and the
-  accessors are final there, and decision 5 names the contract this story calls), the parse-run
-  story at `f877bfd`, the selectors story at `77aaa6a`. Two stories added since `aa70366`
-  (`agent-tasks-left-process-wait`, `tests-without-wall-time-bounds`) touch nothing here.
-- The code at `83e6b8a`, the reading unit as this story was first written against, and at
+- The plan at `9a88a16` (branch `plan/round-2`): the epic, the parse-run story at `f877bfd`,
+  the selectors story at `77aaa6a`; and at `dfec030` the attributes story at `72f6059` (its
+  eighth revision: `charge_to`, `charged_write`, `settle_stored`, `DomEnd::Fault` and the
+  accessors are final there, and its decision on the stored-bytes handle names the contract
+  this story calls). Two stories added since `aa70366` (`agent-tasks-left-process-wait`,
+  `tests-without-wall-time-bounds`) touch nothing here.
+- The code at `83e6b8a`, the reading unit as this story was first written against; at
   `14f8a2a`, the tip of that unit's branch with its fix round (`cd43273`, "Walk the tree without
-  copying a child list"; not reviewed, not on `main`). `main` at `a14e3b0` for the public
-  strings and the vendored DOM Standard (`dom.html`). The engine at the tag the runner pins
-  (`swell` `0.8.0`, commit `0c18271`), `host/host_bytes.rs` and `host/mod.rs`.
+  copying a child list"); and at `50a4239`, its new tip with the sixth fix round (not on
+  `main`): a String argument is charged before its copy, a compare charges both sides, and a
+  source test holds that no walk of `reads.rs` copies a child list. `main` at `a14e3b0` for the
+  public strings and the vendored DOM Standard (`dom.html`). The engine at the tag the runner
+  pins (`swell` `0.8.0`, commit `0c18271`), `host/host_bytes.rs` and `host/mod.rs`.
 - A cite of code without a commit is a line of `83e6b8a`; a cite with `@` names its commit.
 - Numbers below that are arithmetic from the formulas are marked "arithmetic"; no build has
   measured them. The build measures each one and reports a difference as a defect of the
@@ -107,12 +112,18 @@ bytes) plus twice the stored bytes through `charge_host_bytes`, pushes one `Host
 refunds. A variadic argument arrives as `Vec<NodeOrString>` (`bindings.rs:1116`); the conversion
 `to_nodes_or_strings` (`bindings.rs:1135`, `prelude.rs:1036`) charges no step for an item.
 
-The glue's copy of one `String` argument (`Copies::copy`) charges after the copy: at `83e6b8a`
-`units / 64` steps (`bindings.rs:628`); at `14f8a2a`, after the reading story's price commit,
-`2 x units / 16` steps (`bindings.rs:630`), with `STRING_BYTES_A_STEP` = 16 (`bindings.rs:1259 @
-14f8a2a`; `:1257 @ 83e6b8a`). With `u` the UTF-16 units of one argument that is
-`g(u) = floor(u / 8)` steps. The text below uses `g`; the price commit is not built at
-`83e6b8a`, and acceptance 1 says what happens when it is not built at the implementor's base.
+The glue's copy of one `String` argument (`Copies::copy`), as this story builds on it: the
+reading unit's sixth fix round (`50a4239`) charges the argument before the copy.
+`Copies::copy` reads the length with `string_length(cx, string)`, which copies nothing, charges
+`2 x units / 16` steps (`STRING_BYTES_A_STEP` = 16), and only then calls `to_utf16`
+(`bindings.rs:624-631`, generated from `prelude.rs:554-561`; the unit's source test
+`a_string_argument_is_charged_before_its_copy`, `dom_reading_cost.rs:669`). The amount is the
+same at `14f8a2a`, where the copy came first (`bindings.rs:630`, `units` the units copied), and
+`83e6b8a` charged `units / 64` with `units` the bytes of the copied text (`bindings.rs:628`).
+With `u` the UTF-16 units of one argument that is `g(u) = floor(u / 8)` steps at `14f8a2a` and
+`50a4239`. The text below uses `g`; neither of the two earlier commits is the implementor's
+base, and acceptance 1 stops the work when the base lacks the price commit or the sixth fix
+round.
 
 What the tree's write surface does at `83e6b8a` (`crates/html/src/tree.rs`): it counts no step.
 Each write walks, and the walks are not constant. Decision 3 lists every pass with its function
@@ -130,7 +141,14 @@ and line. The facts the rest rests on:
   `insert_checked` (`:1021`), by `children.insert` in the parser's `insert` (`:466`) and by
   `push` in `clone_node` (`:1247`); it shrinks in `shrink` (`:710-714`: when the capacity is over
   twice the length, and over 4, `shrink_to_fit`), called by `detach` (`:893`) for a child list
-  and by `drop_attribute` (`:1532`) for an attribute list. The callers of `detach` are
+  and by `drop_attribute` (`:1532`) for an attribute list. A bulk removal takes the list:
+  `remove_children` (`:539-545`) does `mem::take` and leaves capacity 0, and `set_text_content`
+  calls it (`:1458`). A text value never keeps spare room after a write that shortens it:
+  `split_text` makes the head with `to_string` (`:1372`) and replaces the node's data with it,
+  so the old string is freed and the head's capacity is its length; `replace_data` builds the
+  new data with `String::with_capacity` of its exact size (`:1401-1404`) and replaces the old.
+  So a loop of `splitText(1)` on a 1 MiB text holds no room beyond the tail's own bytes, and
+  nothing in the Change makes a value give room back. The callers of `detach` are
   `insert_checked` (`:1000`), `remove_node` (`:1105`), `replace_child` (`:1124`), `adopt_node`
   (`:1275`) and `normalize` (`:1345`); those of `drop_attribute` are `:1600`, `:1618` and
   `:1652`. The parser calls none of them: it uses `remove` (`:524`), `remove_children`,
@@ -195,8 +213,10 @@ document's tree.
    steps per collection node in the glue (`COLLECTION_NODE_STEPS`, `bindings.rs:1251`). Ids of a
    child list: 2 ids of the 8-byte `NodeId` a step, `ids(n) = ceil(n / 2)`. `b16` and `ids` are
    written once, in `mutation_writes.rs`, and a unit test there asserts `b16(16) = 1`,
-   `b16(17) = 2`, `ids(2) = 1`, `ids(3) = 2` and `size_of::<NodeId>() == 8`. Three list passes,
-   each priced in `ids`:
+   `b16(17) = 2`, `ids(2) = 1`, `ids(3) = 2` and `size_of::<NodeId>() == 8`. They are private:
+   the cost module is an integration test and cannot name them, so it imports
+   `surf_script::bindings::STRING_BYTES_A_STEP` (`pub`) and derives its own 16 and 2 from it and
+   from `size_of::<NodeId>()`. Three list passes, each priced in `ids`:
    - `front(i) = ids(i + 1)`: the scan from the front to index `i` (`index_in_parent`,
      `tree.rs:871`);
    - `back(k) = ids(k)`: the scan from the back over `k` entries (the `rposition` of `remove`,
@@ -251,8 +271,10 @@ document's tree.
    - `move_before` (1133): `root_of` (798) of the parent twice and of the node once (1143,
      1144), the ancestor test (1145) and `element_depth` inside `admit_depth` (1169): four
      climbs of the parent and one of the node, `4 d + d_n`; for an element into a `Document`,
-     `document_allows` (1155); `next_sibling(node)` at 1164 when `child` is the node;
-     `admit_depth` (`s`); `insert_checked`.
+     `document_allows` (1155); `next_sibling(node)` at 1164 when `child` is the node,
+     `front(j)`; `admit_depth` (`s`); `insert_checked`, which for a node that is a child of the
+     target runs `next_sibling(node)` at 988, `front(j)` again (a move inside one parent: the
+     node's parent is the target's, so `index_in_parent` scans `j + 1` ids).
    - `clone_node` (1202): `clone_cost` (1175) visits each node once (`s'` nodes, a template's
      contents fragment counted as a node, 1187) and reads its attributes' sizes; the copy loop
      (1211) makes `s'` nodes and clones each node's data, one allocation for each attribute
@@ -270,15 +292,25 @@ document's tree.
      walk, `back + shift`, in the list of its parent at that time. `descendants` does not enter
      a template's contents.
    - `split_text` (1364): `byte_index` (677) to the offset, at most `L` bytes (1368); `admit(1,
-     0)`; the two `to_string` copies of the tail and the head (1371, 1372), `L` bytes in all;
-     `create(Text(tail), 0)` stores the tail's bytes, and the head's bytes leave the node (the
-     tree's stored bytes change by nothing); then, for a node with a parent, `next_sibling(node)`
-     (1378, `front(j)`), and `insert_checked` of the new node with that sibling as reference:
-     `front(j + 1)` at 1011 and `shift` at 1021.
+     0)` (1370: it can refuse for `Nodes` only, never for `StoredBytes`); the two `to_string`
+     copies of the tail and the head (1371, 1372), `L` bytes in all; `create(Text(tail), 0)`
+     stores the tail's bytes, and the head's bytes leave the node (`stored_bytes -= moved`,
+     1376: the tree's stored bytes change by nothing); then, for a node with a parent,
+     `next_sibling(node)` (1378, `front(j)`), and `insert_checked` of the new node with that
+     sibling as reference: `front(j + 1)` at 1011 and `shift` at 1021.
    - `replace_data` (1386): `utf16_len` of the data (1394, a pass over `L`), `byte_index` twice
      (1398, 1399, each up to `L`), then the build of the new data (1401-1404, one copy of at
      most `L` plus the new data). So 3 scans and 1 copy of `L`, plus the new data once. `set_data`
      (1416) and `append_data` (1422) call `utf16_len` first: one scan more.
+   - The offset check has one owner, a public function the Change adds,
+     `Tree::check_offset(node, offset, count) -> WriteResult<(usize, usize)>`: the three scans
+     of `replace_data` (1394-1399) moved into it, answering `InvalidNodeType` for a node that
+     is not character data and `IndexSize` past the end or between the two units of a
+     surrogate pair, and the byte range otherwise; with `count` 0 the range ends where it
+     starts and the check is the one `byte_index` pass. `split_text` calls it with count 0 and
+     `replace_data` with its count; the slice calls it too, before its memory charge, so the
+     slice copies no rule about surrogates and a call runs the check twice, which the tables
+     charge twice.
    - `set_text_content` (1441): for an element or fragment, `create_text_node` copies the value
      (1447); an any-element test over the children (1450-1453): at most `c_p` reads;
      `remove_children` (539): `c_p` visits; `insert_checked` of the text with no reference.
@@ -335,11 +367,13 @@ document's tree.
      token: `adversary_3.rs:204`, `adversary_4.rs:218` and `tests/bindings.rs:176` call it and
      are not in scope.
    - What `charge_nodes` answers for each layer of the engine's result. The one place that
-     decides it is the attributes story's private body, `DomCx::charge_to(&mut self, handle:
-     &mut Option<HostBytes>, bytes: u64) -> DomResult<()>` (`charge_stored` and `charge_nodes`
-     both go through it; `charge_node` becomes its wrapper): with `None` it makes the handle
-     (`charge_host_bytes`), with `Some` it resizes it, to `bytes`. This story passes `&mut
-     nodes` and the new size, `totals.bytes + wanted`:
+     decides it is the attributes story's private body, an associated function of `impl<'e>
+     DomCx<'_, 'e>` that takes the engine and no `self`, `charge_to(engine: &mut Cx<'e,
+     ScriptHost>, handle: &mut Option<HostBytes>, bytes: u64) -> DomResult<()>` (`charge_stored`
+     and `charge_nodes` both go through it; `charge_node` becomes its wrapper): with `None` it
+     makes the handle (`charge_host_bytes`), with `Some` it resizes it, to `bytes`. This story
+     calls it as `Self::charge_to(&mut *self.engine, &mut self.state.nodes, wanted)`, two
+     disjoint fields, with the new size `totals.bytes + wanted`:
      - the first call: `Ok(handle)` is kept; `Err(Abrupt::Throw(_) | Abrupt::Terminated(_))`
        maps as `prelude.rs:230` does, to `DomEnd::Throw(InvalidStateError "the memory budget is
        spent")`, a throw the engine never delivers, since the run is terminated with
@@ -352,21 +386,39 @@ document's tree.
        counters change only on `Ok(Ok(()))` or on the made handle.
    - The settle, one function beside `charge_nodes`: `DomCx::settle_nodes(charged: NodeCharge,
      made_nodes: usize, made_stored: usize) -> DomResult<()>`. It gives back `3 x NODE_BYTES x
-     (charged.nodes - made_nodes) + 2 x (charged.stored - made_stored)` bytes through
-     `charge_to` (a resize down), lowers `totals.nodes` and `totals.bytes` by what it gave back
-     and never grows the handle (`debug_assert!` that `made` is not over `charged`). It has the
-     form of `settle_stored` of the attributes story (`DomCx::settle_stored(added, removed) ->
-     DomResult<()>`, which that story owns): it answers `Ok(())` only when the engine answered
-     `Ok(Ok(()))` or was not called (the size is equal), and the totals change only then. An
-     outer `Err(HostError)` is `DomEnd::Fault` as in `charge_to`, and an inner `Err` (which
-     `charge_to` has made a `DomEnd::Throw`) is made `DomEnd::Fault` by the settle, so that a
-     script never catches it; the totals stay as they were. A shrink cannot fail a live run: in
-     `scoped_resize_host_bytes` (`host/host_bytes.rs:79-106 @ 0c18271`) the checks come first
-     (`alive()?`, then the foreign-handle check) and a shrink only credits, so `Fault` here is
-     a defect of surf's own code. Nothing shrinks after the run has ended, so the settle comes
-     before `end_with_limit`, while the run is live. A caller takes the result after the settle:
-     a `?` on the settle's own result is allowed. When the tree call answered an `Err` and the
-     settle answers `Fault`, the `Fault` is what the member answers.
+     (charged.nodes - made_nodes) + 2 x (charged.stored - made_stored)` bytes by one resize
+     down, lowers `totals.nodes` and `totals.bytes` by what it gave back and never grows the
+     handle (`debug_assert!` that `made` is not over `charged`). It has the form of
+     `settle_stored` of the attributes story (`DomCx::settle_stored(added, removed) ->
+     DomResult<()>`, which that story owns), with one more case. It calls the engine's
+     `Cx::resize_host_bytes` itself and not `charge_to`, because `charge_to` folds an inner
+     `Err(Abrupt::Terminated(_))` into a throw and this settle has to tell the two apart. The
+     layers of the answer:
+     - `Ok(Ok(()))`, or no call because the size is equal: the totals change and the settle
+       answers `Ok(())`;
+     - an inner `Err(Abrupt::Terminated(_))`: the run has ended already; the settle answers
+       `Ok(())` and changes no total. In `scoped_resize_host_bytes` (`host/host_bytes.rs:79-106
+       @ 0c18271`) the checks come first (`alive()?`, then the foreign-handle check) and then
+       `running()` (`:86`; `agent.rs:771-777`) answers the sticky termination for any resize, a
+       shrink included. The run ends with its own word (`limit: steps-per-script` when the
+       steps ended it) and the agent's drop credits the handle, so nothing is lost and no
+       script runs on it again. The variadic call below is where this happens;
+     - an outer `Err(HostError)` (`alive()` or the foreign handle) and any other inner `Err`
+       (`Abrupt::Throw`, which a live shrink cannot answer): `DomEnd::Fault`, as in
+       `charge_to`, so that a script never catches it; the totals stay as they were.
+     Where a run can end between a charge and its settle: the glue's variadic call charges
+     `charge_nodes(k + 1, B)`, runs the slice's method and settles, and the method charges
+     steps (decisions 1 and 3), so a step overrun there ends the run (`Err(Throw "the steps of
+     the script are spent")`, `reads.rs:130-137`) before the settle. No other settle of this
+     story or of the attributes story has slice code that charges steps between its charge and
+     its settle: `charged_nodes` and `charged_write` run the tree call only, which counts no
+     step, so their settles meet a live run, and `settle_stored` keeps the attributes story's
+     rule that an inner `Err` there is a defect (`Fault`). That story owns `charge_to`,
+     `charge_stored`, `settle_stored` and `Fault` and needs no change; this story owns
+     `settle_nodes` and its `Terminated` case. Every other settle comes before
+     `end_with_limit`, while the run is live. A caller takes the result after the settle: a `?`
+     on the settle's own result is allowed. When the tree call answered an `Err` and the settle
+     answers `Fault`, the `Fault` is what the member answers.
    - What is charged on a bound and settled to what was made:
      - a create, a clone and `splitText` go through one private function of
        `mutation_writes.rs`, `charged_nodes(cx, count, stored, write)`: `charge_nodes` (its `?`
@@ -374,12 +426,22 @@ document's tree.
        of `Tree::node_count()` and `Tree::stored_bytes()` over the call, after an `Ok` and after
        any `Err` alike (an `IndexSizeError` included: a `?` on the tree call between the charge
        and the settle is a defect, and acceptance 3 holds the order with a source test); the
-       function then answers the settle's `Fault` if it has one, else the tree call's result;
+       function then answers the settle's `Fault` if it has one, else the tree call's result.
+       One rule for all three: the settle gives back to the tree's change of `stored_bytes()`.
+       For `splitText` that change is 0 (`tree.rs:1376`: the tail's bytes move out of the head),
+       so the call charges the bound `L` for its transient copies, the settle gives all of
+       `2 L` back, and the handle keeps only the node's 408 bytes, because the stored bytes
+       that existed were charged when their node was made;
      - a variadic list: the glue charges `charge_nodes(k + 1, B)` before the first copy of an
        item (`k` the strings, `B` taken as 3 x their UTF-16 units: a UTF-8 byte is at most 3 per
        unit, so for ASCII text it is an overcharge of 3, and it is allowed; one string of 3 units
        is charged 9 bytes) and settles after the slice's method returns, with the tree's gain
-       over the call. `1,000` strings of 3 units: `charge_nodes(1,001, 9,000)` wants `1,001 x 408
+       over the call. The glue knows `B` before any copy: `finish_nodes_or_strings` sums
+       `string_length(cx, string)` over the raw string items (`prelude.rs:928 @ 50a4239`,
+       `ToObject(string).length`, which copies nothing), as `Copies::copy` reads one length
+       before its charge. When the method's steps end the run the settle answers `Ok(())` and
+       the handle keeps what was charged (the rule above); the run is over and the agent's drop
+       credits it. `1,000` strings of 3 units: `charge_nodes(1,001, 9,000)` wants `1,001 x 408
        + 2 x 9,000 = 408,408 + 18,000 = 426,408` bytes; the call makes 1,001 nodes and stores
        3,000 bytes; the settle gives back `2 x (9,000 - 3,000) = 12,000` and leaves `1,001 x 408
        + 2 x 3,000 = 408,408 + 6,000 = 414,408` in `totals.bytes`. A `before()` of a node with
@@ -414,9 +476,9 @@ document's tree.
      `normalize`, which empties the later texts of a run into the first, raises the count by the
      merged bytes less the first text's own, and its settle is `settle_stored(gain, 0)`; a
      `deleteData` falls. So the handle ends at the stored bytes the tree holds, and a refused
-     call leaves it where it was. `splitText` makes no stored call: the head's bytes leave the
-     node that exists and are not lowered from `live`, which leaves the handle above its floor (a
-     conservative error); the tail's bytes are charged with the new node.
+     call leaves it where it was. `splitText` makes no stored call: the tree's stored bytes
+     change by nothing (the head's bytes leave the node and enter the tail), so `live` stays
+     equal to them; the new node is charged by `charged_nodes` (above).
    - A removal refunds nothing for nodes (their 408 bytes and strings stay charged, because the
      node stays in the arena); the stored bytes of a character-data write that shrinks are
      refunded by that settle.
@@ -427,7 +489,8 @@ document's tree.
      (`create_document_fragment`, `tree.rs:1071`): for two items or more the convert charges
      `charge_nodes(k + 1, B)`.
    - The glue charges `n` steps in `to_nodes_or_strings`, before its loop, and the memory charge
-     in `finish_nodes_or_strings` before the copy loop. A member that then does nothing (a
+     in `finish_nodes_or_strings` before the copy loop, after the sum of the lengths of the
+     strings (`string_length`, above). A member that then does nothing (a
      `before()` with no parent) has paid its steps: an allowance, named in decision 13.
    - Memory that the engine's budget does not see, and its bound:
      - the tree's transient vectors, an entry each and bounded by the node limit: `element_height`
@@ -440,19 +503,23 @@ document's tree.
        argument array; and the membership set of `before` and `after`, `n` entries;
      - a child list's capacity over its length: at most `max(4 x len, 4)` ids after a write of
        this story that removes a child, at most `2 x (len + m)` after a growth, 3 x the length
-       while a growth copies (the old and the new vector), and what it had before for a list
-       that a bulk removal emptied (decision 15); at the node limit 4 x 1,048,576 x 8 =
-       33,554,432 bytes;
+       while a growth copies (the old and the new vector), and 0 for a list that a bulk removal
+       emptied (`remove_children` and `remove_all` take the list, `tree.rs:539-545`; decision
+       15). At the node limit 4 x 1,048,576 x 8 = 33,554,432 bytes bounds the lists that a
+       write of this story left; a list the parser built, or shortened with its own `remove`,
+       keeps what `Vec`'s doubling gave it, at most twice the longest length it had, which the
+       parser's own limits bound and this story does not change;
      - `replace_data` holds the old and the new text at once, so `2 L`; `splitText` holds the
        text, the tail and the head, so `2 L` more; `normalize` holds the merged text, up to the
        bytes of the longest run (twice, `merged` and `push_str`);
      - a removed node's arena slot and strings, bounded by 164,482 script-made nodes and the
        parser's own limits;
      - the single argument copies of the glue (`Copies::copy`): bounded by the string length
-       limit, not charged before the copy, and the vector the copy makes, 2 bytes a unit
-       plus the `String` of up to 3 bytes a unit (arithmetic: at 16,777,216 units, 33,554,432
-       bytes of `u16` and 50,331,648 bytes of `String`). No story holds the move before the
-       charge yet.
+       limit, and the vector the copy makes, 2 bytes a unit plus the `String` of up to 3 bytes
+       a unit (arithmetic: at 16,777,216 units, 33,554,432 bytes of `u16` and 50,331,648 bytes
+       of `String`). The steps for them are charged before the copy since the reading unit's
+       sixth fix round (`50a4239`), the amounts unchanged, so a call past its steps ends before
+       any unit is copied; the memory the copy takes stays outside the budget.
 6. A write over a limit ends through `end_with_limit` with the limit's word (`limit: nodes`,
    `limit: depth`, `limit: stored-bytes`, `limit: memory`), also inside `try { } catch { }`.
    The tree after it:
@@ -465,11 +532,23 @@ document's tree.
      makes one node (the fragment) and raises `writes()` by 2 (by 4 when `a` and `b` had
      parents, since each leaves its old parent), as the refused call does. It is not
      `f.append(a, b)`, which is itself a two-item `append` and would build a second fragment;
-   - after any call, refused or not, the nodes the tree gained equal `totals().nodes` and the
-     bytes it gained equal what `totals().bytes` holds above the settled floor: a create, a
-     clone or a convert that the tree refuses settles the handle and `totals()` to the nodes
-     and bytes the tree did gain (decision 5). For a `Nodes` refusal in the middle of a convert
-     that is the nodes made before it, which stay in the arena.
+   - after any call, refused or not, the nodes the tree gained equal the change of
+     `totals().nodes`, and the change of `totals().bytes` over the call equals `3 x NODE_BYTES`
+     (408) for each node gained plus 2 x the stored bytes the tree gained (`Tree::stored_bytes()`
+     before and after): a create, a clone or a convert that the tree refuses settles the handle
+     and `totals()` to the nodes and bytes the tree did gain (decision 5). For a `Nodes` refusal
+     in the middle of a convert that is the nodes made before it, which stay in the arena. For
+     `splitText` the stored bytes gained are 0, so the change is 408 bytes and one node. One
+     exception, by decision 5: a variadic call whose method's steps end the run leaves the
+     handle at what the glue charged, since the settle meets a terminated run; nothing runs
+     after it;
+   - the `Document.title` setter is not all or nothing when the `title` element is new: it
+     inserts the new empty `title` under `head` and then makes its text node, so a refused text
+     node (`Nodes` or `StoredBytes`) leaves the empty `title` in the tree (one node more, and
+     `writes()` raised by 1). With a `title` that exists the text node is made first
+     (`set_text_content` makes it before it removes a child, `tree.rs:1447-1451`), so a refusal
+     changes nothing; the `limit_*_title` tests parse a page that has a `title`, and one more
+     case (`title_refused_leaves_the_new_title`) holds the empty `title`.
    A test sees "the tree just before the call" by a second parse of the same page that runs the
    same script without the refused call, and compares the serializations, the node counts and
    `writes()`. A limit ends the script, so a loop over members does not reach the second
@@ -503,8 +582,11 @@ document's tree.
      (`generate.rs:239`), and the attributes story edits it there. This story alone edits
      `generate.rs`, in `same_object_getter` (`:695`).
    - A spy `reading` slice with three methods (`window_document`, `node_child_nodes`,
-     `document_get_element_by_id`) proves the order by counting calls of `node_child_nodes`
-     when the charge ends the script.
+     `document_get_element_by_id`), in `crates/script/tests/dom_mutation.rs`, proves the order
+     by counting calls of `node_child_nodes` when the charge ends the script. The refill reads
+     the child list through `reads::children`, which charges one step a child before its copy
+     (`reads.rs:1050-1053 @ 50a4239`), so each refill costs the child count beside the getter's
+     `8 x (kept_len + child_count)`.
 8. No recursion, tested where the code is. No walk of the write surface recurses at `83e6b8a`
    (every one keeps a `pending` stack), and the walks of this slice are structs of decision 1:
    a source test shows no function of the three files or of the walks calls itself. The
@@ -517,14 +599,15 @@ document's tree.
    call keeps each node at most once for a document (that story's set, its rule): a node the
    parser reported gets no second record, an element moved out and back in gets none the
    second time, and a clone is another node, recorded when it is inserted.
-10. `other_slices_still_throw` (`crates/script/tests/dom_reading.rs:2399-2432 @ 83e6b8a`) holds
-    three adjacent lines, 2424 (`document.appendChild(el)`, this story's), 2425
-    (`getAttribute`, the attributes story's) and 2426 (`querySelector`, the selectors story's).
-    This story changes line 2424 to `document.createRange()` with the message
-    `Document.createRange is not supported: ranges`, and no other line; the later merger keeps
-    all three edits. The reading module keeps its own `TestMutation` (`dom_reading.rs:73`,
-    installed at `:130`), as do `dom_reading_cost.rs` and the `adversary_dom_reading*` modules,
-    which replace the mutation slice. The three tests of `crates/script/tests/bindings.rs` that
+10. `other_slices_still_throw` (in `crates/script/tests/dom_reading.rs`) holds three adjacent
+    lines, cited by their text because the reading unit's hunks move them: the one with
+    `document.appendChild(el)` (this story's), the one with `getAttribute` (the attributes
+    story's) and the one with `querySelector` (the selectors story's). This story changes the
+    first to `document.createRange()` with the message `Document.createRange is not supported:
+    ranges`, and no other line; the later merger keeps all three edits. The reading module
+    keeps its own `TestMutation` (`dom_reading.rs:73`, installed at `:130`), as do
+    `dom_reading_cost.rs` and the `adversary_dom_reading*` modules, which replace the mutation
+    slice. The three tests of `crates/script/tests/bindings.rs` that
     assert `createComment`, `appendChild`, `new Text` or `new DocumentFragment` throw
     (`a_member_of_a_slice_throws_until_its_slice`,
     `the_strings_of_a_dom_exception_outlive_a_collection`,
@@ -554,8 +637,13 @@ document's tree.
     type of the node, a null argument, the `where` of `insertAdjacent*`, the parent of the
     child in `removeChild`) runs before any charge; a check that needs a walk (the ancestor
     test, the `Document` checks) runs after the charge of its walk, inside the tree. The offset
-    of `splitText` is checked first, by an own pass over the text charged `b16(L)` before it:
-    `IndexSizeError` is thrown before any node is charged. So a script can end `limit:
+    of the four members that take one (`splitText`, `replaceData`, `insertData`, `deleteData`)
+    is checked first, by the tree's `check_offset` (decision 3), which the slice calls after
+    charging its passes (`b16(L)` for `splitText`, a bound of `3 b16(L)` for the other three):
+    `IndexSizeError` is thrown before any node or stored byte is charged, so it never ends
+    `limit: memory` first. `appendData` and the setters pass the offset 0 or the length, which
+    the check cannot refuse, and run no check of their own. Acceptance 15 lists the twelve pairs
+    of calls that can throw two exceptions, one case each. So a script can end `limit:
     steps-per-script` where a browser would throw `HierarchyRequestError`, `NotFoundError` or
     `IndexSizeError`: that is a named allowance, not a deviation of behaviour, and acceptance 16
     has a pair for each of five families (an ancestor test, a `NotFound`, a `Document` parent,
@@ -580,7 +668,14 @@ document's tree.
       (`shallow_equal`, the attributes of one node in a map); `Reads` (`:332`), `charge`
       (`:130`), `html_element` (`:303`) and `find` are private there. At `a14e3b0` there is no
       `reads.rs`;
-    - the two commands of acceptance 1 test it, and each says "prints nothing else; if it does,
+    - at `50a4239` the unit holds it by a source test of its own,
+      `no_walk_of_the_reads_copies_a_child_list` (`dom_reading_cost.rs:618`): cut into
+      functions, `reads.rs` holds `.to_vec()`, `.collect`, `extend(` or `Vec::from(` only in
+      `element_children`, `shallow_equal` and `children`, each charged before its copy. `find`
+      is `:478`, `preorder` `:495`, `charge` `:133`, `children` `:1050`. This story keeps its
+      commands beside that test: they read the working tree of the implementor's base, and the
+      test is the unit's;
+    - the commands of acceptance 1 test it, and each says "prints nothing else; if it does,
       the work stops and the implementor reports";
     - this story's edit of `reads.rs` is `pub(super)` on `charge`, `find`, `Reads` and
       `html_element`, and nothing else: a layout-blind diff holds it (acceptance 24).
@@ -605,6 +700,13 @@ document's tree.
       whose growth is `Vec`'s doubling (`2 x` the old capacity).
     - The tree's work count includes the ids a reallocation copies: the splice's growth,
       `shrink_children` and `push_child` raise `ids` by the ids copied (decision 4).
+    - A bulk removal is not a shrink: `remove_children` (`tree.rs:539-545`) and the new
+      `remove_all` take the list whole (`mem::take`), which frees it and leaves capacity 0, and
+      the next insert grows from nothing and copies no id.
+    - `shrink`'s doc comment (`tree.rs:708-709`) and the doc of `Limits::max_stored_bytes`
+      (`limits.rs:45-51`, "it at most doubles") say the new rule: a child list keeps at most
+      four times its entries after a removal and `2 (len + m)` after a growth. The heap bound
+      holds: an entry of 4 ids is 32 bytes, inside the 408 bytes of a node's term.
     - Each write that inserts into or removes from a child list pays one step for each id it
       inserts or removes (the reallocation share of decision 2): the insert formulas carry `3 m`
       where they carried `2 m`, a removal carries 2 for the node and its share, a removal from
@@ -721,7 +823,10 @@ List terms of one node put into a child list, used by every insert, move and rep
     answer null (and write nothing) when `this` has no parent. `afterend` finds `this`'s index by
     the own front walk to `j + 1` (`j + 2` steps, which also reads the next sibling) and inserts
     before that sibling (`i = j + 1`), with `ids(j + 2) + ids(c_p - j - 1)` for the tree's two
-    passes; `afterbegin` inserts before the first child (`i = 0`); `beforeend` appends.
+    passes; `afterbegin` inserts before the first child (`i = 0`); `beforeend` appends. An
+    element that is already a child of the target (`insertAdjacentElement`, or
+    `appendChild` of a child) takes the same-parent terms of the list terms: `ids(j + 1)` at
+    988 and its removal `2 k_o + 1`.
   - Exceptions: those of decision 13. Limits: Depth; Nodes and StoredBytes for the text node of
     `insertAdjacentText`. Counter: raises when the child list changes.
 - Variadic `ParentNode` (9 rows): `prepend`, `append`, `replaceChildren` on `Element`,
@@ -744,13 +849,18 @@ List terms of one node put into a child list, used by every insert, move and rep
       own back walk for its removal from the fragment.
   - The final insert of the fragment is an insert as above with `s` the fragment and its
     children and `m` its children, and `5 c_p + 2 m` for a `Document` (a fragment into a
-    `Document` pays `document_allows` and the count and text test over the fragment).
+    `Document` pays `document_allows` and the count and text test over the fragment). The
+    fragment has no parent, so no same-parent term. A single item (used as it is) that is a
+    child of the target moves inside one parent and takes the same-parent terms of the list
+    terms above: `ids(j + 1)` at 988 and its removal `2 k_o + 1`.
   - `replaceChildren` (5194): the convert, then `2d + s` for the validity check before any
     removal (the new public check of the Change, `check_insertion`, which runs the ancestor
     test, the `Document` checks and the depth check, and charges `5 c_p` once for a `Document`
     parent), then `2 c_p` for the removal (the any-element scan and `remove_all`, a step each
     child each pass; no share), then the insert, which sees `c_p = 0` and charges no `5 c_p`.
-    A refused check leaves the children (`dom.html:4760-4795`). In all, for one parentless
+    A refused check leaves the children (`dom.html:4760-4795`). An item that is a child of the
+    target is detached by `remove_all` with the others, so the insert sees a parentless node:
+    no same-parent term. In all, for one parentless
     item: `1 + n + 4 + 1 + 9 + 2 c_p + 12` (own `d` and `s`, the check, the removal, the insert
     `2d + s + 3m` with `d = 4`), that is `28 + 2 c_p`; for a `Document` (`d = 1`): `13 + 7 c_p`.
   - Exceptions, limits and counter: as an insert; `replaceChildren` also raises when it
@@ -771,9 +881,13 @@ List terms of one node put into a child list, used by every insert, move and rep
     - `replaceWith`: the tree call is `replace_child(parent, node, this)` (or `insert_before`
       with the viable next sibling when `this`'s parent changed during the conversion), so it
       counts the passes of `replace_child`: 6 for a parentless or fragment node, 11 for a node
-      of the same parent; a parentless single node costs `3 + 3d + 2s + 3m + 2 + (j + 1) + 2
-      ids(j + 1) + k + ids(k - 1)` with `k = c_p - j`, the three at the front being `1 + n +
-      membership + sibling`.
+      of the same parent; a parentless single node costs `(1 + n + membership + sibling) + 3d +
+      2s + 3m + 2 + (j + 1) + 2 ids(j + 1) + k + ids(k - 1)` with `k = c_p - j`: the first
+      bracket is 4 for one item (the glue's step, `n`, the membership step, the sibling step).
+    - In `before`, `after` and `replaceWith` a single item (used as it is) that is already a
+      child of the target's parent moves inside one parent: it adds `ids(j_x + 1)` at 988
+      (`j_x` the item's own index) and its removal `2 k_x + 1` to the line above, as the list
+      terms say.
     `replaceWith()` with an empty list is a removal.
   - `remove` (5436): no parent, nothing. Else the removal below.
 - Remove and replace (`Node removeChild`, `Node replaceChild`, and the removals above).
@@ -784,12 +898,15 @@ List terms of one node put into a child list, used by every insert, move and rep
   - A removal of the last child costs 5 steps (`k = 1`: `3 + 2`) and the first of `c` children
     `2 c + 3`. So a loop that removes from the front is quadratic: a list of `n` removed whole
     from the front costs `n^2 + 4 n` (arithmetic: the sum of `2 c + 3` for `c` from 1 to `n`
-    is `n (n + 1) + 3 n`), which is 4,008,000 for `n` = 2,000 and 25,020,000 for `n` = 5,000. A
-    list of about 3,161 children removed whole ends `limit: steps-per-script` (arithmetic: 3,161^2
-    + 4 x 3,161 = 10,004,565, and 3,160 gives 9,998,240, before the script's own steps); the
-    first 1,127 removals from a list of 5,000 do (arithmetic: `r (2 n - r + 4)` with `n` = 5,000
-    is 10,004,379 at `r` = 1,127); the same loop from the back costs 5 steps a turn, 10,000 for
-    2,000. That is the price; the cost module holds both.
+    is `n (n + 1) + 3 n`), which is 4,008,000 for `n` = 2,000 and 25,020,000 for `n` = 5,000.
+    Arithmetic, which no row asserts as an end because the engine's own steps move it: 3,161
+    removals cost 3,161^2 + 4 x 3,161 = 10,004,565 and 3,160 cost 9,998,240, about the
+    10,000,000 of the default limit, and the first 1,127 removals from a list of 5,000 cost
+    `r (2 n - r + 4)` = 10,004,379. The rows hold the price by the form of acceptance 16: the
+    steps of the loop without the removals, `steps_without`, and the difference `D` the row
+    measured; a limit of `steps_without + D - 1` ends the script and `steps_without + D` lets
+    it finish. The same loop from the back costs 5 steps a turn, 10,000 for 2,000. That is the
+    price; the cost module holds both.
   - `replaceChild(node, child)` (`tree.rs:1111`): the own `d`, `s` and the own front walk `i +
     1`; then `2d + s + 2m`, the passes of decision 3, `m` for the share, 1 for the child
     removed and 1 for its share, and `5 c_p` for a `Document`. For a parentless node, with `k = c_p
@@ -806,8 +923,12 @@ List terms of one node put into a child list, used by every insert, move and rep
   d_n + s + 2m + m`, the list terms of an insert (`ids(i + 1)`, `ids(c_p' - i)` with `c_p'` the
   target's children after the node left, and `2 k_o + 1`), and `5 c_p` for an element into a
   `Document`; then `Tree::move_before` (`tree.rs:1133`). In all `1 + 5d + 2 d_n + 2s + 3m` and
-  the list terms. It connects no node that was not connected, so it records no script.
-  Counter: raises.
+  the list terms. The list terms of `moveBefore` are the reference's `ids(i + 1)` and
+  `ids(c_p' - i)`, the removal `2 k_o + 1`, and, when the node is a child of the target (the
+  move inside one parent, which the member allows), `ids(j + 1)` for the `next_sibling(node)` at
+  988 (`insert_checked`; `index_in_parent`, `tree.rs:871`), and the same again when `child` is
+  the node (1164). A node of another parent has none of the `ids(j + 1)`. It connects no node
+  that was not connected, so it records no script. Counter: raises.
 - Clone, import, adopt (3 rows).
   - `cloneNode(deep)`: a `Document` throws NotSupportedError before any charge (deviation 2; the
     standard allows it). Else an own walk of the subtree, `1 + ceil(attributes / 4)` steps
@@ -830,7 +951,11 @@ List terms of one node put into a child list, used by every insert, move and rep
 - `normalize` (`Node`, `dom.html:6946-7016`): the glue's step; an own walk (`s` steps, a step
   before each node) over the subtree (not into template contents) that finds, for each parent
   `p`, the children `c_p`, the text nodes the tree will remove `removed_p` (a run's texts but
-  the first non-empty one, or all of them when each is empty), and the text bytes `B`. Then,
+  the first non-empty one, or all of them when each is empty), and the text bytes `B`. The
+  walk counts a parent's runs as each child is visited: the step before a child pays for
+  reading that child's kind and bytes and for updating the run its parent is in, and no pass
+  over a parent's children runs at the parent's own visit, so a parent of many children is
+  paid for child by child. Then,
   before the call: `6 s` (the six passes of decision 3), `3 x b16(B)`, and the sum over the
   parents of `removed_p x (c_p + 2)` (an upper bound of the `detach` of each removed text,
   `rm(k) <= c_p`, with 1 for the node and 1 for the share); and the merged bytes `added` through
@@ -840,25 +965,30 @@ List terms of one node put into a child list, used by every insert, move and rep
   sum, not the longest run, is what bounds the work: many parents of long runs cost the sum.
 - Character data (`appendData`, `insertData`, `deleteData`, `replaceData`, `splitText`, and the
   setters of `data`, `nodeValue` and `textContent`). The slice makes no pass of its own over
-  the text except the offset check of `splitText`: the tree's `IndexSize` test is the one that
-  reads it, so every pass is charged before the call, and the call answers the exception.
+  the text: the offset check is the tree's `check_offset` (decision 3), which the four members
+  that take an offset call before their memory charge, and every pass is charged before the
+  call it belongs to.
   - Reads: the text's byte length `L` (constant, `Tree::data`).
-  - `replaceData`, `insertData`, `deleteData`: `1 + g(u) + 4 b16(L) + b16(data_len)` steps (the
-    glue's step and copy; the 3 scans and 1 copy of decision 3; the new data once);
-    `appendData` and the `data` and `nodeValue` setters: `1 + g(u) + 5 b16(L) + b16(data_len)`
-    (`deleteData` has no data argument: `g` and `data_len` are 0). Then, inside `charged_write`,
+  - `replaceData`, `insertData`, `deleteData`: `1 + g(u) + 3 b16(L)` for the slice's call of
+    `check_offset` (a bound: the three scans of `utf16_len` and two `byte_index`, one scan for
+    `insertData`), then `4 b16(L) + b16(data_len)` for the tree's own run (the same 3 scans
+    and 1 copy of decision 3; the new data once): `1 + g(u) + 7 b16(L) + b16(data_len)` in
+    all; the check comes first, so an offset past the end throws `IndexSizeError` having paid
+    only `1 + g(u) + 3 b16(L)`. `appendData` and the `data` and `nodeValue` setters call no
+    check (the offset is 0 or the length): `1 + g(u) + 5 b16(L) + b16(data_len)` (`deleteData`
+    has no data argument: `g` and `data_len` are 0). Then, inside `charged_write`,
     `charge_stored(added, removed)` with `added = data.len()` and `removed = 0` (bounds known
     before the call); the call; after any `Err` `settle_stored(0, 0)` and, for a limit,
     `end_with_limit`, or the exception is thrown; after an `Ok`, `settle_stored(gain, loss)`
     from the tree's change of stored bytes.
-  - `splitText(offset)`: the offset is checked first by an own pass over the text, `b16(L)`
-    steps, and `IndexSizeError` is thrown before any node is charged. Else `charged_nodes(1,
-    L)` on the bound `L` (the tail is at most `L` bytes), settled to the tail's bytes (the new
-    node's data length, read from the tree), and `2 b16(L) + 1` steps (the tree's scan, the two
-    copies, and the node); for a node with a parent the own front walk `j + 1` and `ids(j + 1) +
-    ids(j + 2) + ids(c_p - j - 1)` (1378, 1011, 1021) and 2 for the insert of one id with its
-    share; then the call. In all, with no parent `2 + 3 b16(L)`. Raises when the node has a
-    parent.
+  - `splitText(offset)`: the offset is checked first, by the tree's `check_offset` with count 0
+    (one pass), charged `b16(L)` steps before it, and `IndexSizeError` is thrown before any
+    node is charged. Else `charged_nodes(1, L)` on the bound `L` (the tail is at most `L`
+    bytes), settled to the tree's change of stored bytes, which is 0 (decision 5), and `2 b16(L)
+    + 1` steps (the tree's scan, the two copies, and the node); for a node with a parent the
+    own front walk `j + 1` and `ids(j + 1) + ids(j + 2) + ids(c_p - j - 1)` (1378, 1011, 1021)
+    and 2 for the insert of one id with its share; then the call. In all, with no parent
+    `2 + 3 b16(L)`. Raises when the node has a parent.
   - The setter of `data` is `replaceData(0, length, value)`. The setter of `nodeValue` takes
     `Option<String>` (null is the empty string): on character data it is that, on others
     nothing. The setter of `textContent` (`dom.html:6850-6933`): on character data it replaces
@@ -868,8 +998,10 @@ List terms of one node put into a child list, used by every insert, move and rep
     string is not empty (no node, and no `1 + 2` of those steps, when it is), the call
     (`tree.rs:1441`); on others nothing. Counter: character-data writes do not raise; the
     replace-all raises when it removed a child or made a child.
-  - Limits: StoredBytes for the writers, Nodes and StoredBytes for `splitText` and for the
-    replace-all.
+  - Limits: StoredBytes for the writers; Nodes for `splitText` only (`admit(1, 0)`, `tree.rs:
+    1370`: the tail's bytes move out of the head, so no stored byte is admitted and it never
+    ends `limit: stored-bytes`); Nodes and StoredBytes for the replace-all (`create_text_node`
+    admits `1, len`, `tree.rs:1447`).
 - `Document.title` setter. The HTML Standard's algorithm (section "document.title", not
   vendored here): with no document element, return; a document element in the SVG namespace
   takes its first `title` child; an HTML element takes the first `title` element in tree order;
@@ -878,10 +1010,21 @@ List terms of one node put into a child list, used by every insert, move and rep
   by the value. It calls the reading unit's `find` (`reads.rs:349 @ 83e6b8a`, `:458 @
   14f8a2a`), a stepwise walk that charges a step before each node and copies no child list once
   the gate of decision 14 passes, so `find`, `Reads` and `html_element` (`reads.rs:218 @
-  83e6b8a`) are made `pub(super)`. Charge: the glue's step and copy, the walk, then for a new
-  `title` the create (`charged_nodes(1, 5)`, 1 step) and an insert under `head` as above, then
-  the replace-all of `2 c_t + b16(len)`, its text node and its insert (1 + 2 steps). With one
-  existing `title` that holds no child, `1 + g(u) + walk + 1 + 2 + b16(len)`. Limits: Nodes
+  83e6b8a`) are made `pub(super)`. The walk starts at the document, as the reading unit's
+  `title` getter does (`reads.rs:1208-1213 @ 50a4239`), so it visits the document, the `html`
+  element and the rest of the tree in order, a step before each node. Charge: the glue's step
+  and copy, the walk (`W` nodes), then for a new `title` the scan of the document element's
+  children for the first `head`, one step before each child is read (the slice's own loop,
+  `h` steps for a `head` at index `h - 1`; the reading unit's `document_child`,
+  `reads.rs:763 @ 50a4239`, charges all the children up front but is private, takes a `fn`
+  test and would be a fifth token to widen, so it is not used), the create
+  (`charged_nodes(1, 5)`, `1 + b16(5)` = 2 steps) and an insert under `head` (`3d + 2s + 3m`
+  with `d` = 3), then the replace-all of `2 c_t + b16(len)`, its text node and its insert
+  (1 + 2 steps). New `title` in all: `1 + g(u) + W + h + 2 + 14 + 3 + 2 c_t + b16(len)`, with
+  `c_t` 0. With one existing `title` that holds no child, `1 + g(u) + W + 1 + 2 + b16(len)`.
+  A page whose document element has many children before `head` (comments, which the parser
+  puts there before the `head` start tag) and no `title` pays the walk over all of them and
+  then the scan over all of them again, which is why the scan is charged. Limits: Nodes
   and StoredBytes. `Limit::Depth` is unreachable here: a depth counts elements
   (`element_depth`, `tree.rs:811`), a text node adds none, and a new `title` under the `head`
   child of the document element is at depth 3 (`html`, `head`, `title`), which is the smallest
@@ -928,12 +1071,22 @@ one test):
 | `cloneNode`, `importNode` | Nodes | `limit_nodes_clone` |
 | `cloneNode`, `importNode` | StoredBytes | `limit_stored_clone` |
 | `splitText`, replace-all | Nodes | `limit_nodes_split` |
-| `splitText`, replace-all | StoredBytes | `limit_stored_split` |
+| replace-all (`textContent` of an element or fragment) | StoredBytes | `limit_stored_replace_all` |
 | four writers, `data` | StoredBytes | `limit_stored_character_data` |
 | `normalize` | StoredBytes | `limit_stored_normalize` |
 | `title` setter | Nodes | `limit_nodes_title` |
 | `title` setter | StoredBytes | `limit_stored_title` |
 | every family at default limits | memory | `limit_memory_default` |
+
+`splitText` has no `StoredBytes` row: it cannot reach it (`admit(1, 0)`). The depth rows run on
+an element receiver. The receivers whose depth is 0, a `Document` or a `DocumentFragment` (the
+six variadic rows `prepend`, `append` and `replaceChildren` on those two, the `Node` members
+called on one, the two `moveBefore` rows on them, and the four `ChildNode` rows of
+`DocumentType`, whose parent is a `Document`), cannot end `limit: depth`: `admit_depth`
+(`tree.rs:848-866`) adds the receiver's depth, 0, to the height of the moved subtree, and a
+subtree in a tree of these limits is at most `max_depth` high. They get a guard in
+`limit_depth_insert` and `limit_depth_move`: the deepest subtree the limits admit (height 512)
+is put under each such receiver and the script ends `Ran`, never `limit: depth`.
 
 Which members record a script and which do not:
 
@@ -1005,23 +1158,32 @@ of the `title` walk is the tree's passes, charged up front: a price and not a de
   - `check_insertion(node, parent, child, replaced)`, the public validity-only check: the
     ancestor test, the `Document` checks and the depth check of `insertion_allowed` and
     `admit_depth` with no write, `2d + s` and `5 c_p` for a `Document`;
+  - `check_offset(node, offset, count)`, the one check of an offset and a count in UTF-16
+    units against a value (decision 3), called by `split_text`, by `replace_data` and by the
+    slice: 1 pass of `L` for count 0, else 3;
   - `remove_all(parent)`, the bulk removal of `remove_children` without a `Cell`, for
-    `replaceChildren`: `c_p` visits, and the any-element scan before it, `c_p` reads;
+    `replaceChildren`: `c_p` visits, and the any-element scan before it, `c_p` reads; it takes
+    the list whole and leaves capacity 0, as `remove_children` does (`tree.rs:539-545`);
   - `work()`, `WorkCount` and the private `Work` of decision 4, raised in each pass of the table
     of decision 3; the doc comment of each write function lists its passes;
   - `shrink_children` in place of `shrink` at `:893`, `reserve_exact(len + 2 m)` before the
     splice at `:1021` and `push_child` for the clone's pushes at `:1247` (decision 15); `shrink`
-    stays for attribute lists;
+    stays for attribute lists, and its doc comment (`:708-709`) says which lists it serves;
   - no recursive function is changed: none recurses (decision 8).
   Rules that two places hold: the clone's cost (`clone_cost`, private, owns it; the slice's walk
   copies it on purpose because it charges before each node, and the clone row asserts they
   agree), a template as two nodes (`create_element_ns` owns it; the slice's
   `charge_nodes(2, ...)` copies it on purpose, held by the `createElement("template")` row),
-  the `IndexSizeError` bound (the tree owns it; the slice only charges the passes), the depth
-  (`admit_depth` owns it; the slice only prices the climbs), and `b16` and `ids` (the cost module
-  and the slice each use the slice's two functions, not a copy).
+  the `IndexSizeError` bound (the tree owns it in `check_offset`; the slice calls that function
+  and charges its passes, and a source test holds that it names no surrogate rule), the depth
+  (`admit_depth` owns it; the slice only prices the climbs), and `b16` and `ids` (private to the
+  slice with their unit test; the cost module derives its 16 and 2 from `STRING_BYTES_A_STEP`
+  and `size_of::<NodeId>()`, decision 2).
 - `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs`, regenerating
-  `crates/script/src/bindings.rs`: `charge_nodes`, `settle_nodes`, `NodeCharge` and the `nodes`
+  `crates/script/src/bindings.rs`: `charge_nodes`, `settle_nodes` (its `Terminated` case of
+  decision 5, and one line that names `DomEnd::Fault`: the attributes story counts the lines
+  that name it by a command at its own base, and acceptance 3 says `mutation_writes.rs` names
+  none), `NodeCharge` and the `nodes`
   handle (`DomState` fields and `DomState::new`, `prelude.rs:104-131`), `DomState::charges`
   removed, `node_charges()` redefined; `charge_node` as a wrapper over `charge_nodes`; `n`
   steps in `to_nodes_or_strings`, and the memory charge and its settle around the copy loop of
@@ -1034,8 +1196,11 @@ of the `title` walk is the tree's passes, charged up front: a price and not a de
 - Tests: `crates/script/tests/dom_mutation.rs` (the cases and the source tests; a one-line stub
   exists at `14f8a2a`), `crates/script/tests/dom_mutation_cost.rs` (new, with one `mod` line in
   `tests/main.rs`), `crates/script/tests/dom_reading.rs` (one line, decision 10),
-  `crates/script/tests/bindings.rs` (three tests, decision 10; the glue unit test of acceptance
-  9), and the unit tests of `crates/html/src/tree.rs` (acceptance 25).
+  `crates/script/tests/bindings.rs` (three tests, decision 10; the variant `Writes::Nodes` and
+  the glue unit tests of acceptance 9), and the unit tests of `crates/html/src/tree.rs`
+  (acceptance 25).
+- `crates/html/src/limits.rs`: the doc comment of `max_stored_bytes` (`:45-51`) says what
+  decision 15 allows of a child list, one sentence; no code.
 - `docs/design/scripts.md`: the row of Q1 that holds the node charge (cite it by its text, not
   its line) gains the clone sentence; the paragraphs of the node charge (`:322-332 @ 83e6b8a`)
   and of the `memory_bytes` list (`:902-904`), which the attributes story edits too, gain the
@@ -1058,23 +1223,40 @@ Every result is read from a named test or a command. Where a line holds on `main
 says it is a guard. Every command that reads the diff names its base:
 `git diff $(git merge-base main HEAD)..HEAD`.
 
-1. Three start checks, not results. Each prints what it says or the work stops and the
-   implementor reports.
+1. Five start checks, not results. Each is a command run in the implementor's working tree
+   (no commit in the command, so it reads the files of the base) and prints what it says, or the
+   work stops and the implementor reports. The outputs below are what the same command prints
+   when given the named commit, with its prefix `<commit>:` left out.
    - The price gate: `git grep -n -F 'units / 64' -- crates/script/src/bindings.rs` prints
-     `crates/script/src/bindings.rs:628` at `83e6b8a`, nothing at `14f8a2a` and
+     `crates/script/src/bindings.rs:628` at `83e6b8a`, nothing at `14f8a2a` and `50a4239`, and
      `crates/script/src/bindings.rs:561` at `a14e3b0`. At the implementor's base it must print
      nothing (the reading story's price commit is merged first); if it prints a line, stop and
      report.
+   - The price gate, positive: `git grep -n -F 'let length = string_length(cx, string)?;' --
+     crates/script/src/bindings.rs` prints `crates/script/src/bindings.rs:624` at `50a4239`
+     (`Copies::copy` reads the length, charges `count.saturating_mul(2) /
+     STRING_BYTES_A_STEP` at `:630`, and only then copies) and nothing at `83e6b8a`, `14f8a2a`
+     and `a14e3b0`. At the implementor's base it must print one line: the reading unit's sixth
+     fix round is merged; if it prints nothing, stop and report. The unit's source test
+     `a_string_argument_is_charged_before_its_copy` (`dom_reading_cost.rs:669 @ 50a4239`)
+     holds the order; the step amounts do not depend on it.
    - The reads gate (a): `git grep -n -F 'pending.extend(' -- crates/script/src/dom/reads.rs`
-     prints `:363`, `:914` and `:935` at `83e6b8a` and nothing at `14f8a2a`. It must print
-     nothing at the implementor's base, and nothing else.
+     prints `:363`, `:914` and `:935` at `83e6b8a` and nothing at `14f8a2a` and `50a4239`. It
+     must print nothing at the implementor's base, and nothing else.
    - The reads gate (b): `git grep -n -p -F -e 'pending.extend(' -e '.to_vec()' -e '.collect'
      -- crates/script/src/dom/reads.rs | grep -E '^[^:]+=[0-9]+=' | grep -v -e 'fn
      element_children(' -e 'fn shallow_equal(' -e 'fn children('` prints the headers of `find`,
-     `text_content`, `is_equal` and `whole_text` at `83e6b8a` and nothing at `14f8a2a`. It must
-     print nothing at the implementor's base, and nothing else. When both reads gates pass, the
-     `title` setter is started; until then it is not, and the story is not complete (decision
-     14).
+     `text_content`, `is_equal` and `whole_text` at `83e6b8a` and nothing at `14f8a2a` and
+     `50a4239`. It must print nothing at the implementor's base, and nothing else.
+   - The reads gate (c), positive: `git grep -c -F 'fn preorder(' --
+     crates/script/src/dom/reads.rs` prints `crates/script/src/dom/reads.rs:1` at `14f8a2a` and
+     `50a4239` and nothing at `83e6b8a`. At the implementor's base it must print that one line:
+     a gate that prints nothing because the file or the function was renamed is not a pass.
+   When the price gates and the three reads gates pass, the `title` setter is started; until
+   then it is not, and the story is not complete (decision 14). The reading unit's source test
+   `no_walk_of_the_reads_copies_a_child_list` (`dom_reading_cost.rs:618 @ 50a4239`) now holds
+   the walk property in that unit's own gate; the commands above stay, because they run at this
+   story's base before anything is built.
 2. `cases_equal_rows`: a case is a table entry of row name, page, script and expected end or
    tree, in `crates/script/tests/dom_mutation.rs`, that the test runs; an entry with no
    expectation is refused by the test, and so is an entry whose only expectation is the end
@@ -1091,24 +1273,40 @@ says it is a guard. Every command that reads the diff names its base:
    of `DocumentType`, `Element.remove`, `CharacterData.remove`, `prepend`, `append` and
    `replaceChildren` of `Document` and `DocumentFragment`, and `replaceChild`. Each exception
    case is named by the exception it throws. A case that shares a page with another is the same
-   table entry list over one parse. Two more entries:
+   table entry list over one parse. Three more entries:
    - the brand check, two examples: `Node.prototype.appendChild.call({}, x)` and
      `CharacterData.prototype.appendData.call(document, "a")` each throw a `TypeError`, and the
      tree and `totals()` are as before the call;
    - `importNode(script, true)` with a `script` element, its copy inserted once: one record,
-     `not run: inserted`, and none at the import.
+     `not run: inserted`, and none at the import;
+   - `constructors_share_the_create_path`: the four constructors (`Text`, `Comment`,
+     `DocumentFragment`, `ProcessingInstruction`) have no cost row of their own. A source test
+     cuts `mutation.rs` into its methods and asserts that the body of each constructor method
+     is, up to its name, the body of its `createX` member (`createTextNode`, `createComment`,
+     `createDocumentFragment`, `createProcessingInstruction`): the same single call into
+     `mutation_writes.rs` with the same arguments, so that the constructor has the charge of
+     the `createX` rows. A behaviour entry for each constructor in the table above asserts the
+     node it makes (the kind, the data and the serialization after an insert).
+   The stubs `crates/script/src/dom/mutation.rs` (a unit struct and an empty `impl`) and
+   `crates/script/tests/dom_mutation.rs` exist at `83e6b8a`, `14f8a2a` and `a14e3b0`;
+   `mutation_reads.rs`, `mutation_writes.rs` and `dom_mutation_cost.rs` do not. Acceptance 4
+   (its first two parts), 20 and 24 hold on `main` today: each says it is a guard.
 3. `the_files_hold_their_parts`: a source test over `include_str!` asserts that `mutation.rs`
    holds none of `tree()`, `tree_mut()`, `charge(`, `charge_steps`, `charge_stored`,
    `settle_stored`, `charge_nodes`, `settle_nodes`, `charge_node`; `mutation_reads.rs` holds
    none of `tree_mut()`, `charge_stored`, `settle_stored`, `charge_nodes`, `settle_nodes`,
    `charge_node`; `mutation_writes.rs` holds no `tree()` and none of `put_attribute`,
    `set_attribute`, `set_attribute_ns`, `remove_attribute`, `remove_attribute_ns`,
-   `toggle_attribute` (so `Limit::Attributes` is unreachable); no function of the three files
+   `toggle_attribute` (so `Limit::Attributes` is unreachable) and no `DomEnd::Fault` (the
+   function `settle_nodes` of the glue answers it, decision 5); no function of the three files
    calls itself; and no walk of `mutation_reads.rs` holds `.to_vec()` or a `children(...)` call
    that is collected. In `mutation_writes.rs`, `charge_stored(`, `settle_stored(`,
    `charge_nodes(` and `settle_nodes(` occur only inside `charged_write` and `charged_nodes`,
    and in each of the two the text between the charge statement and the first settle holds no
-   `?`. Red on `main`: the files do not exist.
+   `?`. The offset check has one owner: `mutation_writes.rs` calls `check_offset(` for each of
+   `splitText`, `replaceData`, `insertData` and `deleteData` and holds none of `0xD800`,
+   `0xDBFF`, `0xDC00`, `0xDFFF`, `encode_utf16`, `len_utf16`, `utf16_len`, so it copies no rule
+   about surrogates. Red on `main`: the files do not exist.
 4. `no_write_reaches_input_bytes_or_steps`: a source test over `crates/html/src/tree.rs` shows
    `Limit::InputBytes` and `Limit::Steps` occur nowhere in it (a guard, true at `83e6b8a`);
    it also shows that `clone_node` still answers `NotSupported` for a `Document` and admits the
@@ -1141,6 +1339,24 @@ says it is a guard. Every command that reads the diff names its base:
    it cannot reach `limit: depth` (the `Document.title` member says why); a guard test,
    `title_at_the_smallest_depth`, parses `<head><script>document.title = "x"</script>` at
    `max_depth` 3 and asserts the script ran to its end and the `title` is in the tree.
+   - `limit_nodes_title` and `limit_stored_title` parse a page that has a `title` element, so
+     that the tree after the refusal equals the tree before (with a `title` that exists the text
+     node is made first, decision 6). One more case, `title_refused_leaves_the_new_title`,
+     parses a page with no `title` under a `max_nodes` that admits the new `title` and refuses
+     its text node, and then under a `max_stored_bytes` that does the same: each ends with the
+     limit's word and the tree holds the empty `title` under `head`, one node more than the page
+     without the call and `writes()` raised by 1, and `totals().nodes` equals the nodes the tree
+     gained.
+   - `splitText` has a `Nodes` case only (`limit_nodes_split`: `max_nodes` equal to the page's
+     node count). A guard, `split_at_the_stored_limit`, parses a page at a `max_stored_bytes`
+     equal to the stored bytes of the page and calls `t.splitText(1)` on one of its text nodes:
+     the script ends `Ran` and the serialization shows the two nodes, since the tail's bytes
+     move out of the head and the split admits none (`tree.rs:1370`).
+   - The depth rows run on an element receiver. For the receivers of depth 0 that the limits
+     table names (a `Document`, a `DocumentFragment`, and the parent of a `DocumentType`),
+     `limit_depth_insert` and `limit_depth_move` hold a guard: the subtree of height 512 that
+     the default limits admit is put under each such receiver, and the script ends `Ran`,
+     never `limit: depth`.
    `limit_memory_default` runs at the default parser limits under a memory limit of 4 MiB, one
    parse for each of five loops, each ends `limit: memory` and no parser limit:
    - strings: `var s = Array(100001).join("x"); for (;;) document.documentElement.append(s);`;
@@ -1149,23 +1365,43 @@ says it is a guard. Every command that reads the diff names its base:
    - split: `var t = document.createTextNode("xy"); for (;;) t.splitText(1);`;
    - character data: `var t = document.createTextNode("x"), s = Array(1048577).join("y");
      for (;;) t.appendData(s);`.
-8. `memory_before_nodes_at_defaults`: a loop that creates and removes an element ends
-   `limit: memory` at the session's limits after at most 164,482 nodes (408 bytes each; the
-   wrapper's 423 bytes make it about 80,756), and a removed node's charge is not refunded
-   (`totals().nodes` and `totals().bytes` after one create-and-remove equal those after one
-   create). The steps of a turn are about 20 by the tables (arithmetic: 164,482 x 20 =
-   3,289,640, under 10,000,000); the build measures them, and if a turn costs more than 60
-   steps the case raises `steps_per_entry` to 50,000,000 as the cost module does.
+8. `memory_before_nodes_at_defaults`: `var b = document.documentElement.lastChild; for (;;) {
+   var e = document.createElement("i"); b.appendChild(e); b.removeChild(e); }` ends `limit:
+   memory` at the session's limits after at most 164,482 nodes (408 bytes each; the wrapper's 423
+   bytes make it about 80,756), and a removed node's charge is not refunded (`totals().nodes` and
+   `totals().bytes` after one turn equal those after one create). The steps of a turn are 25 by
+   the tables, without the engine's own (arithmetic: 5 for the create, 15 for the append under
+   `body` at `d` = 3, 5 for the removal of the last child; 164,482 x 25 = 4,112,050, under
+   10,000,000); the build measures them, and if a turn costs more than 60 steps the case raises
+   `steps_per_entry` to 50,000,000 as the cost module does.
 9. `charge_nodes_is_bulk`: through the real slice, `append` of 1,000 strings of 3 UTF-16 units
    charges `charge_nodes(1,001, 9,000)` = 426,408 bytes (arithmetic: 1,001 x 408 + 2 x 9,000)
    and settles to 414,408 in `totals().bytes` (arithmetic: 1,001 x 408 + 2 x 3,000; the settle
    gives back 12,000), and `totals().nodes` changes by 1,001 (the strings and the fragment);
-   the test reads 426,408 from the handle's size during the call (a spy `Mutation` that reads
-   `totals()` in its method) and 414,408 after. `charge_node(s)` equals `charge_nodes(1, s)` (a
-   glue unit test in `crates/script/tests/bindings.rs`); a `before()` with no parent and 1,000
-   strings leaves `totals().nodes` and `totals().bytes` as before the call; after the first
+   the test reads 426,408 from the handle's size during the call (a spy `Mutation` in
+   `dom_mutation.rs` that reads `totals()` in its method) and 414,408 after. A glue unit test in
+   `crates/script/tests/bindings.rs` holds `charge_node(s)` equal to `charge_nodes(1, s)` and
+   the counters of `charge_nodes` and `settle_nodes`. The test slice `TestMutation(Writes,
+   Record)` is the attributes story's (it gives the slice its `Record` and the variants
+   `Writes::Stored` and `Writes::Fault`); this story adds one variant, `Writes::Nodes`, and one
+   arm of each exhaustive match on `Writes`: the arm of `Document.createTextNode` reads its
+   argument as four numbers, `count stored made_nodes made_stored`, calls `charge_nodes(count,
+   stored)` and `settle_nodes(charge, made_nodes, made_stored)`, and pushes `totals()` onto the
+   `Record` after each. The two stories add their arms in the same two matches; the second to
+   merge keeps both, the attributes story first. A `before()` with no parent and 1,000 strings
+   leaves `totals().nodes` and `totals().bytes` as before the call; after the first
    `createTextNode`, `node_charges()` is 1 and after 10,000 more it is still 1 (the count of node
    handles, redefined by this story). Red on `main`: no `charge_nodes`.
+   `a_variadic_call_that_ends_the_run_is_not_faulted`: the page nests 497 `div` elements under
+   `body`, so that the innermost is the parent at `d` = 500, and the script is `p.append(a, b)`
+   with `a` and `b` parentless elements made by the script. One call costs 1,533 steps by the
+   tables (arithmetic: 1 + 2 + 1 + 2 x 8 + 1 + 3 x 500 + 6 + 6), of which the first 3 are the
+   glue's (its step and the `n` of the list) before the method. The test measures
+   `steps_without`, the steps of the same script without the call, and runs the script with
+   `steps_per_entry` at `steps_without + 100`: the limit falls 100 steps into the call, in the
+   method, after `charge_nodes` and before the settle. The script ends `limit:
+   steps-per-script` and the run is not faulted: its end is not the end that `DomEnd::Fault`
+   makes. It goes red when `settle_nodes` maps the inner `Terminated` to `Fault` (decision 5).
 10. `variadic_strings_are_charged_before_any_node`: `append` of 200,000 empty strings ends
     `limit: memory` with `totals().nodes` 0 and the tree's node count unchanged, because
     `charge_nodes(200,001, 0)` is 81,600,408 bytes (arithmetic: 200,001 x 408), over the
@@ -1192,7 +1428,9 @@ says it is a guard. Every command that reads the diff names its base:
     fills it (`8 x 100,000` = 800,000 steps, charged before the copy), an `appendChild` and a
     second read ask for `8 x (100,000 + 100,001)` steps (arithmetic: 1,600,008), the refill ends
     the script `limit: steps-per-script`, and the spy counted no call of `node_child_nodes`
-    during that refill. Red on `main`: the spy counts one call. The test of the record of a cut
+    during that refill. Red on `main`: the spy counts one call. The spy's method charges
+    nothing; the real slice's `children` charges a step a child before its copy, which the
+    refill row of acceptance 18 holds. The test of the record of a cut
     refill, `adversary_dom_reading_3.rs:149-220`, stays green and is not edited.
 14. `the_records_of_inserted_scripts`: the page made of
     `<script>var s = document.createElement("script"); s.textContent = "1";`, then
@@ -1201,13 +1439,31 @@ says it is a guard. Every command that reads the diff names its base:
     two clones of it (`cloneNode(true)`), each inserted once, record two; a `moveBefore` records
     none; a script inside a `template` inserted records none; the parser's own scripts get no
     second record (through `parse_with_scripts`).
-15. `every_exception_in_its_order`: one case for each pair of exceptions in decision 13 where a
-    call can throw two (for example `insertBefore` of an element into its own descendant, with
-    a `child` that is not a child of the target: HierarchyRequestError before NotFoundError),
-    asserted by name and message; `createElementNS` with an invalid prefix and a bad namespace
-    gives InvalidCharacterError, as the standard orders them; `createElementNS` with a colon as
-    the first or as a later character of the name gives InvalidCharacterError or, for a valid
-    prefix, the deviation's NotSupportedError, and never an element.
+15. `every_exception_in_its_order`: the pairs of decision 13 are these twelve, one case each,
+    asserted by name and message, and the test asserts that its table has twelve entries named
+    for them. Each call has both faults and throws the first named:
+    1. `insertBefore` of an element into its own descendant, with a `child` that is not a
+       child of the target: HierarchyRequestError (ancestor), not NotFoundError;
+    2. `insertBefore` of a `DocumentType` into an element with a `child` that is not a child:
+       NotFoundError, not the HierarchyRequestError of the node kind;
+    3. `insertBefore` of a second element into a `Document` with a `child` that is not a
+       child: NotFoundError, not the HierarchyRequestError of the `Document` checks;
+    4. `replaceChild`, the same call as 1: HierarchyRequestError;
+    5. `replaceChild`, the same call as 2: NotFoundError;
+    6. `moveBefore`, the same call as 1: HierarchyRequestError;
+    7. `moveBefore` of a `Text` into a `Document` with a `child` that is not a child:
+       NotFoundError, not the HierarchyRequestError of a text in a document;
+    8. `insertAdjacentElement("bad", ancestor)`: SyntaxError, not HierarchyRequestError;
+    9. `createElementNS("x", "a:b ")` (a valid prefix, a local name that ends in a space):
+       InvalidCharacterError, not the deviation's NotSupportedError;
+    10. `createElementNS(null, "a:b")`: NamespaceError, not NotSupportedError;
+    11. `createElementNS("x", "a b:c")` (an invalid prefix) with a namespace outside the six:
+        InvalidCharacterError, as the standard orders the prefix before the namespace;
+    12. `t.splitText(L + 1)` under a `memory_bytes` of 4 MiB on a text of 4 MiB: IndexSizeError,
+        not `limit: memory`; `t.splitText(L - 1)` under it ends `limit: memory`.
+    A colon as the first or as a later character of the name of `createElementNS` gives
+    InvalidCharacterError or, for a valid prefix and a valid local name, the deviation's
+    NotSupportedError, and never an element.
 16. `an_exception_after_a_charge`: for each of five families, a pair of cases on one page. The
     "limit one below" of a pair is defined by the cost row of the family: `steps_without` is the
     steps of the script with the call removed, `D` the difference the row measured (printed by
@@ -1217,11 +1473,15 @@ says it is a guard. Every command that reads the diff names its base:
       `insertBefore(x, notAChild)` with `x` a subtree of 100,000 nodes (NotFoundError);
       `document.appendChild(second)` on a `Document` of 5,001 children (HierarchyRequestError
       by the `Document` checks); `t.splitText(L + 1)` on a text of 4 MiB (IndexSizeError);
-      `createElementNS("x", "a:b")` with a name of 1 MiB (the standard's error of the name);
+      `createElementNS("x", name)` with `name` of 1,048,576 units, `"a:"` then 1,048,573 `b`
+      and a last unit that is a space (InvalidCharacterError by the standard's check of the
+      name; a valid long name would throw nothing by the standard);
     - with `steps_per_entry` at `steps_without + D - 1` the same script ends
       `limit: steps-per-script`, the named allowance of decision 13, and at `steps_without + D`
       it throws the exception. The subtree of 100,000 nodes comes from the page: a script cannot
       make it (decision 5, "Memory comes before nodes").
+    Every ending row of acceptance 18 has this form: no row asserts a count of the engine's own
+    steps, only the difference of two runs of one script.
 17. `no_recursion`: on a thread built with a stack of 256 KiB, named in the test, over a chain of
     20,000 elements under a raised `max_depth`: the tree functions `clone_node(root, true)`,
     `normalize`, `set_text_content`, `remove_node` of the chain's root and a valid
@@ -1230,8 +1490,12 @@ says it is a guard. Every command that reads the diff names its base:
     (`Tree::children(root)`) runs on that named thread, and a probe that recurses to half the
     stack (frame size and depth printed, arithmetic) completes on it, so the stack is the one
     asked for. No claim is made about the runner's thread.
-18. `dom_mutation_cost.rs` (new): worst shapes, each row one script and no row over 5 s, with
-    the steps asserted exactly and never a time.
+18. `dom_mutation_cost.rs` (new): worst shapes, each row one script, with the steps asserted
+    exactly and never a time. A row over 5 s is named in the report with its time; a row that
+    ends the script at a step limit runs under the 50 s wall-clock bound of
+    `dom_reading_cost.rs:34`, since the engine's 10,000,000 steps take about 7 s in the test
+    profile (`docs/design/scripts.md:302`) and a bound of 5 s would end the script first; no row
+    runs over 60 s, and the module's step ends within 120 s (acceptance 23).
     - The method. A row measures the call's own steps as the steps of the script with the call
       minus the steps of the same script without it (`Runner::steps()` before and after each, as
       `dom_reading_cost.rs:146` does), with the call line holding only variables, so that no
@@ -1244,10 +1508,20 @@ says it is a guard. Every command that reads the diff names its base:
       row prints its name, `with`, `base` (the formula's values on the two shapes, the call's
       own steps) and the expected difference. A row whose call writes the tree also asserts that
       the steps it charged are at least the converted `Tree::work()` raised by the call
-      (decision 4). The
-      rows run under `steps_per_entry` 50,000,000 (as `dom_reading_cost.rs:23`) unless the row
-      says it ends. Rows that share a page are one `#[test]`. A row over 5 s is named in the
-      report with its time.
+      (decision 4). That sentence holds per call for a list with spare capacity: a call that
+      reallocates is paid by the writes since the last reallocation (decision 15), not by its
+      own. So each row says how its lists got their capacity. A list that comes from the page
+      has the capacity the parser's inserts gave it, a power of two above its length (arithmetic:
+      32,768 for 20,000 children, 2,048 for 2,000, 8,192 for 5,001, 131,072 for 80,000 and for
+      100,000), and one id more does not reallocate it; a list the script grows (the fragment of
+      a variadic call, a loop's target) has `2 (len + m)` after each growth (decision 15). A row
+      on a list the script shrinks or grows across a reallocation asserts the sum over the whole
+      script, and the parser-list row below asserts the named slack. The rows run under
+      `steps_per_entry` 50,000,000 (as `dom_reading_cost.rs:23`) unless the row says it ends. A
+      row that ends or throws has the pair form of acceptance 16: the same script without the
+      call gives `steps_without`; a limit of `steps_without + D - 1` ends the script and
+      `steps_without + D` completes it, `D` the difference the row measured. No row asserts a
+      count of the engine's own steps. Rows that share a page are one `#[test]`.
     - The rows, in the order of the tables (each figure is arithmetic from the formulas, as
       `with` / `base` = the difference that the row asserts). A shape written once serves the
       next rows that say "the same".
@@ -1260,7 +1534,11 @@ says it is a guard. Every command that reads the diff names its base:
         7 / 6 = 1 (the second node).
       - `createElementNS`: the XHTML namespace (28 units, `g` 3) and a name of 1 MiB:
         262,150 / 8 (the name `a`) = 262,142.
-      - `createElementNS`, refused: a prefixed name of 1 MiB: 196,613 / 6 (`a:b`) = 196,607.
+      - `createElementNS`, refused by the deviation: the XHTML namespace and a valid prefixed
+        name of 1 MiB: 196,613 / 6 (`a:b`) = 196,607.
+      - `createElementNS`, refused by the standard: the namespace `x` (1 unit, `g` 0) and the
+        invalid name of acceptance 16 (1,048,576 units, the last a space): 196,610 / 3 (the
+        name `a:b `) = 196,607.
       - `createProcessingInstruction`: target `t`, data of 1 MiB: 262,148 / 4 = 262,144.
       - `insertAdjacentText`: `beforeend` with 1 MiB: 196,624 / 16 = 196,608.
     - Inserts:
@@ -1288,7 +1566,10 @@ says it is a guard. Every command that reads the diff names its base:
         children: 7,024 / 34 = 6,990.
       - `replaceChild` into a `Document` of 5,001 children, against one: 32,520 / 20 = 32,500.
       - `moveBefore`: the last of 2,000 children to the front (`d` = 4, `d_n` = 5), against 2
-        children: 1,041 / 42 = 999.
+        children: 2,041 / 43 = 1,998. The terms: the glue and climbs 36, the own front walk 1,
+        the tree's front scan 1, the shift 1,000, the removal 3 and, for a node that is a child
+        of the target, the scan of `next_sibling(node)` at `tree.rs:988`, 1,000 (`ids(2,000)`).
+        The base has the same terms over 2 children.
       - `moveBefore` of an element into a `Document` of 5,001 children, against one: 25,027 /
         27 = 25,000.
       - `adoptNode`: the first of 20,000 children, against a parent of one: 40,003 / 5 =
@@ -1310,20 +1591,26 @@ says it is a guard. Every command that reads the diff names its base:
         is the fragment, `c_f` = 20,000), against the script without them: a difference of
         20,028 (arithmetic: 2 for `n`, 16 for two items, 2 x 10,000 for `ids(c_f)` twice, 2 x 5
         for `2 k_o + 1` with `k_o` = 2).
-      - an item with an old parent: `append(a, b)` with `a` the first of 20,000 children,
-        against a parent of one child: 40,001 / 3 = 39,998.
+      - an item with an old parent: `append(a, b)` with `a` the first of 20,000 children and `b`
+        parentless, against a parent of one child, into `body` (`d` = 3): 40,042 / 44 = 39,998.
+        The parts: `n` 2, the fragment 1, the two items 16, the old parent 40,001 (3 for the
+        base), the final insert 22 (`1 + 3 x 3 + 2 x 3 + 3 x 2`).
     - Clone and template:
       - deep clone: `cloneNode(true)` of an `i` with 9,999 `i` children (`max_nodes` 25,000,
-        `b + N` = 20,000): 41,250 / 9 (a childless `i`) = 41,241. The parts: the own walk
-        10,001, the cost walk and the copy loop 20,000, the bytes 1,250, the share of the
-        pushes 9,999. The row asserts that `s'` and `b` equal the tree's change in nodes and in
-        stored bytes.
+        `b + N` = 20,000): 41,250 / 5 (a childless `i`: `1 + 1 + 2 + 0 + b16(2) + 0`) =
+        41,245. The parts: the own walk 10,001, the cost walk and the copy loop 20,000, the
+        bytes 1,250, the share of the pushes 9,999. The row asserts that `s'` and `b` equal the
+        tree's change in nodes and in stored bytes.
       - clone with attributes (illustrative; the row prints the `b` it reads from the tree): an
-        element with 1,024 attributes of 5-byte names and 1,000-byte values (`b` 1,029,126,
-        `N` 3, `b16` 64,321), against a bare `div`: 66,629 / 5 = 66,624.
+        element with 1,024 attributes of 5-byte names and 1,000-byte values. An attribute
+        record costs `ATTRIBUTE_BYTES` = 80 beside its bytes (`tree.rs:217-222`, `:1666`), so
+        `b` is 1,111,043 (3 + 1,024 x (80 + 5 + 1,000)), `N` 3, `b16(b + N)` 69,441; against a
+        bare `div`: 71,749 / 5 = 71,744 (`1 + 257 + 2 + 2,048 + 69,441`).
       - template clone: a `template` of 10,000 contents, deep: 41,259 / 9 = 41,250.
       - template insert: a `template` of 100,000 nodes appended to the last child of `body`
-        (`d` = 4), against an empty `template`: 200,023 / 23 = 200,000.
+        (`d` = 4), against an empty `template`: with `s` = 100,002 (the template, its contents
+        fragment and 100,000 contents), 200,020 / 20 = 200,000 (`1 + 3 x 4 + 2 s + 3`; the
+        base `s` = 2).
     - `normalize`:
       - one parent of 2,000 adjacent texts of 1 byte, against two: 4,016,381 / 29 =
         4,016,352 (1 + 2,001 + 12,006 + 375 + 4,001,998).
@@ -1332,7 +1619,8 @@ says it is a guard. Every command that reads the diff names its base:
       - one text of 4 MiB, against one of 1 byte: 786,447 / 18 = 786,429.
     - Other writers:
       - `textContent =` a string of 1 MiB on a node of 20,000 children, against `""` on a
-        childless one: 236,612 / 5 = 236,607.
+        childless one: 236,612 / 1 = 236,611 (`4 + g(u) + 2 c_p + b16(len)`; an empty string
+        makes no node and takes none of the 3 steps, so the base is the glue's step alone).
       - `splitText`, long: at `L - 1` of a text of 4 MiB, no parent, against 4 bytes: 786,434 /
         5 = 786,429.
       - `splitText`, parent: a text of 4 bytes at index 40,000 of 80,000 children, against
@@ -1340,51 +1628,95 @@ says it is a guard. Every command that reads the diff names its base:
       - `data =`: a text of 4 MiB set to 4 bytes, against a text of 4 bytes (5 passes):
         1,310,722 / 7 = 1,310,715. `nodeValue =` and `appendData` have the same shape and the
         same figures.
-      - `replaceData` on that text (4 passes): 1,048,578 / 6 = 1,048,572. `insertData`: the
-        same. `deleteData(0, 1)`: 1,048,577 / 5 = 1,048,572.
+      - `replaceData(0, 1, "x")` on that text (the slice's check, 3 passes, and the tree's, 4):
+        1,835,010 / 9 = 1,835,001 (`1 + 0 + 7 b16(L) + b16(1)`). `insertData(0, "x")`: the
+        same. `deleteData(0, 1)`: 1,835,009 / 8 = 1,835,001.
+      - `replaceData(L + 1, 0, "x")` on that text, refused: 786,433 / 4 = 786,429 (the check
+        alone, `1 + 3 b16(L)`; no node or stored byte is charged).
       - `title`: `document.title = "x"` with a `head` of 100,000 `meta` elements before a
-        `title`, against one `meta`: 100,008 / 9 = 99,999. It waits for the reads gates of
-        acceptance 1.
+        `title`, against one `meta`, on a page with no doctype (the walk visits the document,
+        `html`, `head`, the `meta` elements and the `title`): 100,009 / 10 = 99,999
+        (`1 + g + (N + 4) + 1 + 2 + b16(1)`). It waits for the reads gates of acceptance 1.
+      - `title`, new: the same setter on a page with no `title`, and 100,000 comments in the
+        document element before `head` (the parser puts them there), against one comment:
+        200,026 / 28 = 199,998 (the walk `N + 4`, the scan for `head` `N + 1`, the create 2,
+        the insert under `head` 14, the replace-all 4, and the glue's step). It holds the
+        scan of the document element's children, charged a step before each child.
       - refill: a kept `childNodes` read after each of 1,000 appends, from no children, against
-        10 appends: 8,001,000 / 810 = 8,000,190.
+        10 appends: 8,501,500 / 865 = 8,500,635. The parts, for 1,000: the glue's steps 1,000
+        (one for each read), the getter's `8 x (kept + children)` 8,000,000, and the child
+        counts `children` charges before its copy, one step each, 500,500.
     - Removals: `p` has 2,000 children from the page. From the front,
       `removeChild(p.firstChild)` 2,000 times: 4,008,000 (arithmetic: the sum of `2 c + 3` for
       `c` from 1 to 2,000); from the back, `removeChild(p.lastChild)` 2,000 times: 10,000 (5 a
-      turn); a difference of 3,998,000.
-    - Rows that end the script, under the default `steps_per_entry` of 10,000,000:
-      - 5,000 removals from the front of a list of 5,000 would cost 25,020,000 (arithmetic) and
-        end `limit: steps-per-script` at about the 1,127th removal (10,004,379 by `r (2 n - r
-        + 4)`);
-      - a list of 3,161 children removed whole from the front ends `limit: steps-per-script`
-        (arithmetic: 3,161^2 + 4 x 3,161 = 10,004,565), and a list of 3,160 does not;
-      - `normalize` over 20 parents of 1,000 adjacent texts ends `limit: steps-per-script`: the
-        removals alone cost 20,019,960 (arithmetic: 20 x 999 x 1,002);
+      turn); a difference of 3,998,000. The loop from the back also has the pair form: `D` is
+      the difference of the loop with its removals and the loop with `p.lastChild` read and no
+      removal; a limit of `steps_without + D - 1` ends the script `limit: steps-per-script` and
+      `steps_without + D` completes it. That holds the whole price of one removal, its share
+      included, as one charge made before the call and no later; it does not hold the value of
+      the share (see the terms below).
+    - Rows that end the script. No row claims that a script ends or does not end at the
+      default `steps_per_entry` of 10,000,000 by a count of the engine's own steps; the claims
+      are the pair form above, or an inequality in which the engine's steps only add:
+      - 5,000 removals from the front of a list of 5,000: the removals alone cost 25,020,000
+        (arithmetic) and the first 1,127 cost 10,004,379 by `r (2 n - r + 4)` (1,126 cost
+        9,996,628), so the script ends `limit: steps-per-script` at the 1,127th removal or before
+        it, and `p` keeps at least 3,873 children (arithmetic: 5,000 - 1,127). The row also has
+        the pair form on a list of 100 removed whole from the front, `D` measured;
+      - a list of 3,161 children removed whole from the front: the removals alone cost
+        10,004,565 (arithmetic: 3,161^2 + 4 x 3,161), over the default, so the script ends
+        `limit: steps-per-script` whatever the engine's own steps are. A list of 3,160 costs
+        9,998,240, 1,760 under the default: whether its script completes depends on the engine's
+        own steps, so no row claims it;
+      - `normalize` over 20 parents of 1,000 adjacent texts: its one charge is at least 20,019,960
+        (arithmetic: 20 x 999 x 1,002, the removals alone), so the script ends `limit:
+        steps-per-script` at that charge whatever the engine's own steps are;
       - a second deep clone under `max_nodes` 25,000 ends `limit: nodes`.
     - Throw rows (the call refuses, its walks are paid): the base is the same throw on a small
       shape, and the pair of acceptance 16 holds the limit one below the call's own charge.
-      - ancestor: `a.appendChild(ancestor)`, `d` = 5, a subtree of 100,000 nodes from the page,
-        against a subtree of 1: 200,022 / 26 = 199,996.
-      - NotFound: `insertBefore(x, notAChild)`, `x` of 100,000 nodes, against 1: 200,019 / 23 =
-        199,996.
+      - ancestor: `a.appendChild(ancestor)`, `d` = 5, a subtree of 100,000 nodes from the page
+        (`s` 100,000, `a` among them), against a subtree of 2 (the ancestor and `a`): 200,019 /
+        23 = 199,996 (`1 + 3 x 5 + 2 s + 3`).
+      - NotFound: `insertBefore(x, notAChild)`, `x` of 100,000 nodes at `d` = 5, against a `x` of
+        2 nodes: 200,019 / 23 = 199,996.
       - `IndexSizeError`: `splitText(L + 1)` on a text of 4 MiB: 262,145 against 2 for a text of
-        1 byte: 262,143.
+        1 byte: 262,143. `replaceData(L + 1, 0, "x")`: the row above, 786,433 / 4 = 786,429.
       - `Document` with a second element: the figure of the `Document` row, 25,000.
-      - `createElementNS` with a prefix: the refused row above.
+      - `createElementNS`, refused by the deviation and by the standard: the two refused rows
+        above (196,607 each).
     - The cycle row (decision 15). A page whose `<div id=p>` has 100,000 `<i>` children from
-      the parser, and one element made once: `x = document.createElement("i")`; then about
-      70,000 turns of `p.appendChild(x); p.removeChild(x); p.removeChild(p.lastChild)`. A turn
-      costs 28 steps (arithmetic: 18 for the append, 5 and 5 for the removals), so about
-      1,960,000 steps, and the script ends `Ran`. The parser's list has a capacity of 131,072
-      (acceptance 25 asserts it). The list shrinks once, at length 32,767 (4 x 32,767 = 131,068
-      is under 131,072), after 67,233 net removals, and copies 32,767 ids, 16,384 steps; the
-      next shrink is at 16,383 or fewer and is not reached. The row asserts that the steps are
-      at least the converted work and that they are under 2,000,000 (arithmetic: 70,000 x 28 =
-      1,960,000, and the one shrink 16,384 is inside the share).
-    - Terms with no row, named and with the reason: the glue's step `G` and the node's single
-      step in creates, `insertAdjacentText` and `splitText` (constants that cancel in every
-      difference); the constant 3 of `createElementNS` (the step, the match, the node: the same);
-      the scan of the viable sibling beyond the first one (at most `n + 1` steps, covered by the
-      items' own charges); `Document.title` until the reads gates pass.
+      the parser (capacity 131,072, which acceptance 25 asserts), and one element made once: `x
+      = document.createElement("i")`; then 70,000 turns of `p.appendChild(x); p.removeChild(x);
+      p.removeChild(p.lastChild)`. A turn is charged 28 steps (arithmetic: 18 for the append, 5
+      and 5 for the removals), so the writes are charged 1,960,000 steps in all. The list shrinks
+      once, at length 32,767 (4 x 32,767 = 131,068 is under 131,072), after 67,233 net removals,
+      and copies 32,767 ids, 16,384 steps; the next shrink is at 16,383 or fewer and is not
+      reached. This row reallocates, so it asserts the sum over the whole script and no figure
+      of the engine's own steps: the end is `Ran`; the steps charged for the writes (the
+      difference of the script and the same script with its three calls removed) are at least
+      the converted `Tree::work()` of the whole script, the shrink's copy included; and the tree
+      unit test `child_lists_keep_their_capacity` (acceptance 25) holds the count of capacity
+      changes of one list over 1,000 cycles, at most 4 (the rule of `83e6b8a`: about 2,000).
+    - The parser-list row (decision 15, the slack). A page whose `<div id=p>` has 65,536 `<i>`
+      children from the parser, a list whose capacity equals its length (arithmetic: doubling
+      from 4 reaches 65,536 at the 32,769th insert), and one `p.appendChild(x)` of a parentless
+      element at `d` = 4. The call is charged 18 (arithmetic: `1 + 3 x 4 + 2 + 3`) and the
+      growth to `2 (len + m)` = 131,074 copies 65,536 ids, 32,768 steps, which no script write
+      has paid: the converted work is 32,779 (11 for the passes and 32,768 for the copy). The
+      row asserts that the converted work minus the steps charged is at most `ids(65,536)` =
+      32,768 (arithmetic: 32,779 - 18 = 32,761): the slack the parser's lists carry, at most
+      524,288 steps for one list and 1,048,576 for a document (decision 15).
+    - Terms with no row, named and with the reason. The glue's step `G` and the node's single
+      step in creates, `insertAdjacentText` and `splitText` are constants that cancel in every
+      difference of two shapes with the same calls; so is the constant 3 of `createElementNS`
+      (the step, the match, the node), and so is the share of 1 in a single removal or insert
+      (`removeChild` 3 in all, `adoptNode` 3, `replaceChild` 2, `splitText` 2 beside its node):
+      no row can hold the value of a constant, because the engine's own steps for a call are not
+      known to this story, and the pair form holds only that a charge is made once and before
+      the call. What holds the shares as a sum is the work counter over a whole script (the
+      cycle row), which they pay for. The scan of the viable sibling beyond the first one (at
+      most `n + 1` steps, covered by the items' own charges); `Document.title` until the reads
+      gates pass.
     - For each charge a red row: the implementor removes each charge of `mutation_writes.rs` by
       hand (the mutation tool is not on the host), runs the rows, and the report names for each
       the line changed, the row that went red, and shows `git diff --quiet` after putting the
@@ -1394,9 +1726,10 @@ says it is a guard. Every command that reads the diff names its base:
     $(git merge-base main HEAD)..HEAD -- crates/script/tests/dom_reading.rs` is that line only,
     and the three tests of `tests/bindings.rs` of decision 10 are green with a member that still
     throws.
-20. `slot task webidl-check` and `ESS_TOOLCHAIN=0.97.4 slot --timeout 30m task webidl-slow`
-    exit 0 on the regenerated `bindings.rs`; the times of `webidl-slow` before and after are in
-    the report (and the job is not started again unchanged if it ends at its limit).
+20. A guard, true on `main` today and to stay true: `slot task webidl-check` and
+    `ESS_TOOLCHAIN=0.97.4 slot --timeout 30m task webidl-slow` exit 0 on the regenerated
+    `bindings.rs`; the times of `webidl-slow` before and after are in the report (and the job is
+    not started again unchanged if it ends at its limit).
 21. `selection_names_the_deviations`: a test over `selection.txt` asserts that the three lines
     printed in "Deviations this story names" are rows of the file, byte for byte. Red on `main`:
     `createElementNS` holds only the wrapper deviation, the other two no note. Each deviation has
@@ -1439,9 +1772,11 @@ says it is a guard. Every command that reads the diff names its base:
     - an expensive product is made once for a run: under nextest, the entries of a case table
       that share a page are one test over one parse, and no case builds a document more than
       once.
-24. `slot task check` exits 0, and `git diff --stat $(git merge-base main HEAD)..HEAD` names
-    only the files the Change names (its scope paths and the public-number files of
-    acceptance 22; the front's scope list does not hold the public-number files). The edit of
+24. A guard (on `main` the diff is empty and `slot task check` exits 0): `slot task check` exits
+    0, and `git diff --stat $(git merge-base main HEAD)..HEAD` names only the files the Change
+    names (its scope paths, which now include `crates/html/src/limits.rs`, and the
+    public-number files of acceptance 22; the front's scope list does not hold the
+    public-number files). The edit of
     `crates/script/src/dom/reads.rs` is visibility only: in zsh or bash,
     ```
     b=$(git merge-base main HEAD); f=crates/script/src/dom/reads.rs
@@ -1462,12 +1797,21 @@ says it is a guard. Every command that reads the diff names its base:
       (`shrink_to_fit`), 1,000 cycles of append, remove, remove change the capacity at most 4
       times (the new rule: once; the rule of `83e6b8a`: about 2,000); after a growth by `m` the
       capacity is `2 (len + m)`; a list shrinks only when its capacity is over `max(4 l, 4)` and
-      then to `max(2 l, 4)`; a bulk removal leaves the capacity alone.
+      then to `max(2 l, 4)`; a bulk removal (`remove_children` and `remove_all`) takes the list
+      and leaves capacity 0.
+    - `removals_give_a_list_its_room_back`: 100 children appended one at a time (capacities 2,
+      6, 14, 30, 62, 126), then 99 removed from index 1 with `remove_node`: the list shrinks at
+      lengths 31, 15, 7, 3 and 1 (to 62, 30, 14, 6 and 4) and ends at capacity at most 4.
     - `attribute_lists_still_shrink_at_twice`: a guard that `shrink` of `drop_attribute` is as
       it was.
+    - `a_shortened_value_keeps_no_room`: a guard, true at `83e6b8a`: after `split_text(1)` on a
+      text of 1 MiB the head's string has a capacity under twice its length, and so has the
+      value after a `replace_data` that shortens it (`tree.rs:1372`, `:1401-1404`; the
+      allocator's rounding is not asserted), so a loop of `splitText(1)` holds no room beyond
+      the tail's bytes.
     - `a_parsed_list_has_the_capacity_the_cycle_row_assumes`: a parsed list of 100,000 children
-      has capacity 131,072; if it does not, the numbers of the cycle row (acceptance 18) are
-      redone, and the test says so.
+      has capacity 131,072 and one of 65,536 has capacity 65,536 (the parser-list row); if
+      either does not, the numbers of the rows (acceptance 18) are redone, and the test says so.
 
 ## Out of scope
 
@@ -1476,10 +1820,11 @@ Attributes and selectors (their slices); the parse that runs scripts and its per
 element or an attribute (`story:html-open-namespace`); ranges, tree walkers and node iterators
 (`throws`); `createRange`, the `Document` constructor and the `EventTarget` constructor; a step
 budget inside the tree's write functions; a refund of a removed node's charge; a live
-collection (the snapshot deviation of the reading story stands); moving the glue's single
-argument copy before the charge (`Copies::copy`; no story holds it yet); the end of a run on an
-outer `Err(HostError)` (`DomEnd::Fault`, which the attributes story adds and owns: this story
-passes it on).
+collection (the snapshot deviation of the reading story stands); the glue's single argument
+copy (`Copies::copy`), which the reading unit's sixth fix round already charges before the copy
+(`50a4239`: this story reads that and changes nothing of it); the end of a run on an outer
+`Err(HostError)` (`DomEnd::Fault`, which the attributes story adds and owns: this story passes
+it on).
 
 ## Placement
 
@@ -1501,10 +1846,17 @@ the shared lines as they are.
   `charge_nodes` goes through that body); `to_nodes_or_strings` (`:1036`: the draft
   `story:scripts-utf16-length` changes `string_length` and the glue's count);
   `refresh_collection` and `refill` (`:1321`, `:1367`: the draft
-  `story:scripts-dom-collection-names` rewrites them). The two drafts have no edge to this
-  story. `slot task webidl-check` and `slot task webidl-slow` hold the generated file.
-- `crates/webidl/src/generate.rs`: this story edits `same_object_getter`; the attributes story
-  edits the generator's `strings_value`; different functions.
+  `story:scripts-dom-collection-names` rewrites them). `story:scripts-utf16-length` has no edge
+  to this story. `story:scripts-dom-collection-names` gets a `depends_on` edge to this story, a
+  plan edit made outside this story's file and delivered beside it: it rewrites `refill` and
+  `refresh_collection`, whose inner bodies this story splits (decision 7), so it is built on
+  that base. `settle_nodes` adds one line that names `DomEnd::Fault` in `prelude.rs`: the
+  attributes story counts the lines that name it by a command run at its own base, and this
+  story's acceptance 3 says `mutation_writes.rs` names none. `slot task webidl-check` and `slot
+  task webidl-slow` hold the generated file.
+- `crates/webidl/src/generate.rs`: this story edits `same_object_getter`, which
+  `story:scripts-dom-collection-names` (a draft, with the edge above) names beside `refill`;
+  the attributes story edits the generator's `strings_value`; different functions.
 - `crates/webidl/selection.txt`: `story:scripts-dom-attributes` (the note of row 96),
   `story:scripts-dom-selectors` (nine rows); this story rows 63, 151 and 157. Rows 125, 174
   and 230 (`moveBefore`) are next to the selectors story's rows 126, 175 and 231 and are not
@@ -1513,8 +1865,11 @@ the shared lines as they are.
   (`attribute_position`, `attribute_position_ns`, `attribute_names`), three owners
   (`Namespace::from_url`, `Tree::namespace_error`, `Attribute::qualified_len`) and
   `Attribute::stored_bytes`; the reading story edits the write counter `writes()` (it merges
-  first); this story adds `work()`, `shrink_children`, `push_child`, `check_insertion` and
-  `remove_all` and makes `parent_or_host` public, in other regions. A draft that may change
+  first); this story adds `work()`, `shrink_children`, `push_child`, `check_insertion`,
+  `check_offset` and `remove_all` and makes `parent_or_host` public, in other regions. The
+  `#[cfg(test)] mod tests` of the file is one region both stories append to (this story's tests
+  are acceptance 25, the attributes story's are its own): the second to merge keeps both tests
+  by hand. A draft that may change
   child-list writers, `story:scripts-dom-sibling-positions`, needs a `depends_on` edge to this
   story: this story's formulas and the work counter stay safe over a faster list, and its
   acceptance 18 holds front removals quadratic where that draft's acceptance 2 holds them
@@ -1523,6 +1878,10 @@ the shared lines as they are.
   it depends on the attributes story only, and needs an edge to this story if it lifts the
   deviation. `story:html-parser-hook-cost` (a draft that touches the tree's parser-facing
   functions).
+- `crates/html/src/limits.rs`: this story edits one doc sentence (`Limits::max_stored_bytes`,
+  "it at most doubles") and the doc of `shrink` at `tree.rs:708-709` follows decision 15. The
+  two stories that name the file, `story:html-parser-limits` and `story:html-script-hook`, are
+  implemented; no story that is not names it.
 - `crates/script/src/dom/reads.rs`: the token edits of three stories are different spellings:
   `charge` is made `pub(super)` by the attributes story, the selectors story and this story;
   the selectors story writes `pub(super) enum Reads<'a>` and widens the scan's name to `&str`,
@@ -1535,10 +1894,15 @@ the shared lines as they are.
   story's `mod dom_mutation_cost;` is next to the attributes story's `mod dom_attributes_cost;`:
   keep both.
 - `crates/script/tests/dom_reading.rs`: `other_slices_still_throw` holds three adjacent lines,
-  2424 (this story), 2425 (the attributes story), 2426 (the selectors story): keep all three.
-- `crates/script/tests/bindings.rs`: `story:scripts-dom-attributes` (the `Writes` variant);
-  the swell pin story (`dom_limit_drops_the_jobs` and a `then` variant of `limit_end`); this
-  story changes three tests' members and adds a glue unit test, and no variant.
+  cited by their text (a hunk of the reading unit moves them): the one with
+  `document.appendChild(el)` (this story), the one with `getAttribute` (the attributes story)
+  and the one with `querySelector` (the selectors story): keep all three.
+- `crates/script/tests/bindings.rs`: the test slice `TestMutation(Writes)` becomes
+  `TestMutation(Writes, Record)` in `story:scripts-dom-attributes`, which adds the variants
+  `Writes::Stored` and `Writes::Fault`; this story adds the variant `Writes::Nodes` and its arm
+  in the same two exhaustive matches (acceptance 9), and accepts the merge of the match arms,
+  the attributes story first; the swell pin story (`dom_limit_drops_the_jobs` and a `then`
+  variant of `limit_end`); this story changes three tests' members and adds glue unit tests.
 - `crates/script/src/runner.rs`: the swell pin story edits `document_end`, `evaluate`, the
   macro and `error_kind`; `story:scripts-parse-run` edits `evaluate` and `script_end` (which
   exists only at that story's base, `f463e24:691`); this story edits the comment inside
@@ -1558,14 +1922,23 @@ the shared lines as they are.
 - `AGENTS.md` and the public surfaces of acceptance 22: the entry of `crates/script`
   (`AGENTS.md:365-369 @ a14e3b0`) is one paragraph that six stories edit (the reading story,
   the swell pin story, parse-run, attributes, selectors and this one), merged by hand, each
-  keeping the others' sentences; the public numbers are shared with the same stories and the
-  later merger takes its numbers from its own log.
+  keeping the others' sentences. `AGENTS.md` is listed by four more stories that the
+  selectors story names, `story:test-step-holds-with-tls`, `story:tls-tests-as-tables`,
+  `story:session-argument-checks` and `story:conformance-lock-and-lints`. Of the public
+  numbers, the first two change the count of the TLS step (the `552` of acceptance 22),
+  `story:conformance-lock-and-lints` also edits `website/docs/status.md`, and
+  `story:scripts-document-port` lists `status.md` and `what-works.md` (it comes after this
+  story through `story:scripts-html-conformance`). Each merges `main` first; the later merger
+  takes its numbers from its own log.
 - Other plan files change with this story: the epic (this story's block, and its rule on the
   public-number files, which omits the swell pin story and the reading unit as writers),
-  `story:html-open-namespace` (decision 3), `story:scripts-dom-reading` (a sentence in decision
-  20 that owns the walk property of decision 14), `story:scripts-dom-attributes` (its line on
-  `Limit::InputBytes`, its cites of this story's lines, and the meaning of `node_charges()`) and
-  `story:scripts-parse-run` (its cites of this story's lines).
+  `story:html-open-namespace` (decision 3), `story:scripts-dom-reading` (the bullet in decision
+  20 that owns the walk property of decision 14, which says that the unit holds it by a source
+  test since its sixth fix round, and the sentence that says another story moves the argument's
+  charge before the copy, which that round did), `story:scripts-dom-attributes` (its line on
+  `Limit::InputBytes`, its cites of this story's lines, and the meaning of `node_charges()`),
+  `story:scripts-parse-run` and `story:swell-0-9-0` (their cites of this story's lines) and
+  `story:scripts-dom-collection-names` (the edge named above).
 
 ## Why `epic:scripts-in-a-page`
 
