@@ -51,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 56
+revision: 57
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -404,7 +404,7 @@ and `ScriptedParse` is built from the last hook alone:
   for a `None` that cannot happen).
 - `record_inserted(cx, node)` appends `node` to a list in the host value, each node once, at a
   cost that does not grow with the list; the mutation slice calls it from the write that connects
-  a `script` element (`scripts-dom-mutation.md:597-601`).
+  a `script` element (`scripts-dom-mutation.md:623-627`).
 
 `crates/script/src/runner.rs`: the two intra-doc links [`run`] (`:440,559 @ 8086a30`) become
 [`run()`], because `run` is then also a module (`pub mod run;`) and a bare link is ambiguous;
@@ -779,7 +779,7 @@ the session and what a user sees (`story:scripts-document-port`); a page meant t
 
 After `story:html-script-hook` (on `main`), `story:scripts-dom-reading` and `story:swell-0-9-0`;
 before `story:scripts-dom-mutation`, `story:scripts-html-conformance` and
-`story:scripts-document-port`, which call `parse_with_scripts` (`scripts-dom-mutation.md:1321`,
+`story:scripts-document-port`, which call `parse_with_scripts` (`scripts-dom-mutation.md:1439`,
 `scripts-html-conformance.md:54`, `scripts-document-port.md:149-156`) and, for the first, also
 `record_inserted`. The document-port story passes the page's address and content type in `Page`,
 the conformance story the case's UTF-8 bytes behind a UTF-8 byte order mark (so the entry decodes
@@ -835,7 +835,7 @@ the merged file and resolves what overlaps.
   commit of this story and of `story:scripts-dom-attributes` and `story:scripts-dom-selectors`
   too (`scripts-dom-attributes.md:1708-1729`, `scripts-dom-selectors.md:72-80`), which also write
   other files of `crates/script`; `story:scripts-dom-mutation` rewrites them, `status.md:31` and
-  `what-works.md:17` in its acceptance 22 (`scripts-dom-mutation.md:1745-1763`; its scope list
+  `what-works.md:17` in its acceptance 22 (`scripts-dom-mutation.md:1955-1976`; its scope list
   names none of them), and `story:scripts-html-conformance` and `story:scripts-document-port` have
   `website/docs/status.md` and `what-works.md` in their scope. Those three depend on this
   story, so the order exists: this story merges before them and each takes the log of its own
@@ -870,7 +870,7 @@ the merged file and resolves what overlaps.
   edit the file too, with no edge beyond the dependencies named:
   `story:scripts-document-port` (scope; Q11's bound values; it depends on this story, so the
   order exists), `story:scripts-dom-attributes` (scope; `:322-332`, `:902-904`),
-  `story:scripts-dom-mutation` (Q1, Q4, `scripts-dom-mutation.md:1204-1209`; depends on this story),
+  `story:scripts-dom-mutation` (Q1, Q4, `scripts-dom-mutation.md:1322-1327`; depends on this story),
   `story:scripts-job-errors` (draft; Q2, the checkpoint deviation, `scripts-job-errors.md:19`,
   the note this story edits at `:182-183 @ f463e24`), `story:scripts-seeds-and-time-zone`
   (draft; the `Math.random` and time-zone rows, `:32,40`), `story:session-memory-bound` (draft;

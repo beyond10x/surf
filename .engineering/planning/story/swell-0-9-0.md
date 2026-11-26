@@ -59,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 30
+revision: 31
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
@@ -956,7 +956,7 @@ revision: ten edits, five in the epic, two in `story:scripts-parse-run`, two in
 (decisions 5 and 6), each now naming `0.10.0`. None is listed here. A text that states what
 `0.9.0` holds or cites `0.8.0` or `0.9.0` as the tag of a statement true at that tag stays
 (`story:script-error-kind-aggregate` `:36-38`, `:87`, `:184` and `:193`, the epic's `:121`,
-`story:scripts-dom-reading` `:77`, `story:scripts-dom-mutation` `:91` and `:115-125`, and the epic's
+`story:scripts-dom-reading` `:77`, `story:scripts-dom-mutation` `:77-82`, `:432-433`, and the epic's
 "Corrections of 2026-11-24").
 
 ## Why `epic:scripts-in-a-page`

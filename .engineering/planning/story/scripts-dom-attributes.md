@@ -44,7 +44,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 50
+revision: 51
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -1903,7 +1903,7 @@ The files shared, one by one:
   later merger keeps every line.
 - `crates/script/tests/main.rs`: this story adds `mod dom_attributes_cost;` after `mod
   dom_attributes;` (line 17 @ 83e6b8a); the mutation story adds `mod dom_mutation_cost;` (its
-  text `:1197` and `:1894` at revision 4), after `mod dom_mutation;` on line 18, one
+  text `:1315` and `:2109` at revision 5), after `mod dom_mutation;` on line 18, one
   line from this story's: adjacent
   hunks, resolved by keeping both; the selectors story adds none (`dom_selectors` is declared
   at `:21`).

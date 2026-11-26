@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 67
+revision: 68
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -1034,13 +1034,15 @@ the story's decisions win, and the lines named are this file's at plan commit `9
   whole from the front ends it. A script can also end `limit: steps-per-script` where a browser
   throws a `DOMException`, because a check that needs a walk runs after the charge of its walk:
   a named allowance, not a deviation of behaviour (decision 13 of the story).
-- Lines 761-770 (deviations): three more, each named beside its member in `selection.txt`:
+- Lines 761-770 (deviations): four more, each named beside its member in `selection.txt`:
   `createElementNS` with a prefix or a namespace outside the six throws `NotSupportedError` (the
   tree's element has no prefix and no open namespace); `cloneNode` of a `Document` throws
   `NotSupportedError` (the standard clones it); a clone of a `script` element is recorded as
   inserted when it is inserted, where a browser does not prepare a copy of a started script
-  again. `importNode` and `adoptNode` of a `Document` throw as the standard says. Deviations
-  1 to 3 of the story, in this order.
+  again; an offset between the two units of a surrogate pair throws `IndexSizeError` in
+  `splitText`, `insertData`, `deleteData` and `replaceData` (the tree holds UTF-8; the standard
+  has no such step). `importNode` and `adoptNode` of a `Document` throw as the standard says.
+  Deviations 1 to 4 of the story, in this order.
 - Lines 955-961 (the rule on public numbers): the stories that write the public-number files
   are also `story:swell-0-9-0` and the reading unit; two units built at once both change them,
   and the one merged second repeats its numbers commit. The story's last commit changes them
