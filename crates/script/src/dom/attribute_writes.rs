@@ -7,7 +7,6 @@
 //! [`charged_write`], the one place that charges the bytes for memory, calls the tree and
 //! settles the charge.
 
-use surf_html::limits::ATTRIBUTE_BYTES;
 use surf_html::{NodeId, Tree, WriteError};
 
 use crate::bindings::{DomCx, DomEnd, DomException, DomResult};
@@ -130,28 +129,24 @@ fn ended(error: WriteError) -> DomEnd {
 
 /// The bytes a write adds and removes by the tree's count, from what [`attribute_reads::find`]
 /// found: a value replaced adds the new value's bytes and removes the old one's (the tree keeps
-/// the name and the prefix); an attribute added adds its record, its name's bytes (`name`, the
-/// prefix and the local name it stores), its value's, and the room the list's allocation then
-/// grows by as the tree says it ([`Scan::room_grown`]), so that a list the parser built at its
-/// exact length is charged for the records its first add makes room for.
+/// the name and the prefix); an attribute added adds its name's bytes (`name`, the prefix and
+/// the local name it stores), its value's, and the record slots the list gains as the tree says
+/// them ([`Scan::room_grown`]): none when the attribute goes into a slot the list holds.
 fn put_bytes(scan: &Scan, name: usize, value: usize) -> (usize, usize) {
     match scan.found {
         Some(found) => (value, found.value_bytes),
         None => (
-            ATTRIBUTE_BYTES
-                .saturating_add(name)
-                .saturating_add(value)
-                .saturating_add(scan.room_grown),
+            name.saturating_add(value).saturating_add(scan.room_grown),
             0,
         ),
     }
 }
 
-/// The bytes a removal gives back by the tree's count: the attribute's own (`stored_bytes`),
-/// and the room the list's allocation gives back beyond its record as the tree says it
-/// ([`Scan::room_freed`]); a list that keeps its allocation gives back no room.
-fn removed_bytes(scan: &Scan, stored_bytes: usize) -> usize {
-    stored_bytes.saturating_add(scan.room_freed)
+/// The bytes a removal gives back by the tree's count: the attribute's strings
+/// (`string_bytes`), and the record slots the list gives back as the tree says them
+/// ([`Scan::room_freed`]): none when the list keeps its allocation.
+fn removed_bytes(scan: &Scan, string_bytes: usize) -> usize {
+    string_bytes.saturating_add(scan.room_freed)
 }
 
 /// The steps of a write that puts a value, after its scan: one call for the tree's own scan,
@@ -243,7 +238,7 @@ pub(super) fn remove(cx: &mut DomCx<'_, '_>, element: NodeId, name: &str) -> Dom
         return Ok(());
     };
     reads::charge(cx, scan.steps(name.len()))?;
-    charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
+    charged_write(cx, 0, removed_bytes(&scan, found.string_bytes), |tree| {
         tree.remove_attribute(element, name)
     })
 }
@@ -264,7 +259,7 @@ pub(super) fn remove_ns(
         return Ok(());
     };
     reads::charge(cx, scan.steps(local_name.len()))?;
-    charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
+    charged_write(cx, 0, removed_bytes(&scan, found.string_bytes), |tree| {
         tree.remove_attribute_ns(element, namespace, local_name)
     })
 }
@@ -285,7 +280,7 @@ pub(super) fn toggle(
         (None, Some(false)) => Ok(false),
         (Some(found), Some(false) | None) => {
             reads::charge(cx, scan.steps(name.len()))?;
-            charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
+            charged_write(cx, 0, removed_bytes(&scan, found.string_bytes), |tree| {
                 tree.toggle_attribute(element, name, force)
             })
         }

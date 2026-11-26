@@ -13,6 +13,9 @@ fn parsed() -> Tree {
     parse_document(PAGE, &ParseOptions::default())
 }
 
+/// A write of a case: its name and the call.
+type Write = (&'static str, Box<dyn Fn(&mut Tree)>);
+
 /// The element whose attribute `id` in no namespace is `id`.
 fn by_id(tree: &Tree, id: &str) -> NodeId {
     tree.descendants(tree.root())
@@ -144,7 +147,7 @@ fn each_write_keeps_the_count_the_room_and_the_rule() {
         "",
         "x",
     ];
-    let mut writes: Vec<(&str, Box<dyn Fn(&mut Tree)>)> = vec![
+    let mut writes: Vec<Write> = vec![
         (
             "set ID on p",
             Box::new(move |t: &mut Tree| t.set_attribute(p, "ID", "z").unwrap()),

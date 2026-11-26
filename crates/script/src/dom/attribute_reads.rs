@@ -39,8 +39,8 @@ pub(super) struct Found {
     pub(super) at: usize,
     /// The bytes of its value.
     pub(super) value_bytes: usize,
-    /// The tree's count of it, [`Attribute::stored_bytes`].
-    pub(super) stored_bytes: usize,
+    /// The bytes of its strings, [`Attribute::string_bytes`].
+    pub(super) string_bytes: usize,
 }
 
 /// What [`find`] answers: the attribute found, the two numbers of its scan that a write reuses
@@ -54,11 +54,11 @@ pub(super) struct Scan {
     pub(super) count: usize,
     /// The attributes whose name has the wanted name's length (`k`).
     pub(super) same_length: usize,
-    /// The bytes the list's allocation grows by, beyond the new record, when an attribute is added
+    /// The bytes of the record slots the list gains when an attribute is added
     /// (`Tree::attribute_room_grown`).
     pub(super) room_grown: usize,
-    /// The bytes of room the list's allocation gives back, beyond the removed record, when an
-    /// attribute is removed (`Tree::attribute_room_freed`).
+    /// The bytes of the record slots the list gives back when an attribute is removed
+    /// (`Tree::attribute_room_freed`).
     pub(super) room_freed: usize,
 }
 
@@ -119,9 +119,9 @@ pub(super) fn namespace_of(namespace: Option<&str>) -> Option<Option<Namespace>>
 /// Finds the attribute `wanted` names on `element`. The order: one step per 4 attributes of the
 /// element, from the count; one pass over the list that counts the attributes whose name has
 /// the wanted name's length (`k`, lengths only); one step per 16 bytes of `k` compares of the
-/// whole name; then the tree's position read, the second pass, and its two reads of the room an
-/// add or a removal takes or gives back, a constant number of steps. A node that is no element has no
-/// attribute.
+/// whole name; then the tree's position read, the second pass, and its two reads of the record
+/// slots an add gains or a removal gives back, a constant number of steps. A node that is no
+/// element has no attribute.
 pub(super) fn find(cx: &mut DomCx<'_, '_>, element: NodeId, wanted: Wanted<'_>) -> DomResult<Scan> {
     let count = reads::attribute_count(cx.tree(), element);
     reads::charge(cx, pass_steps(count))?;
@@ -146,7 +146,7 @@ pub(super) fn find(cx: &mut DomCx<'_, '_>, element: NodeId, wanted: Wanted<'_>) 
             .map(|attribute| Found {
                 at,
                 value_bytes: attribute.value.len(),
-                stored_bytes: attribute.stored_bytes(),
+                string_bytes: attribute.string_bytes(),
             })
     });
     let tree = cx.tree();

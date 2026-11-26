@@ -3171,11 +3171,41 @@ fn room_of(tree: &Tree, node: NodeId) -> usize {
     }
 }
 
-/// The room reads say, before each write, what the write does to the list's allocation: an
-/// add grows it by the new record and `attribute_room_grown` (a list the parser built at its
-/// exact length doubles at the first add, a short list grows by the one record), a removal
-/// gives back the removed record and `attribute_room_freed`, and a node that is no element has
-/// no room.
+/// The bytes the tree holds by the charge's rule, counted afresh: the strings of every node and
+/// [`ATTRIBUTE_BYTES`] for every record slot an attribute list holds room for.
+/// Every node of the tree is under its root here.
+fn held_afresh(tree: &Tree) -> usize {
+    let lists: usize = tree
+        .descendants(tree.root())
+        .into_iter()
+        .map(|node| match tree.data(node) {
+            NodeData::Element { attributes, .. } => {
+                (attributes.capacity() - attributes.len()) * ATTRIBUTE_BYTES
+            }
+            _ => 0,
+        })
+        .sum();
+    tree.stored_bytes() + lists
+}
+
+/// The bytes of the strings of the attribute `name` (no prefix) of `node`.
+fn strings_of(tree: &Tree, node: NodeId, name: &str) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes
+            .iter()
+            .find(|attribute| attribute.local_name == name)
+            .map(Attribute::string_bytes)
+            .expect("the attribute"),
+        _ => panic!("an element"),
+    }
+}
+
+/// The room reads say, before each write, what the write does to the list's allocation and to
+/// `held_bytes`: an add gains `attribute_room_grown` (a list the parser built at its exact
+/// length doubles at the first add, a short list grows by the one record, a list with room
+/// gains nothing), a removal gives back `attribute_room_freed` (all of it when the list
+/// empties), `held_bytes` moves by those and the strings, and a node that is no element has no
+/// room.
 #[test]
 fn read_attribute_room() {
     let names: String = (0..512).map(|i| format!(" a{i}")).collect();
@@ -3187,22 +3217,25 @@ fn read_attribute_room() {
         513,
         "the parser builds the list at its length"
     );
-    assert_eq!(tree.attribute_room_grown(p), 512 * ATTRIBUTE_BYTES);
+    assert_eq!(
+        tree.held_bytes(),
+        tree.stored_bytes(),
+        "no room past a parsed list"
+    );
+    assert_eq!(tree.attribute_room_grown(p), 513 * ATTRIBUTE_BYTES);
     let mut added = Vec::new();
     for n in 0..400 {
-        let before = room_of(&tree, p);
+        let (before, held) = (room_of(&tree, p), tree.held_bytes());
         let grown = tree.attribute_room_grown(p);
         let name = format!("z{n}");
         tree.set_attribute(p, &name, "").unwrap();
-        added.push(name);
         let after = room_of(&tree, p);
-        assert_eq!(
-            (after - before).saturating_sub(1) * ATTRIBUTE_BYTES,
-            grown,
-            "add {n}"
-        );
+        assert_eq!((after - before) * ATTRIBUTE_BYTES, grown, "add {n}");
+        assert_eq!(tree.held_bytes(), held + grown + name.len(), "add {n}");
+        added.push(name);
     }
     assert_eq!(room_of(&tree, p), 1026, "one doubling in 400 adds");
+    assert_eq!(tree.held_bytes(), held_afresh(&tree));
     let mut shrunk = 0;
     let all: Vec<String> = (0..512)
         .map(|i| format!("a{i}"))
@@ -3210,38 +3243,60 @@ fn read_attribute_room() {
         .chain(["id".to_string()])
         .collect();
     for name in &all {
-        let before = room_of(&tree, p);
+        let (before, held) = (room_of(&tree, p), tree.held_bytes());
         let freed = tree.attribute_room_freed(p);
+        let strings = strings_of(&tree, p, name);
         tree.remove_attribute(p, name).unwrap();
         let after = room_of(&tree, p);
-        if after == before {
-            assert_eq!(freed, 0, "remove {name}: the list keeps its room");
-        } else {
+        assert_eq!(
+            freed,
+            (before - after) * ATTRIBUTE_BYTES,
+            "remove {name}: {before} -> {after} records"
+        );
+        assert_eq!(tree.held_bytes(), held - freed - strings, "remove {name}");
+        if after < before {
             shrunk += 1;
-            assert_eq!(
-                freed,
-                (before - after - 1) * ATTRIBUTE_BYTES,
-                "remove {name}: {before} -> {after} records"
-            );
         }
     }
     assert!(attributes_of(&tree, p).is_empty());
+    assert_eq!(room_of(&tree, p), 0, "an emptied list gives its room back");
     assert!(shrunk >= 3, "{shrunk} shrinks");
     let e = by_id(&tree, "e");
+    let mut rooms = Vec::new();
     for n in 0..6 {
         let before = room_of(&tree, e);
         let grown = tree.attribute_room_grown(e);
         tree.set_attribute(e, &format!("b{n}"), "").unwrap();
         let after = room_of(&tree, e);
-        assert_eq!(
-            (after - before).saturating_sub(1) * ATTRIBUTE_BYTES,
-            grown,
-            "short add {n}"
-        );
+        assert_eq!((after - before) * ATTRIBUTE_BYTES, grown, "short add {n}");
+        rooms.push(after);
     }
-    assert_eq!(room_of(&tree, e), 8, "1, 2, 3, 4, then 8 records");
+    assert_eq!(
+        rooms,
+        [2, 3, 4, 8, 8, 8],
+        "1 (the id), 2, 3, 4, then 8 records"
+    );
+    // Shrunk to its entries at 3 left of 8; the last removal empties it.
+    let removals = [
+        ("b5", 8),
+        ("b4", 8),
+        ("b3", 8),
+        ("b2", 3),
+        ("b1", 3),
+        ("b0", 3),
+        ("id", 0),
+    ];
+    for (name, kept) in removals {
+        let freed = tree.attribute_room_freed(e);
+        let before = room_of(&tree, e);
+        tree.remove_attribute(e, name).unwrap();
+        assert_eq!(room_of(&tree, e), kept, "remove {name}");
+        assert_eq!(freed, (before - kept) * ATTRIBUTE_BYTES, "remove {name}");
+    }
+    assert_eq!(tree.held_bytes(), held_afresh(&tree));
     assert_eq!(tree.attribute_room_grown(tree.root()), 0);
     assert_eq!(tree.attribute_room_freed(tree.root()), 0);
     assert_cost_line("pub fn attribute_room_grown(");
     assert_cost_line("pub fn attribute_room_freed(");
+    assert_cost_line("pub fn held_bytes(");
 }

@@ -162,10 +162,15 @@ impl Attribute {
     ///
     /// Cost: a constant number of steps (three lengths read).
     pub fn stored_bytes(&self) -> usize {
-        ATTRIBUTE_BYTES
-            + self.prefix.as_ref().map_or(0, String::len)
-            + self.local_name.len()
-            + self.value.len()
+        ATTRIBUTE_BYTES + self.string_bytes()
+    }
+
+    /// The UTF-8 bytes of its prefix, local name and value: what an attribute holds beside its
+    /// record ([`Tree::held_bytes`]).
+    ///
+    /// Cost: a constant number of steps (three lengths read).
+    pub fn string_bytes(&self) -> usize {
+        self.prefix.as_ref().map_or(0, String::len) + self.local_name.len() + self.value.len()
     }
 
     /// The length in bytes of its qualified name: its prefix, one for the colon and its local
@@ -644,9 +649,32 @@ impl Tree {
     /// The stored bytes of the tree ([`crate::limits::Limits::max_stored_bytes`]): the UTF-8
     /// bytes of every string it holds (element local names, attribute names, prefixes and
     /// values, text, comment data, doctype fields, processing instruction targets and data), and
-    /// [`ATTRIBUTE_BYTES`] for every attribute, in every node of the arena.
+    /// [`ATTRIBUTE_BYTES`] for every attribute, in every node of the arena. The record slots a
+    /// list holds room for past its attributes are not in it ([`Tree::held_bytes`]).
     pub fn stored_bytes(&self) -> usize {
         self.stored_bytes
+    }
+
+    /// The bytes the tree holds by the rule a script's attribute writes are charged by: the
+    /// strings [`Tree::stored_bytes`] counts, and [`ATTRIBUTE_BYTES`] for every record an
+    /// attribute list holds room for, whether an attribute is in it or not. A record slot counts
+    /// while its list holds it, an attribute's strings while the attribute is there: an add
+    /// rises it by the strings and the records the list gains ([`Tree::attribute_room_grown`]),
+    /// a removal lowers it by the strings and the records the list gives back
+    /// ([`Tree::attribute_room_freed`]), a replaced value moves it by the value's bytes.
+    ///
+    /// Cost: one pass over the nodes of the arena; no pass over a list.
+    pub fn held_bytes(&self) -> usize {
+        self.nodes
+            .iter()
+            .map(|node| match &node.data {
+                NodeData::Element { attributes, .. } => attributes
+                    .capacity()
+                    .saturating_sub(attributes.len())
+                    .saturating_mul(ATTRIBUTE_BYTES),
+                _ => 0,
+            })
+            .fold(self.stored_bytes, usize::saturating_add)
     }
 
     /// Records the steps the parse used.
@@ -789,13 +817,12 @@ impl Tree {
         names
     }
 
-    /// The bytes by which the allocation of the attribute list of `element` grows, beyond the
-    /// new record's own (which [`Attribute::stored_bytes`] counts), when one attribute is
-    /// added: 0 while the list has room, and 0 while it holds fewer than four records, where
-    /// the adding writes reserve one record at a time; else the records of the room they then
-    /// reserve, as many again as the list holds, less the new record, times
-    /// [`ATTRIBUTE_BYTES`]. A list the parser built has no room, so the first add to a list of
-    /// `c` records takes room for `2 * c`, `c - 1` records beyond the new one. 0 for a node
+    /// The bytes by which [`Tree::held_bytes`] counts more record slots in the attribute list
+    /// of `element` once one attribute is added: the records the list's allocation gains,
+    /// times [`ATTRIBUTE_BYTES`]. 0 while the list has room (the attribute goes into a slot the
+    /// list holds); one record while it holds fewer than four, where the adding writes reserve
+    /// one record at a time; else as many records as the list holds. A list the parser built
+    /// has no room, so the first add to a list of `c` records takes `c` records. 0 for a node
     /// that is no element.
     ///
     /// Cost: a constant number of steps; no pass over the list.
@@ -809,16 +836,15 @@ impl Tree {
         };
         grown_capacity(attributes.len(), attributes.capacity())
             .saturating_sub(attributes.capacity())
-            .saturating_sub(1)
             .saturating_mul(ATTRIBUTE_BYTES)
     }
 
-    /// The bytes of room the allocation of the attribute list of `element` gives back when one
-    /// attribute is removed: 0 when the list keeps its allocation, else the records of room it
-    /// held past its entries and the removed record, times [`ATTRIBUTE_BYTES`] (a list left
-    /// with room for more than twice its entries, and more than four, is shrunk to its
-    /// entries). The removed record's own bytes, which [`Attribute::stored_bytes`] counts, are
-    /// not in it. 0 for a node that is no element or has no attribute.
+    /// The bytes by which [`Tree::held_bytes`] counts fewer record slots in the attribute list
+    /// of `element` once one attribute is removed: the records the list's allocation gives
+    /// back, times [`ATTRIBUTE_BYTES`]. 0 when the list keeps its allocation; all of it when
+    /// the removal empties the list; else, for a list left with room for more than twice its
+    /// entries and more than four, the records past those it keeps. 0 for a node that is no
+    /// element or has no attribute.
     ///
     /// Cost: a constant number of steps; no pass over the list.
     ///
@@ -832,15 +858,10 @@ impl Tree {
         let Some(left) = attributes.len().checked_sub(1) else {
             return 0;
         };
-        if must_shrink(left, attributes.capacity()) {
-            attributes
-                .capacity()
-                .saturating_sub(left)
-                .saturating_sub(1)
-                .saturating_mul(ATTRIBUTE_BYTES)
-        } else {
-            0
-        }
+        let capacity = attributes.capacity();
+        capacity
+            .saturating_sub(kept_capacity(left, capacity))
+            .saturating_mul(ATTRIBUTE_BYTES)
     }
 
     /// Whether the DOM's "validate and extract" throws `NamespaceError` for the namespace URL
@@ -952,10 +973,23 @@ fn must_shrink(len: usize, capacity: usize) -> bool {
     capacity > len.saturating_mul(2).max(4)
 }
 
+/// The room an attribute list of `len` records keeps after a removal, when it had room for
+/// `capacity`: none when it is empty, so that an element brought back to no attribute holds no
+/// record slot; its entries when [`must_shrink`] says so; else all of it.
+fn kept_capacity(len: usize, capacity: usize) -> usize {
+    if len == 0 {
+        0
+    } else if must_shrink(len, capacity) {
+        len
+    } else {
+        capacity
+    }
+}
+
 /// The room of an attribute list of `len` records with room for `capacity` once one more is
 /// added: the same while it has room; else one more while it holds fewer than four, so that
-/// a short list holds no record the stored bytes do not count, and twice its records beyond,
-/// so that a run of adds moves each record a bounded number of times.
+/// a short list a script grows holds no record slot it does not use, and twice its records
+/// beyond, so that a run of adds moves each record a bounded number of times.
 fn grown_capacity(len: usize, capacity: usize) -> usize {
     if len < capacity {
         capacity
@@ -1784,11 +1818,15 @@ impl Tree {
         Ok(())
     }
 
-    /// Removes the attribute at `at` of `element`; its bytes are freed.
+    /// Removes the attribute at `at` of `element`; its bytes are freed, and the room of
+    /// [`kept_capacity`], which `attribute_room_freed` reports before the write, is kept.
     fn drop_attribute(&mut self, element: NodeId, at: usize) {
         let attributes = self.attributes_mut(element);
         let removed = attributes.remove(at);
-        shrink(attributes);
+        let kept = kept_capacity(attributes.len(), attributes.capacity());
+        if kept < attributes.capacity() {
+            attributes.shrink_to(kept);
+        }
         self.stored_bytes -= attribute_bytes(&removed);
     }
 

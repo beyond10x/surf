@@ -122,6 +122,8 @@ struct Figures {
     node_charges: usize,
     totals: (u64, u64),
     stored: usize,
+    /// The tree's `held_bytes`: the strings and every record slot the lists hold.
+    held: usize,
     writes: u64,
 }
 
@@ -140,6 +142,7 @@ fn figures(runner: &mut Runner) -> Figures {
         node_charges: state.node_charges(),
         totals: (totals.nodes, totals.bytes),
         stored: state.tree().stored_bytes(),
+        held: state.tree().held_bytes(),
         writes: state.tree().writes(),
     }
 }
@@ -181,34 +184,20 @@ fn room_of(tree: &Tree, node: NodeId) -> usize {
     }
 }
 
-/// The change of the stored live bytes a write makes beside the attribute's own bytes, from
-/// the list's room before and after it: a list that grew takes the records beyond the new
-/// one, a list that shrank gives back those beyond the removed one.
-fn room_change(before: usize, after: usize) -> i64 {
-    let records = if after > before {
-        (after - before - 1) as i64
-    } else if after < before {
-        -((before - after - 1) as i64)
-    } else {
-        0
-    };
-    records * ATTRIBUTE_BYTES as i64
+/// The bytes of the strings of the attributes of `node`.
+fn strings_of(tree: &Tree, node: NodeId) -> usize {
+    attributes(tree, node)
+        .iter()
+        .map(Attribute::string_bytes)
+        .sum()
 }
 
-/// The bytes of room beyond the new records that `adds` adds take on a list of `len` records
-/// with room for `capacity`, by the tree's rule: one record at a time below four, then as many
-/// again as the list holds.
-fn room_beyond(len: usize, capacity: usize, adds: usize) -> u64 {
-    let (mut len, mut capacity, mut beyond) = (len, capacity, 0);
-    for _ in 0..adds {
-        if len == capacity {
-            let grown = if len < 4 { len + 1 } else { 2 * len };
-            beyond += grown - capacity - 1;
-            capacity = grown;
-        }
-        len += 1;
-    }
-    (beyond * ATTRIBUTE_BYTES) as u64
+/// What the rule charges a script for the attributes of `node` since `start` (its room in
+/// records and its strings then), counted from the list itself: the record slots it gained,
+/// times `ATTRIBUTE_BYTES`, and the strings' difference.
+fn charge_since(tree: &Tree, node: NodeId, start: (usize, usize)) -> i64 {
+    (room_of(tree, node) as i64 - start.0 as i64) * ATTRIBUTE_BYTES as i64
+        + (strings_of(tree, node) as i64 - start.1 as i64)
 }
 
 /// The value of the attribute `name` in no namespace of `node`.
@@ -1696,8 +1685,10 @@ for (var j = 0; j < 1000; j++) check(names[j] === "a" + j, "name " + j);"#,
 }
 
 /// The memory charge, step by step (acceptance 6a): each write moves the stored live bytes by
-/// the tree's own change and the charge to twice them; an equal value, a removal of what the
-/// parser stored while nothing is live, and every throw move nothing.
+/// the change of the tree's `held_bytes` (the strings, and the record slots the list gains or
+/// gives back) and the charge to twice them; an add adds its `stored_bytes` to the tree's
+/// count; a list that keeps its room after the removals keeps it charged; a removal of what the
+/// parser stored gives back down to 0 and no further.
 #[test]
 fn the_stored_charge_follows_each_write() {
     let page = "<html lang=\"en\"><body></body></html>".to_string();
@@ -1731,15 +1722,14 @@ fn the_stored_charge_follows_each_write() {
         for (write, adds) in writes {
             let before = figures(runner);
             let count = attributes(tree(runner), html).len();
-            let before_room = room_of(tree(runner), html);
             ran(runner, write);
             let after = figures(runner);
             let rise = after.stored as i64 - before.stored as i64;
-            let room = room_change(before_room, room_of(tree(runner), html));
-            // The live bytes stop at 0: a list that kept its room after a removal gave back the
-            // record, so a later shrink may give back more than is live.
-            let next = (before.live as i64 + rise + room).max(0);
-            assert_eq!(after.live as i64, next, "{write}");
+            let held = after.held as i64 - before.held as i64;
+            // The list holds the parser's record of `lang`, so the script's charge never goes
+            // under 0 here: the live bytes are the held rise since the start.
+            assert_eq!(after.live as i64, before.live as i64 + held, "{write}");
+            assert_eq!(after.live as usize, after.held - start.held, "{write}");
             assert_eq!(after.charged, 2 * after.live, "{write}");
             assert_eq!(after.handles, 1, "{write}");
             assert_eq!(after.node_charges, 0, "{write}");
@@ -1751,11 +1741,20 @@ fn the_stored_charge_follows_each_write() {
                 assert_eq!(added.stored_bytes() as i64, rise, "{write}");
             }
         }
+        // Every attribute the script added is gone; the list keeps room for 3 records, the
+        // parser's one and 2 the script's adds made, and those 2 stay charged.
         let now = figures(runner);
-        assert_eq!((now.live, now.charged), (0, 0));
+        assert_eq!(attributes(tree(runner), html).len(), 1);
+        assert_eq!(room_of(tree(runner), html), 3);
+        let slots = 2 * ATTRIBUTE_BYTES as u64;
+        assert_eq!((now.live, now.charged), (slots, 2 * slots));
+        // The removal of the parser's attribute empties the list: it gives back 3 records and
+        // the 6 bytes of `lang` and `en`, 246 bytes, and the live bytes stop at 0.
         ran(runner, "e.removeAttribute(\"lang\");");
         let after = figures(runner);
         assert!(after.stored < now.stored, "the parser's attribute is gone");
+        assert_eq!(room_of(tree(runner), html), 0);
+        assert_eq!(now.held - after.held, 3 * ATTRIBUTE_BYTES + 6);
         assert_eq!((after.live, after.charged, after.handles), (0, 0, 1));
     });
 }
@@ -1829,10 +1828,13 @@ fn memory_first(name: &str, row: MemoryRow) {
             None => {
                 let html = element(tree, "html");
                 let n = attributes(tree, html).len();
-                let live: u64 = (0..n)
-                    .map(|i| (ATTRIBUTE_BYTES + format!("a{i}").len() + 40_000) as u64)
+                let strings: u64 = (0..n)
+                    .map(|i| (format!("a{i}").len() + 40_000) as u64)
                     .sum();
-                assert_eq!(after.live, live + room_beyond(0, 0, n), "{name}");
+                // The list started empty: every record slot it holds is the script's.
+                let slots = (room_of(tree, html) * ATTRIBUTE_BYTES) as u64;
+                assert_eq!(after.live, strings + slots, "{name}");
+                assert_eq!(after.live as usize, after.held - before.held, "{name}");
                 assert!(value(tree, html, &format!("a{n}")).is_none(), "{name}");
                 assert!(
                     value(tree, html, &format!("a{}", n - 1)).is_some(),
@@ -1997,12 +1999,10 @@ fn attributes_first() {
             let after = figures(runner);
             let html = element(tree(runner), "html");
             assert_eq!(attributes(tree(runner), html).len(), 1_024);
-            // 1,024 x (80 + 1,000) + 4,010, the bytes of the names a0 to a1023.
-            // and the room beyond the new records of the eight doublings from 4 to 1,024.
-            let live = 1_024 * (ATTRIBUTE_BYTES as u64 + 1_000)
-                + numbered_bytes("a", 1_024)
-                + room_beyond(0, 0, 1_024);
-            assert_eq!(room_beyond(0, 0, 1_024), 1_012 * ATTRIBUTE_BYTES as u64);
+            // 1,024 x (80 + 1,000) + 4,010, the bytes of the names a0 to a1023: 1,109,930. The
+            // list grew 1, 2, 3, 4, then by doubling to exactly 1,024 records, all charged.
+            assert_eq!(room_of(tree(runner), html), 1_024);
+            let live = 1_024 * (ATTRIBUTE_BYTES as u64 + 1_000) + numbered_bytes("a", 1_024);
             assert_eq!(numbered_bytes("a", 1_024), 4_010);
             assert_eq!(after.live, live);
             assert_eq!(after.charged, 2 * live);
@@ -2083,7 +2083,11 @@ for (var size = 1024; size <= 1048576; size *= 2) e.setAttribute("a", v.slice(0,
 }
 
 /// A removal of what the parser stored while bytes are live (acceptance 6g) refunds, never
-/// more than was charged.
+/// more than was charged. The add of `s` grows the parsed list of 1 record to 2 (80 + 1 +
+/// 2,000); the removal of `p` keeps the 2 records, so it gives back the 1,001 bytes of `p`'s
+/// strings and no record: live 1,080 (a record slot is charged while the list holds it; a
+/// refund of the record here would give 1,000). The removal of `s` empties the
+/// list: 2,001 bytes and 2 records, 2,161, and the live bytes stop at 0.
 #[test]
 fn a_removal_of_parser_bytes_refunds_what_was_charged() {
     let page = format!("<html p=\"{}\">", "P".repeat(1_000));
@@ -2096,10 +2100,162 @@ fn a_removal_of_parser_bytes_refunds_what_was_charged() {
         assert_eq!((f.live, f.charged, f.handles), (2_081, 4_162, 1));
         ran(runner, "e.removeAttribute(\"p\");");
         let f = figures(runner);
-        assert_eq!((f.live, f.charged, f.handles), (1_000, 2_000, 1));
+        assert_eq!((f.live, f.charged, f.handles), (1_080, 2_160, 1));
         ran(runner, "e.removeAttribute(\"s\");");
         let f = figures(runner);
         assert_eq!((f.live, f.charged, f.handles), (0, 0, 1));
+    });
+}
+
+/// The next number of a xorshift generator: the same sequence for the same seed, no clock.
+fn next_random(state: &mut u64) -> u64 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    *state
+}
+
+/// The write of the seeded sequence for the random number `r` in a block of the kind `block`:
+/// 0 leans to adds, 1 mixes adds, replacements and removals, 2 only removes. A name is one of
+/// 24, in no namespace or, with the prefix `p`, in SVG's; a value has 0 to 12 bytes.
+fn seeded_write(r: u64, block: usize) -> String {
+    let name = format!("n{}", (r >> 8) % 24);
+    let value = "v".repeat(((r >> 16) % 13) as usize);
+    let set = format!("e.setAttribute(\"{name}\", \"{value}\");");
+    let remove = format!("e.removeAttribute(\"{name}\");");
+    let remove_ns = format!("e.removeAttributeNS(S, \"{name}\");");
+    match (block, r % 10) {
+        (0, 0..=5) | (1, 0..=2) => set,
+        (0, 6..=7) => format!("e.setAttributeNS(S, \"p:{name}\", \"{value}\");"),
+        (0 | 1, 8) => format!("e.toggleAttribute(\"{name}\");"),
+        (0, _) | (1, 9) => format!("e.id = \"{value}\";"),
+        (1, 3..=6) | (2, 0..=3) => remove,
+        (1, _) | (2, 4..=7) => remove_ns,
+        (2, 8) => format!("e.toggleAttribute(\"{name}\", false);"),
+        _ => "e.removeAttribute(\"id\");".to_string(),
+    }
+}
+
+/// A record slot is charged while the list holds it, an attribute's strings while it is there:
+/// a seeded sequence of 2,400 adds, removals and replacements by every writer on one element
+/// whose list starts empty, in blocks of 300 that lean to adds (the list doubles to 32
+/// records), mix, and only remove (it shrinks and empties). After each write the live bytes
+/// are the record slots the list gained since the first write, times `ATTRIBUTE_BYTES`, and
+/// the strings' difference, both read from the list, and the rise of the tree's
+/// `held_bytes`; the charge is twice them.
+#[test]
+fn a_seeded_sequence_is_charged_by_the_slots_and_the_strings() {
+    let at = Instant::now();
+    let page = "<p></p>".to_string();
+    with_page(session(), page, ParserLimits::default(), |runner| {
+        ran(
+            runner,
+            "var e = document.documentElement; var S = \"http://www.w3.org/2000/svg\";",
+        );
+        let html = element(tree(runner), "html");
+        let start = figures(runner);
+        let first = (room_of(tree(runner), html), strings_of(tree(runner), html));
+        assert_eq!(first, (0, 0));
+        let mut seed: u64 = 0x5eed_1b00_2400_0001;
+        let (mut most, mut short, mut emptied) = (0, 0, 0);
+        for k in 0..2_400 {
+            let r = next_random(&mut seed);
+            let write = seeded_write(r, k / 300 % 3);
+            ran(runner, &write);
+            let now = figures(runner);
+            let tree = tree(runner);
+            let charge = charge_since(tree, html, first);
+            assert_eq!(now.live as i64, charge, "write {k}: {write}");
+            assert_eq!(
+                now.held - start.held,
+                now.live as usize,
+                "write {k}: {write}"
+            );
+            assert_eq!(now.charged, 2 * now.live, "write {k}: {write}");
+            let (room, len) = (room_of(tree, html), attributes(tree, html).len());
+            most = most.max(room);
+            short += usize::from(len > 0 && room <= 4);
+            emptied += usize::from(room == 0);
+        }
+        assert!(most >= 32, "the list doubled to {most} records");
+        assert!(short > 0 && emptied > 0, "{short} short, {emptied} empty");
+        eprintln!(
+            "2,400 seeded writes: most {most} records, {short} short, {emptied} empty, {:?}",
+            at.elapsed()
+        );
+    });
+}
+
+/// A removal that keeps the list's allocation gives back the strings and no record, and an
+/// add into the slot it kept is charged the strings and no record: across the add that made
+/// the slot, the removal and the add into it, the record is charged once. Then the same on a
+/// list doubled to 8 records.
+#[test]
+fn a_slot_a_removal_keeps_is_charged_once() {
+    let page = "<p></p>".to_string();
+    with_page(session(), page, ParserLimits::default(), |runner| {
+        ran(runner, "var e = document.documentElement;");
+        let html = element(tree(runner), "html");
+        let record = ATTRIBUTE_BYTES as u64;
+        let steps = [
+            ("e.setAttribute(\"a\", \"1\");", 1, record + 2),
+            ("e.setAttribute(\"b\", \"2\");", 2, 2 * record + 4),
+            ("e.removeAttribute(\"b\");", 2, 2 * record + 2),
+            ("e.setAttribute(\"c\", \"3\");", 2, 2 * record + 4),
+            (
+                "e.setAttribute(\"d\", \"4\"); e.setAttribute(\"f\", \"5\");",
+                4,
+                4 * record + 8,
+            ),
+            ("e.setAttribute(\"g\", \"6\");", 8, 8 * record + 10),
+            ("e.removeAttribute(\"g\");", 8, 8 * record + 8),
+            ("e.setAttribute(\"h\", \"7\");", 8, 8 * record + 10),
+        ];
+        for (write, room, live) in steps {
+            ran(runner, write);
+            let now = figures(runner);
+            assert_eq!(room_of(tree(runner), html), room, "{write}");
+            assert_eq!((now.live, now.charged), (live, 2 * live), "{write}");
+        }
+    });
+}
+
+/// A removal from a list the parser built gives back the attribute's strings and the record
+/// slots the list gives back, whoever allocated them, and the live bytes stop at 0: the charge
+/// never goes below zero, and what a refund would take below it is not kept as a credit, so
+/// the next add is charged whole. The add of `f` doubles the parsed list of 5 records to 10
+/// (5 records and 2 bytes, 402); the removal of `a` keeps the 10 (2 bytes back, 400); the
+/// removal of `b` shrinks it to 4 (6 records and 3 bytes back, 483, so 0); the rest empty it;
+/// the add of `z` takes 1 record and 2 bytes, 82.
+#[test]
+fn a_removal_from_a_parsed_list_gives_back_down_to_zero() {
+    let page = "<html a=\"1\" b=\"22\" c=\"333\" d=\"4444\" e=\"55555\">".to_string();
+    with_page(session(), page, ParserLimits::default(), |runner| {
+        ran(runner, "var e = document.documentElement;");
+        let html = element(tree(runner), "html");
+        let start = figures(runner);
+        assert_eq!(room_of(tree(runner), html), 5);
+        let record = ATTRIBUTE_BYTES as u64;
+        let steps = [
+            ("e.setAttribute(\"f\", \"x\");", 10, 5 * record + 2),
+            ("e.removeAttribute(\"a\");", 10, 5 * record),
+            ("e.removeAttribute(\"b\");", 4, 0),
+            ("e.removeAttribute(\"c\");", 4, 0),
+            ("e.removeAttribute(\"d\"); e.removeAttribute(\"e\");", 4, 0),
+            ("e.removeAttribute(\"f\");", 0, 0),
+            ("e.setAttribute(\"z\", \"y\");", 1, record + 2),
+        ];
+        for (write, room, live) in steps {
+            ran(runner, write);
+            let now = figures(runner);
+            assert_eq!(room_of(tree(runner), html), room, "{write}");
+            assert_eq!((now.live, now.charged), (live, 2 * live), "{write}");
+        }
+        let now = figures(runner);
+        assert!(
+            now.held < start.held,
+            "the tree holds less than the parse left"
+        );
     });
 }
 

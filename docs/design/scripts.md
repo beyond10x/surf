@@ -327,8 +327,13 @@ each node a script creates the bindings charge, with `Cx::charge_host_bytes`
 `NODE_BYTES` (408 bytes), plus twice the bytes it stores (`crates/html/src/limits.rs:45-51`),
 before the write, and keep the `HostBytes` until the agent is dropped. The bytes a script
 writes into a node that exists are charged too (`story:scripts-dom-attributes`): twice the net
-rise of the bytes the tree stores since the parse, with the room an attribute list takes beyond
-its records when a write makes it grow, through one `HostBytes` that the engine
+rise since the parse of what `Tree::held_bytes` counts, where a record slot (`ATTRIBUTE_BYTES`)
+is charged while its attribute list holds it and an attribute's strings while the attribute is
+there. An add charges its strings and the slots the list gains (none when it goes into a slot
+the list holds), a removal gives back its strings and the slots the list gives back (none when
+the list keeps its allocation; all of them when it empties), a replaced value moves its own
+bytes, and the charge stops at 0, so a removal of what the parser stored gives back no more
+than was charged. It is held through one `HostBytes` that the engine
 resizes (`Cx::resize_host_bytes`, `crates/swell/src/host/mod.rs:585 @ 0.8.0`), grown before the
 write and shrunk after a write that removes bytes, so removing what a script wrote gives its
 charge back. A node's charge is never refunded, since a node is never taken out of the tree's
@@ -908,9 +913,9 @@ What a session holds over its life, the terms of the address-space bound:
   here; the probe `swell-limits` went from `VmPeak: 5840 kB` before its script thread to `VmPeak:
   212024 kB` at its end, with several agents and four short threads of its own); `memory_bytes`,
   64 MiB, which holds the agent's heap, the wrappers, the charge of the nodes a script makes
-  and the charge of the bytes it writes into nodes that exist, twice their net rise since the
-  parse and the room of the attribute lists they grew, refunded by a write that removes bytes
-  (Q4);
+  and the charge of the bytes it writes into nodes that exist, twice the net rise since the
+  parse of their strings and of the record slots the attribute lists hold, refunded by a write
+  that removes bytes or gives slots back (Q4);
 - what swell holds without a charge: swell lists as open that "`string_units` and
   `string_units_in` copy without a memory charge" and that "The `call` and `new` instructions
   copy their argument list uncharged" (`docs/plan/second-batch.md:284-285 @ 0.8.0`), and that
