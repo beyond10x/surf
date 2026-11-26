@@ -11,6 +11,7 @@ mod adversary_script_hook_6;
 mod adversary_tree;
 mod adversary_tree_state;
 mod adversary_tree_state_2;
+mod adversary_tree_writes;
 mod common;
 mod encoding;
 mod limits;
