@@ -9,10 +9,10 @@
 use std::time::{Duration, Instant};
 
 use surf_html::limits::Limits as ParserLimits;
-use surf_html::{ParseOptions, Tree, parse_document};
+use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document};
 use surf_script::bindings::COLLECTION_NODE_STEPS;
 use surf_script::dom::{self, DocumentInfo};
-use surf_script::{Document, Mode, Runner, RunnerLimits, ScriptEnd, run_document};
+use surf_script::{Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, run_document};
 use surf_url::Url;
 use swell::Limits;
 
@@ -396,7 +396,9 @@ fn nothing_but_the_length_is_read_before_the_argument_is_charged() {
     let body = &code[start..];
     let body = &body[..body.find("\n    }\n").expect("the end of Copies::copy")];
     let open = body.find('{').expect("the body of Copies::copy");
-    let charge = body.find("charge_steps(").expect("the charge in Copies::copy");
+    let charge = body
+        .find("charge_steps(")
+        .expect("the charge in Copies::copy");
     let before = &body[open..charge];
     let called: Vec<String> = calls_in(before)
         .into_iter()
@@ -442,7 +444,11 @@ fn no_walk_of_the_reads_copies_a_child_list_by_another_spelling() {
         "Arc::from(",
     ];
     let functions = functions_of(&code_of(include_str!("../src/dom/reads.rs")));
-    assert!(functions.len() > 50, "reads.rs cut into {}", functions.len());
+    assert!(
+        functions.len() > 50,
+        "reads.rs cut into {}",
+        functions.len()
+    );
     let copying: Vec<String> = functions
         .iter()
         .filter(|(name, _)| !ANSWERS.contains(&name.as_str()))
@@ -477,7 +483,9 @@ fn the_data_is_not_copied_before_it_is_measured_by_any_spelling() {
         .iter()
         .find(|(name, _)| name == "copied")
         .expect("reads.rs holds `copied`");
-    let check = body.find("longer_than(").expect("`copied` measures the data");
+    let check = body
+        .find("longer_than(")
+        .expect("`copied` measures the data");
     let before = &body[..check];
     let found: Vec<&str> = COPIES
         .iter()
@@ -492,4 +500,355 @@ fn the_data_is_not_copied_before_it_is_measured_by_any_spelling() {
         body[check..].contains("counted_copy("),
         "`copied` makes its copy by `counted_copy` after the check:\n{body}"
     );
+}
+
+/// `limits()` with its own steps a script and `string_length`.
+fn limits_of(steps_per_entry: u64, string_length: u64) -> RunnerLimits {
+    let mut limits = limits();
+    limits.engine.steps_per_entry = steps_per_entry;
+    limits.engine.string_length = string_length;
+    limits
+}
+
+/// The steps of one script that must run to its end.
+fn steps_of(runner: &mut Runner, source: &str) -> u64 {
+    let before = runner.steps();
+    ran(runner, source);
+    runner.steps() - before
+}
+
+/// The end and the steps of one script.
+fn ended(runner: &mut Runner, source: &str) -> (ScriptEnd, u64) {
+    let before = runner.steps();
+    let end = runner.evaluate(source);
+    (end, runner.steps() - before)
+}
+
+/// `isEqualNode` of two elements of 257 attributes (an `id` and 256 of 65 bytes) charges in two
+/// parts before it reads either list: first what is known from the counts (a step a node, a
+/// step per 16 bytes of its name, a step an attribute: 2 x 258 here), then the bytes of both
+/// lists (2 x (256 x 65 + 3) bytes / 16).
+/// A script whose step limit falls inside the second part ends there with the first part spent
+/// and the second not; one whose limit falls inside the first part ends with neither spent.
+/// The steps that would pass the limit are not spent, so the count of the ended script says
+/// which charge refused.
+#[test]
+fn a_compare_ended_between_its_two_charges_spent_the_first_only() {
+    const ATTRIBUTES: usize = 256;
+    let list = |value: &str| {
+        (0..ATTRIBUTES)
+            .map(|at| format!("a{at:063}=\"{value}\""))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let page = format!(
+        "<!DOCTYPE html><p id=\"c\" {}></p><p id=\"d\" {}></p>",
+        list("1"),
+        list("2")
+    );
+    let known = 2 * (1 + 1 + ATTRIBUTES as u64);
+    let bytes = 2 * ((ATTRIBUTES as u64 * 65 + 3) / 16);
+    let setup = [
+        "var G = this; G.n = null; G.c = document.getElementById('c');",
+        "G.d = document.getElementById('d');",
+    ];
+    let (none, full) = with_tree(
+        limits(),
+        ParserLimits::default(),
+        parsed(page.clone()),
+        |runner| {
+            for part in setup {
+                ran(runner, part);
+            }
+            (
+                steps_of(runner, "c.isEqualNode(n);"),
+                steps_of(runner, "c.isEqualNode(d);"),
+            )
+        },
+    );
+    eprintln!("isEqualNode of 257 attributes each: null {none} steps, the pair {full}");
+    assert_eq!(full - none, known + bytes, "{full} against {none}");
+    let at_limit = |limit: u64| {
+        let page = page.clone();
+        with_tree(
+            limits_of(limit, 1 << 23),
+            ParserLimits::default(),
+            parsed(page),
+            |runner| {
+                for part in setup {
+                    ran(runner, part);
+                }
+                let ended = ended(runner, "c.isEqualNode(d);");
+                let after = steps_of(runner, "c.isEqualNode(n);");
+                (ended, after)
+            },
+        )
+    };
+    let inside_bytes = none + known + bytes / 2;
+    let ((end, spent), after) = at_limit(inside_bytes);
+    eprintln!("limit {inside_bytes}, inside the bytes' part: {end}, {spent} steps");
+    assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
+    assert!(
+        spent + bytes > inside_bytes && spent <= none + known && spent + 8 >= none + known,
+        "the bytes' part refused: {spent} steps, the known part ends at {}",
+        none + known
+    );
+    assert_eq!(after, none, "a script after the end");
+    let inside_known = none + known / 2;
+    let ((end, spent), _) = at_limit(inside_known);
+    eprintln!("limit {inside_known}, inside the known part: {end}, {spent} steps");
+    assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
+    assert!(
+        spent <= none && spent + 8 >= none,
+        "the known part refused: {spent} steps against {none} before the charges"
+    );
+}
+
+/// The members of `CharacterData` and `Text` that answer the data, or a count of it, charge its
+/// bytes and not its code units: over 1 MiB of a 3-byte character (349,525 code units,
+/// 1,048,575 bytes) `data`, `nodeValue`, `textContent` and `wholeText` of the text, `data` and
+/// `textContent` of a comment of the same, and `textContent` of the text's parent charge a step
+/// per 16 bytes for the read and again for the answer's copy (a charge in units would give
+/// 21,845 for the read); `length` a step per 16 bytes for its count.
+#[test]
+fn the_data_members_charge_bytes_not_code_units() {
+    const UNITS: usize = 349_525;
+    let data = "\u{20ac}".repeat(UNITS);
+    let bytes = data.len() as u64;
+    let page = format!("<!DOCTYPE html><p id=\"t\">{data}</p><div id=\"c\"><!--{data}--></div>");
+    let read = bytes / 16;
+    let calls = with_tree(limits(), ParserLimits::default(), parsed(page), |runner| {
+        ran(
+            runner,
+            &format!(
+                "{CHECK} var G = this; G.p = document.getElementById('t'); G.t = p.firstChild; \
+                 G.k = document.getElementById('c').firstChild; \
+                 check(t.nodeType === 3 && k.nodeType === 8, 'a text and a comment'); \
+                 check(t.length === {UNITS} && k.length === {UNITS}, 'the lengths');"
+            ),
+        );
+        vec![
+            call(runner, "t.data", "t.data;", 2 * read),
+            call(runner, "t.nodeValue", "t.nodeValue;", 2 * read),
+            call(runner, "t.textContent", "t.textContent;", 2 * read),
+            call(runner, "t.wholeText", "t.wholeText;", 2 * read),
+            call(runner, "t.length", "t.length;", read),
+            call(runner, "k.data", "k.data;", 2 * read),
+            call(runner, "k.textContent", "k.textContent;", 2 * read),
+            call(runner, "k.length", "k.length;", read),
+            call(runner, "p.textContent", "p.textContent;", 2 * read),
+        ]
+    });
+    report("the data members over 1 MiB of a 3-byte character", &calls);
+}
+
+/// A String argument at the session's `string_length` (1,024 here) is copied for its charge,
+/// two bytes a code unit at one step per 16 (128 steps for 1,024 units of any width), and
+/// `getElementsByTagName` folds its bytes beside it (192 steps for 1,024 units of 3 bytes). A
+/// String one unit over is never made by the engine's own operations tried here: each throws
+/// before a member sees it; any that makes one, the member charges its units before its copy.
+#[test]
+fn an_argument_at_the_string_length_and_one_over() {
+    const LIMIT: u64 = 1_024;
+    let page = "<!DOCTYPE html><p></p>".to_string();
+    with_tree(
+        limits_of(50_000_000, LIMIT),
+        ParserLimits::default(),
+        parsed(page),
+        |runner| {
+            ran(
+                runner,
+                "var G = this; G.one = 'a'; G.at = 'a'.repeat(1024); \
+                 G.atE = '\\u00e9'.repeat(1024); G.atEuro = '\\u20ac'.repeat(1024);",
+            );
+            let base = steps_of(runner, "document.getElementById(one);");
+            let tag_base = steps_of(runner, "document.getElementsByTagName(one);");
+            for (what, name) in [("a", "at"), ("\u{e9}", "atE"), ("\u{20ac}", "atEuro")] {
+                let id = steps_of(runner, &format!("document.getElementById({name});"));
+                eprintln!("getElementById(1,024 x {what}): {id} steps, 1 x a {base}");
+                assert_eq!(id - base, LIMIT * 2 / 16, "getElementById(1,024 x {what})");
+            }
+            let tag = steps_of(runner, "document.getElementsByTagName(atEuro);");
+            eprintln!("getElementsByTagName(1,024 x \u{20ac}): {tag} steps, 1 x a {tag_base}");
+            assert_eq!(tag - tag_base, LIMIT * 2 / 16 + 3 * LIMIT / 16);
+            let makers = [
+                "at + 'a'",
+                "'a'.repeat(1025)",
+                "[at, 'a'].join('')",
+                "at.padEnd(1025, 'a')",
+                "at.concat('a')",
+                "JSON.stringify(at)",
+                "'\\u00df'.repeat(1024).toUpperCase()",
+                "encodeURIComponent(atEuro)",
+                "String.fromCharCode.apply(null, Array(1025).fill(97))",
+                "`${at}a`",
+                "at.replace(/a/g, 'aa')",
+                "Array(1100).join('a')",
+                "'e\\u0301'.repeat(512).normalize('NFC') + atE.normalize('NFD')",
+                "'\\u0130'.repeat(1024).toLowerCase()",
+                "String(Array(600).fill('ab'))",
+            ];
+            let mut over = Vec::new();
+            for (index, maker) in makers.iter().enumerate() {
+                let end = runner.evaluate(&format!(
+                    "var G = this; G.s = undefined; G.e = 'made'; \
+                     try {{ G.s = {maker}; }} catch (x) {{ G.e = x.name; }} \
+                     if (s !== undefined && s.length > {LIMIT}) throw new Error('over ' + s.length); \
+                     throw new Error(e);"
+                ));
+                let text = end.to_string();
+                eprintln!("maker {index} `{maker}`: {text}");
+                if let Some(at) = text.find("\"over ") {
+                    let units: u64 = text[at + 6..]
+                        .chars()
+                        .take_while(char::is_ascii_digit)
+                        .collect::<String>()
+                        .parse()
+                        .expect("the length of the String");
+                    let id = steps_of(runner, "document.getElementById(s);");
+                    eprintln!("  getElementById of its {units} units: {id} steps, 1 x a {base}");
+                    assert_eq!(id - base, units * 2 / 16, "maker {index} `{maker}`");
+                    over.push((index, units));
+                }
+            }
+            eprintln!("makers that made a String over {LIMIT} units: {over:?}");
+        },
+    );
+}
+
+/// A call whose step limit falls inside the charge of its String argument (256 Ki code units,
+/// 32,768 steps) ends there with nothing of the charge spent; the next script runs as before.
+/// The script spends most of its steps in an empty loop first, so that the limit (400,000 a
+/// script, room for the doublings that build the String) falls in the middle of the charge.
+/// Whether the engine's String was copied before the end is not counted anywhere a test can
+/// read (the ledger of copies is dropped with the call): the time of the ended script against
+/// the same script with an argument of one unit is printed, and the order in `Copies::copy` is
+/// held by `nothing_but_the_length_is_read_before_the_argument_is_charged`.
+#[test]
+fn a_call_ended_at_its_arguments_charge() {
+    const UNITS: u64 = 1 << 18;
+    const LIMIT: u64 = 400_000;
+    let charge = UNITS * 2 / 16;
+    let page = "<!DOCTYPE html><p></p>".to_string();
+    let burn = |turns: u64, argument: &str| {
+        format!("for (var i = 0; i < {turns}; i++) {{}} document.getElementById({argument});")
+    };
+    with_tree(
+        limits_of(LIMIT, 1 << 23),
+        ParserLimits::default(),
+        parsed(page),
+        |runner| {
+            ran(
+                runner,
+                "var G = this; G.one = 'a'; G.big = 'a'.repeat(1024);",
+            );
+            for _ in 0..8 {
+                ran(runner, "G.big = big + big;");
+            }
+            ran(
+                runner,
+                &format!("if (big.length !== {UNITS}) throw new Error('length ' + big.length);"),
+            );
+            let base = steps_of(runner, "document.getElementById(one);");
+            let full = steps_of(runner, "document.getElementById(big);");
+            assert_eq!(full - base, charge, "the argument's charge");
+            let (a, b) = (
+                steps_of(runner, &burn(1_000, "one")),
+                steps_of(runner, &burn(2_000, "one")),
+            );
+            let turn = (b - a) / 1_000;
+            let turns = 1_000 + (LIMIT - charge / 2 - a) / turn;
+            let at = Instant::now();
+            let below = steps_of(runner, &burn(turns, "one"));
+            let below_took = at.elapsed();
+            assert!(
+                below + charge / 4 <= LIMIT && below + charge >= LIMIT + charge / 4,
+                "{turns} turns: {below} steps with one unit, the limit {LIMIT}"
+            );
+            let at = Instant::now();
+            let (end, spent) = ended(runner, &burn(turns, "big"));
+            let ended_took = at.elapsed();
+            let after = steps_of(runner, "document.getElementById(one);");
+            eprintln!(
+                "{turns} turns and getElementById: one unit {below} steps, {below_took:?}; \
+                 256 Ki units {end}, {spent} steps, {ended_took:?}; the next script {after} steps \
+                 (alone {base}, with 256 Ki units {full})"
+            );
+            assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
+            assert!(
+                spent <= below && spent + base >= below,
+                "{spent} steps spent, {below} for the whole script with one unit"
+            );
+            assert_eq!(after, base, "the next script");
+        },
+    );
+}
+
+/// The first element named `name` in tree order.
+fn first_element(tree: &Tree, name: &str) -> NodeId {
+    let mut stack = vec![tree.root()];
+    while let Some(node) = stack.pop() {
+        if let NodeData::Element { local_name, .. } = tree.data(node)
+            && local_name == name
+        {
+            return node;
+        }
+        stack.extend(tree.children(node).iter().rev().copied());
+    }
+    panic!("no element `{name}`");
+}
+
+/// `wholeText` charges a step before each sibling it reads on either side. A parent of 1,000
+/// adjacent texts of one byte (made through the tree's writes, since the parser joins adjacent
+/// text): for the text at index i the scan for its index costs i + 1, the siblings before it i
+/// and the siblings after it 999 - i, the bytes the same for each; so the last text costs 999
+/// steps more than the first. Without the step a sibling before, both cost the same.
+#[test]
+fn whole_text_charges_the_siblings_before_the_text() {
+    const TEXTS: u64 = 1_000;
+    let tree = || {
+        let mut tree = parsed("<!DOCTYPE html><p id=\"p\"></p>".to_string())();
+        let p = first_element(&tree, "p");
+        for _ in 0..TEXTS {
+            let text = tree.create_text_node("a").expect("a text");
+            tree.append_child(p, text).expect("appended");
+        }
+        tree
+    };
+    with_tree(limits(), ParserLimits::default(), tree, |runner| {
+        ran(
+            runner,
+            &format!(
+                "{CHECK} var G = this; G.p = document.getElementById('p'); \
+                 G.first = p.firstChild; G.last = p.lastChild; \
+                 check(p.childNodes.length === {TEXTS}, 'the texts'); \
+                 check(first.wholeText.length === {TEXTS}, 'the whole text');"
+            ),
+        );
+        let first = steps_of(runner, "first.wholeText;");
+        let last = steps_of(runner, "last.wholeText;");
+        eprintln!("wholeText of 1,000 texts: the first {first} steps, the last {last}");
+        assert_eq!(last - first, TEXTS - 1, "{last} against {first}");
+    });
+}
+
+/// `getElementsByClassName` charges the bytes of its argument, one step per 16, beside its
+/// copy (two bytes a code unit) and its tokens, before it builds the wanted set: one class of
+/// 1 Mi letters costs, over a page without a class, 131,072 + 65,536 steps more than a class of
+/// one letter (one token each). The round's case of 131,072 classes asserts the step a token
+/// only, which the steps of the copy cover without the bytes' charge.
+#[test]
+fn a_class_argument_is_charged_for_its_bytes() {
+    let page = "<!DOCTYPE html><p></p>".to_string();
+    with_tree(limits(), ParserLimits::default(), parsed(page), |runner| {
+        ran(
+            runner,
+            "var G = this; G.one = 'x'; G.big = 'x'; \
+             while (big.length < 1048576) big = big + big;",
+        );
+        let short = steps_of(runner, "document.getElementsByClassName(one);");
+        let long = steps_of(runner, "document.getElementsByClassName(big);");
+        eprintln!("getElementsByClassName: 1 Mi letters {long} steps, 1 letter {short}");
+        assert_eq!(long - short, (1 << 20) * 2 / 16 + (1 << 20) / 16);
+    });
 }
