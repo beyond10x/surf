@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-26
+
 ### Changed
 
 - `surfd` starts each session process it starts through `setpriv` and `prlimit` with a core

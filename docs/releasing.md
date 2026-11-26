@@ -109,7 +109,8 @@ The commands use the gates as the bot, from a checkout of this repository:
    `taskfiles/lock-allow.txt` does not list). Since `surf-script` takes swell by a git
    dependency, the command stops offline on a host whose cargo has no checkout of that tag
    (`unable to update https://github.com/beyond10x/swell?tag=0.8.0`); for `0.9.0` on
-   2026-11-25 the four version lines of `Cargo.lock` were set by hand instead, and
+   2026-11-25 and `0.10.0` on 2026-11-26 the four version lines of `Cargo.lock` were set by
+   hand instead, and
    `task lock-check` and a build with `--locked` passed on them. Release `0.1.0` shipped the
    binary from the package `surf`; `surf-cli` starts at that version, so the next release is
    above it.

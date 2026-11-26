@@ -43,7 +43,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.9.0 target=x86_64-unknown-linux-musl
+$ version=0.10.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -286,19 +286,25 @@ there instead.
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
+New with the core limit of a session process, shipped in release `0.10.0`:
+
+- **A session's core limit is 1 byte.** Where `surfd` starts a session through
+  `/usr/bin/setpriv` and `/usr/bin/prlimit`, the session's core file size limit is 1 byte, so a
+  session that ends by a signal is seen without the wait for the host's core handler. On a
+  Linux host whose core pattern is a pipe, the kernel then does not start the handler when such
+  a session ends by a signal that dumps core: the host's crash list (`coredumpctl` under
+  systemd) has no entry for it, and the kernel writes at most one log line for it,
+  `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
+  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
+  started through them keeps a limit of 0, and the wait stays. A session started without them
+  keeps `surfd`'s own core limit.
+
 New with the hardened start of a session process, shipped in release `0.9.0`:
 
 - **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
   environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
   the session through them, with no new privileges and no core file; without them it starts
-  the session directly, and the session keeps `surfd`'s own core limit. Through them, its core
-  file size limit is 1 byte, so a session that ends by a signal is seen without the wait for
-  the host's core handler. On a Linux host whose core pattern is a pipe, the kernel then does
-  not start the handler when such a session ends by a signal that dumps core: the host's crash
-  list (`coredumpctl` under systemd) has no entry for it, and the kernel writes at most one log
-  line for it, `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
-  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
-  started through them keeps a limit of 0, and the wait stays.
+  the session directly.
 - **A session that died says how.** When a session process ends by a signal `surfd` did not
   send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
   and the live view shows the signal beside `died`.
@@ -547,7 +553,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The hardened start of a session process followed, and release `0.9.0` follows it: `surfd` starts each session with an empty environment and, where `/usr/bin/setpriv` and `/usr/bin/prlimit` exist, with no new privileges and no core file, and an answer names the signal a session died by. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The hardened start of a session process followed, and release `0.9.0` follows it: `surfd` starts each session with an empty environment and, where `/usr/bin/setpriv` and `/usr/bin/prlimit` exist, with no new privileges and no core file, and an answer names the signal a session died by. The core limit of a session process followed, and release `0.10.0` follows it: a session that `surfd` starts through `/usr/bin/setpriv` and `/usr/bin/prlimit` has a core file size limit of 1 byte, so a host whose core pattern is a pipe starts no core handler for it. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -564,6 +570,7 @@ Round 2 delivered following links, filling and submitting forms, going back and 
 takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
 session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
 The hardened start of a session process followed; release `0.9.0` ships it.
+The core limit of a session process followed; release `0.10.0` ships it.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:

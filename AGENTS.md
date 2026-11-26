@@ -603,7 +603,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.9.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.10.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Since
     `story:agent-skill-definition` `surf-agent help --for-agent`, those words and nothing else,
     prints a definition for agents and asks no session for anything (`src/help.rs`,
@@ -1559,9 +1559,11 @@ the others were written to a scratch directory and not compiled:
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
   round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
   panel, release `0.7.0` TLS 1.3 and `https:`, release `0.8.0` the cookie jar and
-  `surf-agent help --for-agent`, and release `0.9.0` the hardened start of a session process
+  `surf-agent help --for-agent`, release `0.9.0` the hardened start of a session process
   (`story:session-process-hardening`: an empty environment, no new privileges, the `note
-  ended` line) (the releases are listed at
+  ended` line), and release `0.10.0` the core limit of a session process
+  (`story:session-core-limit-one`: 1 byte through `setpriv` and `prlimit`) (the releases are
+  listed at
   https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". Round 3 of `docs/plan/agent-waves.md`

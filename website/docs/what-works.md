@@ -18,19 +18,25 @@ description: What surf does today, and what it does not do yet.
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
+New with the core limit of a session process, shipped in release `0.10.0`:
+
+- **A session's core limit is 1 byte.** Where `surfd` starts a session through
+  `/usr/bin/setpriv` and `/usr/bin/prlimit`, the session's core file size limit is 1 byte, so a
+  session that ends by a signal is seen without the wait for the host's core handler. On a
+  Linux host whose core pattern is a pipe, the kernel then does not start the handler when such
+  a session ends by a signal that dumps core: the host's crash list (`coredumpctl` under
+  systemd) has no entry for it, and the kernel writes at most one log line for it,
+  `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
+  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
+  started through them keeps a limit of 0, and the wait stays. A session started without them
+  keeps `surfd`'s own core limit.
+
 New with the hardened start of a session process, shipped in release `0.9.0`:
 
 - **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
   environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
   the session through them, with no new privileges and no core file; without them it starts
-  the session directly, and the session keeps `surfd`'s own core limit. Through them, its core
-  file size limit is 1 byte, so a session that ends by a signal is seen without the wait for
-  the host's core handler. On a Linux host whose core pattern is a pipe, the kernel then does
-  not start the handler when such a session ends by a signal that dumps core: the host's crash
-  list (`coredumpctl` under systemd) has no entry for it, and the kernel writes at most one log
-  line for it, `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
-  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
-  started through them keeps a limit of 0, and the wait stays.
+  the session directly.
 - **A session that died says how.** When a session process ends by a signal `surfd` did not
   send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
   and the live view shows the signal beside `died`.
