@@ -581,6 +581,7 @@ tasks:
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
+      - task: release-static-test
       - task: sh-echo-test
       - task: doc-tests-check-test
       - task: step-budgets

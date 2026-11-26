@@ -25,6 +25,9 @@ env:
   PACKAGE: surf-cli
   # The archives are `surf-<version>-<target>.tar.gz`.
   ARCHIVE: surf
+  # The plain container the static check of each Linux archive runs `surf-agent` in: the tag
+  # alpine:3.24.4, named by the digest of its multi-arch index (amd64 and arm64).
+  STATIC_IMAGE: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 defaults:
   run:
@@ -184,14 +187,6 @@ jobs:
           mkdir -p "dist/$package"
           for binary in "${binaries[@]}"; do
             bin="target/ship/$TARGET/release/$binary"
-            case "$TARGET" in
-              *-linux-*)
-                if readelf -lW "$bin" | grep INTERP; then
-                  echo "::error::$bin is dynamically linked" >&2
-                  exit 1
-                fi
-                ;;
-            esac
             if strings -a "$bin" | grep -E '/(home|Users)/'; then
               echo "::error::$bin holds a home directory path" >&2
               exit 1
@@ -226,6 +221,20 @@ jobs:
           # version of the directory's name in its first line. The same script runs on a
           # workstation.
           sh taskfiles/release-smoke.sh "$check/$ARCHIVE-$VERSION-$TARGET" "$TARGET"
+      # Before the upload, so that a Linux archive that fails the check is never uploaded.
+      - name: Check that the Linux binaries are static and run in a plain container
+        if: contains(matrix.target, '-linux-')
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The directory the smoke step unpacked: for each of the four binaries, no program
+          # interpreter header (readelf -lW) and no needed library (readelf -d); then
+          # `surf-agent help --for-agent` from it in the image STATIC_IMAGE, without network,
+          # with the version of the directory's name in its first line (docs/releasing.md). A
+          # runner without docker fails the step.
+          sh taskfiles/release-static.sh "$RUNNER_TEMP/unpacked/$ARCHIVE-$VERSION-$TARGET" --image "$STATIC_IMAGE"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.target }}
