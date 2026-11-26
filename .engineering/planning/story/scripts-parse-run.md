@@ -51,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 59
+revision: 60
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -439,7 +439,7 @@ total (`:182-183 @ f463e24`), Q5's sentence on the tree (`:497-499`), Q4's row o
 document (`:405`), the sentence of Q11's memory bullet on the records of Q7 (`:1015-1016`), the
 four lines that name this story as the one that measures (`:10`, the "Settled:" line of Q4
 `:444`, the sentence on the margin `:479` and the "Settled:" line of Q5 `:503`), which say
-after it that the values were measured by this story on swell's tag `0.10.0` (`:10` keeps
+after it that the values were measured by this story on swell's tag `0.12.0` (`:10` keeps
 `story:scripts-document-port` as the one that measures again), and the `probe:` lines. The new
 text of the Q4 row and of the Q11 sentence says what is true after this story: only a
 script that ran can carry a message, and at most 1,000 scripts run in a document
@@ -643,7 +643,7 @@ folder's bounds.
     After the change, `git grep -n -F "bounded by the parser's nodes" -- docs/design/scripts.md`
     prints those two places (the phrase kept on one line in each).
 20. The re-measured values of Q4 and Q5, measured with the bindings and the DOM on swell's tag
-    `0.10.0` by probes that start without `slot` (acceptance 25) and live in `.out/probes/`: steps
+    `0.12.0` by probes that start without `slot` (acceptance 25) and live in `.out/probes/`: steps
     per second in the test profile and in release, the heap of a realm with the bindings, whether
     a page of more than 1,000 scripts reaches the script count, the size of one record of Q7
     without a message (acceptance 19, Q11), and Q5's margin. The carrier of each is a `probe:`
@@ -777,8 +777,8 @@ the session and what a user sees (`story:scripts-document-port`); a page meant t
 
 ## Placement
 
-After `story:html-script-hook` (on `main`), `story:scripts-dom-reading` and `story:swell-0-9-0`;
-before `story:scripts-dom-mutation`, `story:scripts-html-conformance` and
+After `story:html-script-hook` (on `main`), `story:scripts-dom-reading`, `story:swell-0-9-0` and
+`story:swell-0-12-0`; before `story:scripts-dom-mutation`, `story:scripts-html-conformance` and
 `story:scripts-document-port`, which call `parse_with_scripts` (`scripts-dom-mutation.md:1465`,
 `scripts-html-conformance.md:54`, `scripts-document-port.md:149-156`) and, for the first, also
 `record_inserted`. The document-port story passes the page's address and content type in `Page`,
