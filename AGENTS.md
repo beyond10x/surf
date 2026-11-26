@@ -647,10 +647,10 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 94 tests (4 unit tests of `src/view.rs`, 2 of
-    `src/daemon.rs`, `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link`
-    3, `built` 14, `first_line` 1, `hardening` 19, `in_process` 14, `log` 6, `view` 10) run a
-    stand-in session
+    from the directory of its own executable. Its 98 tests (4 unit tests of `src/view.rs`, 2 of
+    `src/daemon.rs`, `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_core`
+    4, `adversary_link` 3, `built` 14, `first_line` 1, `hardening` 19, `in_process` 14, `log` 6,
+    `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.

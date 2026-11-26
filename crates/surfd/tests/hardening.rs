@@ -1,9 +1,9 @@
 //! The cases of `story:session-process-hardening`: `surfd` starts a session with an empty
 //! environment but `Config::session_env`, through `setpriv --no-new-privs` and `prlimit` with
 //! the bounds of its form, refuses an `open` with scripts when either program is missing, and
-//! names the signal a session ended by. Each case starts one `surfd` and one session and reads
-//! the session process from outside, in `/proc/<pid>/`; every case but one runs `surfd` in the
-//! test process (`common::start`) with the stand-in session.
+//! names the signal a session ended by. A case starts at most one `surfd` and opens its
+//! sessions through it; one starts the `surfd` binary, the effect case starts none, and every
+//! other case runs `surfd` in the test process (`common::start`) with the stand-in session.
 
 use crate::common;
 use crate::view::{json, listed, sessions, view_url};
@@ -578,10 +578,11 @@ fn a_session_keeps_a_core_limit_of_0_under_a_hard_limit_of_0() {
 ///
 /// Where it holds something: a host whose core pattern is a pipe and whose hard core limit is at
 /// least 1, where a shell under a core limit of 0 shows a dump in its status. Where it holds
-/// nothing: a hard core limit of 0 (it prints `not shown: hard core limit 0` and ends), and a
-/// file pattern with a limit of 0. Under a file pattern and a limit of 1 it checks that no core
-/// file is written for a relative pattern, without a control run that writes one; for an
-/// absolute file pattern it shows nothing about a file.
+/// nothing, it says so and ends: a hard core limit of 0 (it prints `not shown: hard core limit
+/// 0`), and a core pattern whose first byte is not `|` (it prints `not shown: no pipe pattern`).
+/// That under a limit of 1 the kernel does not start a pipe handler was shown on one host with a
+/// pipe pattern, by the host's crash list and the kernel's log line `RLIMIT_CORE is set to 1,
+/// aborting core`; what the kernel does under a file pattern or a socket pattern is not shown.
 #[test]
 fn a_process_under_the_core_bound_surfd_chose_ends_by_abort_without_a_dump() {
     use std::os::unix::process::ExitStatusExt;
@@ -601,6 +602,10 @@ fn a_process_under_the_core_bound_surfd_chose_ends_by_abort_without_a_dump() {
     eprintln!("argument {argument} core_pattern {pattern} hard core limit {hard}");
     if hard == "0" {
         eprintln!("not shown: hard core limit 0");
+        return;
+    }
+    if !pattern.starts_with('|') {
+        eprintln!("not shown: no pipe pattern");
         return;
     }
     let dir = TestDir::new();

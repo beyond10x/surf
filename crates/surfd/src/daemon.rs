@@ -140,7 +140,8 @@ pub struct Config {
     /// `/usr/bin/prlimit`, read as `setpriv` is.
     pub prlimit: PathBuf,
     /// The arguments of `prlimit` for a session without scripts: the core item alone,
-    /// `--core=1:1`, or `--core=0:0` where `surfd`'s own hard core limit is 0.
+    /// `--core=1:1`, or `--core=0:0` where `surfd`'s own hard core limit is 0 or where
+    /// `/proc/self/limits` cannot be read or has no line `surfd` can read.
     pub session_bounds: Vec<String>,
     /// The arguments of `prlimit` for a session with scripts: `--as=4294967296:4294967296
     /// --cpu=3600:3601 --nofile=64:64` and the same core item last.
@@ -1813,8 +1814,8 @@ mod tests {
 
     #[test]
     fn a_hard_limit_of_at_least_1_chooses_core_1_1_and_anything_else_core_0_0() {
-        let one = CORE_BOUND_ONE;
-        let zero = CORE_BOUND_ZERO;
+        let one = "--core=1:1";
+        let zero = "--core=0:0";
         let expected = [one, zero, one, one, zero, one, zero, zero, zero, zero];
         for ((number, text), expected) in texts().into_iter().zip(expected) {
             assert_eq!(core_bound(&text), expected, "row {number}: {text:?}");

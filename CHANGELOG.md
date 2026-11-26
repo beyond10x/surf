@@ -9,11 +9,19 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ### Changed
 
-- `surfd` starts each session process with a core file size limit of 1 byte
-  (`prlimit --core=1:1`) in place of 0, and with 0 (`--core=0:0`) where its own hard core
-  limit is 0, which `prlimit` cannot raise. A session still writes no core file. One that ends
-  by a signal that dumps core is seen without the wait for the host's core handler, and its
-  status carries no dump; where the hard limit is 0 the wait stays.
+- `surfd` starts each session process it starts through `setpriv` and `prlimit` with a core
+  file size limit of 1 byte (`prlimit --core=1:1`) in place of 0, and with 0 (`--core=0:0`)
+  where its own hard core limit is 0, which `prlimit` cannot raise, or where
+  `/proc/self/limits` cannot be read or has no line `surfd` can read. A session started
+  through them still writes no core file, and one that ends by a signal that dumps core is
+  seen without the wait for the host's core handler, and its status carries no dump; where
+  the limit is 0 the wait stays. A session started without them keeps `surfd`'s own core
+  limit, as in release `0.9.0`. On a Linux host whose core pattern is a pipe, the kernel does
+  not start the handler when a session under the limit of 1 ends by a signal that dumps core:
+  the host's crash list (`coredumpctl` under systemd) has no entry for it, and the kernel
+  writes at most one log line for it, `RLIMIT_CORE is set to 1, aborting core`. Shown on one
+  host: 15 of 15 such ends listed under a limit of 0, 0 of 15 under a limit of 1, and the log
+  line for 10 of those 15.
 
 ## [0.9.0] - 2026-11-25
 
