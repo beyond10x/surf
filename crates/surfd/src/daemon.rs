@@ -58,18 +58,50 @@ const SETPRIV: &str = "/usr/bin/setpriv";
 /// The program that starts a session under its bounds, `prlimit`, by absolute path.
 const PRLIMIT: &str = "/usr/bin/prlimit";
 
-/// The bounds of a session without scripts, as arguments of `prlimit`: no core file.
-const SESSION_BOUNDS: [&str; 1] = ["--core=0:0"];
+/// The core item of both forms where `surfd`'s own hard core limit is at least 1: a core limit
+/// of 1 byte, so that a session that ends by a signal is seen without the wait for the host's
+/// core handler, and its status carries no dump. No core file is written.
+const CORE_BOUND_ONE: &str = "--core=1:1";
 
-/// The bounds of a session with scripts, as arguments of `prlimit`: 4 GiB of address space,
-/// 3,600 s of CPU time soft and 3,601 s hard (so the kernel sends `SIGXCPU` at the soft one), 64
-/// open files and no core file.
-const SCRIPT_SESSION_BOUNDS: [&str; 4] = [
+/// The core item of both forms where `surfd`'s own hard core limit is 0, which `prlimit` cannot
+/// raise, or cannot be read: a core limit of 0. There the wait for a host's core handler that a
+/// pipe takes stays.
+const CORE_BOUND_ZERO: &str = "--core=0:0";
+
+/// The bounds of a session with scripts but the core item, as arguments of `prlimit`: 4 GiB of
+/// address space, 3,600 s of CPU time soft and 3,601 s hard (so the kernel sends `SIGXCPU` at
+/// the soft one) and 64 open files. [`Config::new`] adds the core item [`core_bound`] chose.
+const SCRIPT_SESSION_BOUNDS: [&str; 3] = [
     "--as=4294967296:4294967296",
     "--cpu=3600:3601",
     "--nofile=64:64",
-    "--core=0:0",
 ];
+
+/// The hard value of the line `Max core file size` of `limits`, a text such as
+/// `/proc/self/limits`: `u64::MAX` for `unlimited`, a number as itself; `None` for a text
+/// without the line, a line with fewer than two values, or a hard value that is no number or is
+/// above `u64::MAX`.
+fn hard_core_limit(limits: &str) -> Option<u64> {
+    const NAME: &str = "Max core file size";
+    let line = limits
+        .lines()
+        .find(|line| line.starts_with(NAME) && line[NAME.len()..].starts_with("  "))?;
+    let hard = line[NAME.len()..].split_whitespace().nth(1)?;
+    if hard == "unlimited" {
+        return Some(u64::MAX);
+    }
+    hard.parse().ok()
+}
+
+/// The core item of a session's bounds for `limits`, `surfd`'s own `/proc/self/limits`:
+/// [`CORE_BOUND_ONE`] where its hard core limit is at least 1, else [`CORE_BOUND_ZERO`], which
+/// can always be set.
+fn core_bound(limits: &str) -> &'static str {
+    match hard_core_limit(limits) {
+        Some(hard) if hard >= 1 => CORE_BOUND_ONE,
+        _ => CORE_BOUND_ZERO,
+    }
+}
 
 /// How long `surfd` takes to write one answer to a client.
 const ANSWER_WRITE_TIMEOUT: Duration = wire::REQUEST_TIMEOUT;
@@ -107,10 +139,11 @@ pub struct Config {
     pub setpriv: PathBuf,
     /// `/usr/bin/prlimit`, read as `setpriv` is.
     pub prlimit: PathBuf,
-    /// The arguments of `prlimit` for a session without scripts: `--core=0:0`.
+    /// The arguments of `prlimit` for a session without scripts: the core item alone,
+    /// `--core=1:1`, or `--core=0:0` where `surfd`'s own hard core limit is 0.
     pub session_bounds: Vec<String>,
     /// The arguments of `prlimit` for a session with scripts: `--as=4294967296:4294967296
-    /// --cpu=3600:3601 --nofile=64:64 --core=0:0`.
+    /// --cpu=3600:3601 --nofile=64:64` and the same core item last.
     pub script_session_bounds: Vec<String>,
     /// [`SESSION_READY_TIMEOUT`].
     pub session_ready_timeout: Duration,
@@ -145,14 +178,19 @@ impl Config {
             .ok()
             .and_then(|exe| exe.parent().map(|dir| dir.join(SESSION_PROGRAM)))
             .unwrap_or_default();
+        // Read once, for the one daemon `main` starts; an unreadable file is an empty text.
+        let core = core_bound(&fs::read_to_string("/proc/self/limits").unwrap_or_default());
+        let mut script_session_bounds: Vec<String> =
+            SCRIPT_SESSION_BOUNDS.map(String::from).to_vec();
+        script_session_bounds.push(core.to_string());
         Config {
             runtime_dir,
             session_program,
             session_env: Vec::new(),
             setpriv: PathBuf::from(SETPRIV),
             prlimit: PathBuf::from(PRLIMIT),
-            session_bounds: SESSION_BOUNDS.map(String::from).to_vec(),
-            script_session_bounds: SCRIPT_SESSION_BOUNDS.map(String::from).to_vec(),
+            session_bounds: vec![core.to_string()],
+            script_session_bounds,
             session_ready_timeout: SESSION_READY_TIMEOUT,
             session_answer_timeout: SESSION_ANSWER_TIMEOUT,
             late_answer_timeout: LATE_ANSWER_TIMEOUT,
@@ -1709,4 +1747,77 @@ fn supervise(
     }
     table.note_idle();
     shared.changed.notify_all();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One line of `/proc/<pid>/limits` as the kernel writes it: the name padded to 26 columns,
+    /// each value to 21, then the units padded to 10.
+    fn row(name: &str, soft: &str, hard: &str, units: &str) -> String {
+        format!("{name:<25} {soft:<20} {hard:<20} {units:<10}\n")
+    }
+
+    fn core(soft: &str, hard: &str) -> String {
+        row("Max core file size", soft, hard, "bytes")
+    }
+
+    fn header() -> String {
+        row("Limit", "Soft Limit", "Hard Limit", "Units")
+    }
+
+    /// The ten texts, each with its number; rows 6 and 7 are whole texts of several lines.
+    fn texts() -> [(u32, String); 10] {
+        [
+            (1, core("unlimited", "unlimited")),
+            (2, core("0", "0")),
+            (3, core("0", "unlimited")),
+            (4, core("1", "1")),
+            (5, core("0", "18446744073709551616")),
+            (
+                6,
+                [
+                    header(),
+                    row("Max cpu time", "5", "5", "seconds"),
+                    core("0", "unlimited"),
+                    row("Max open files", "1024", "524288", "files"),
+                ]
+                .concat(),
+            ),
+            (7, header()),
+            (8, String::new()),
+            (9, format!("{:<25} 0\n", "Max core file size")),
+            (10, core("0", "many")),
+        ]
+    }
+
+    #[test]
+    fn hard_core_limit_reads_the_second_value_of_the_line() {
+        let expected = [
+            Some(u64::MAX),
+            Some(0),
+            Some(u64::MAX),
+            Some(1),
+            None,
+            Some(u64::MAX),
+            None,
+            None,
+            None,
+            None,
+        ];
+        for ((number, text), expected) in texts().into_iter().zip(expected) {
+            assert_eq!(hard_core_limit(&text), expected, "row {number}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn a_hard_limit_of_at_least_1_chooses_core_1_1_and_anything_else_core_0_0() {
+        let one = CORE_BOUND_ONE;
+        let zero = CORE_BOUND_ZERO;
+        let expected = [one, zero, one, one, zero, one, zero, zero, zero, zero];
+        for ((number, text), expected) in texts().into_iter().zip(expected) {
+            assert_eq!(core_bound(&text), expected, "row {number}: {text:?}");
+        }
+    }
 }

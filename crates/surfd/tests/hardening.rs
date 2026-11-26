@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use surf_agent::wire::{Answer, Arg, Request};
-use surfd::{Daemon, State};
+use surfd::{Config, Daemon, State};
 
 /// How long a case waits for a session to end at its CPU bound of 1 s.
 const BOUND_ENDS_WITHIN: Duration = Duration::from_secs(10);
@@ -178,7 +178,7 @@ fn a_session_without_scripts_has_no_core_file_and_no_new_privileges() {
     let session = open(&dir);
     let pid = session_pid(&dir, &daemon, &session);
     let own = std::process::id();
-    assert_eq!(limit(pid, "Max core file size"), pair("0", "0"));
+    assert_eq!(limit(pid, "Max core file size"), expected_core().0);
     for name in &BOUNDED[..3] {
         assert_eq!(limit(pid, name), limit(own, name), "{name}");
     }
@@ -204,7 +204,7 @@ fn a_session_with_scripts_has_the_bounds_of_q11() {
     );
     assert_eq!(limit(pid, "Max cpu time"), pair("3600", "3601"));
     assert_eq!(limit(pid, "Max open files"), pair("64", "64"));
-    assert_eq!(limit(pid, "Max core file size"), pair("0", "0"));
+    assert_eq!(limit(pid, "Max core file size"), expected_core().0);
     assert_eq!(no_new_privs(std::process::id()), "0");
     assert_eq!(no_new_privs(pid), "1");
     assert_eq!(exe(pid), stand_in_program().canonicalize().unwrap());
@@ -279,7 +279,7 @@ fn bound_ends_session() {
     let dir = TestDir::new();
     dir.set("behaviour", "spin");
     let mut config = config(&dir);
-    config.script_session_bounds = vec!["--cpu=1:2".to_string(), "--core=0:0".to_string()];
+    config.script_session_bounds = vec!["--cpu=1:2".to_string(), config.session_bounds[0].clone()];
     let daemon = start(config);
     let began = Instant::now();
     let session = open_with_scripts(&dir);
@@ -545,4 +545,78 @@ fn a_session_killed_by_another_process_while_it_answers_open_names_sigkill() {
         )
     );
     assert!(daemon.sessions().is_empty());
+}
+
+/// The test process lowers its own core limit to 0 with `prlimit --pid` before it builds its
+/// `Config`, as a `surfd` under a hard core limit of 0 runs (a service's `LimitCORE=0`): a
+/// session without scripts and one with scripts each open, and each keeps a core limit of 0.
+/// `prlimit` cannot raise a hard limit of 0, so a choice of a limit of 1 there fails the start.
+/// It needs one process per test, which cargo-nextest gives.
+#[test]
+fn a_session_keeps_a_core_limit_of_0_under_a_hard_limit_of_0() {
+    let own = std::process::id();
+    let lowered = Command::new("/usr/bin/prlimit")
+        .args(["--pid", &own.to_string(), CORE_ARGUMENT_ZERO])
+        .status()
+        .expect("prlimit runs");
+    assert!(lowered.success(), "{lowered}");
+    assert_eq!(limit(own, "Max core file size"), pair("0", "0"));
+    let dir = TestDir::new();
+    let daemon = start(config(&dir));
+    let session = open(&dir);
+    let pid = session_pid(&dir, &daemon, &session);
+    assert_eq!(limit(pid, "Max core file size"), pair("0", "0"));
+    let scripted = open_with_scripts(&dir);
+    let pid = session_pid(&dir, &daemon, &scripted);
+    assert_eq!(limit(pid, "Max core file size"), pair("0", "0"));
+}
+
+/// The effect on the host the tests run on: a shell started under the core argument
+/// `Config::new` chose for a session ends itself by `SIGABRT`, in an empty directory; its status
+/// is the signal 6 with no dump, and the directory stays empty. It prints the argument, the
+/// first line of `/proc/sys/kernel/core_pattern` and the hard core limit it read.
+///
+/// Where it holds something: a host whose core pattern is a pipe and whose hard core limit is at
+/// least 1, where a shell under a core limit of 0 shows a dump in its status. Where it holds
+/// nothing: a hard core limit of 0 (it prints `not shown: hard core limit 0` and ends), and a
+/// file pattern with a limit of 0. Under a file pattern and a limit of 1 it checks that no core
+/// file is written for a relative pattern, without a control run that writes one; for an
+/// absolute file pattern it shows nothing about a file.
+#[test]
+fn a_process_under_the_core_bound_surfd_chose_ends_by_abort_without_a_dump() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let argument = Config::new(None)
+        .session_bounds
+        .first()
+        .expect("the core argument")
+        .clone();
+    let pattern = fs::read_to_string("/proc/sys/kernel/core_pattern")
+        .unwrap_or_default()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let (_, hard) = limit(std::process::id(), "Max core file size");
+    eprintln!("argument {argument} core_pattern {pattern} hard core limit {hard}");
+    if hard == "0" {
+        eprintln!("not shown: hard core limit 0");
+        return;
+    }
+    let dir = TestDir::new();
+    let empty = dir.path.join("empty");
+    fs::create_dir(&empty).expect("an empty directory");
+    let status = Command::new("/usr/bin/prlimit")
+        .arg(&argument)
+        .args(["--", "/bin/sh", "-c", "kill -s ABRT $$"])
+        .current_dir(&empty)
+        .status()
+        .expect("prlimit runs");
+    assert_eq!(status.signal(), Some(6), "{status}");
+    assert!(!status.core_dumped(), "{status}");
+    let entries: Vec<_> = fs::read_dir(&empty)
+        .expect("the directory")
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect();
+    assert!(entries.is_empty(), "{entries:?}");
 }

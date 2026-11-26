@@ -7,6 +7,14 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Changed
+
+- `surfd` starts each session process with a core file size limit of 1 byte
+  (`prlimit --core=1:1`) in place of 0, and with 0 (`--core=0:0`) where its own hard core
+  limit is 0, which `prlimit` cannot raise. A session still writes no core file. One that ends
+  by a signal that dumps core is seen without the wait for the host's core handler, and its
+  status carries no dump; where the hard limit is 0 the wait stays.
+
 ## [0.9.0] - 2026-11-25
 
 ### Added
