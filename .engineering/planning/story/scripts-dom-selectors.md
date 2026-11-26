@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-selectors
 kind: story
-status: active
+status: implemented
 title: The 9 selector members over a subset of Selectors Level 4, bounded in text, count and steps
 summary: 'querySelector, querySelectorAll, closest, matches and webkitMatchesSelector on Element and the two of Document and DocumentFragment, for the subset of type, universal, #id, .class, [a], [a=v] (CSS escapes, strings, comments and the newlines CR, FF and CRLF included; an unterminated string or an unclosed block at the end of the text is closed, not an error), compounds, descendant and child combinators and lists, with the case rules of the HTML Standard (a type name and an attribute name lower-cased for an HTML element and compared exactly, the 46-name list of case-insensitive attribute values held as a table) and the tree''s quirks mode, every refusal a SyntaxError (a text that is not valid says so; a valid selector outside the subset or over the bounds of 4,096 bytes and 512 simple selectors says surf does not support it, as does a pseudo-class recognised by its shape even where a browser calls it not valid, two named deviations beside the nine rows), every read of the tree in a file of its own (selector_reads.rs) that charges before the work at one step per 16 bytes, through the glue''s constant, and a step a token, a node, an ancestor, a cell of the matcher and each further simple selector of a compound against the entry''s 10,000,000 steps, the walk keeping a stack of at most 513 frames and copying no list of children, the matcher filling every cell of a two-byte memo of compounds times chain that is charged before it is made, and querySelectorAll a static NodeList that is not a [SameObject] and keeps nothing.'
 relations:
@@ -29,10 +29,11 @@ scope:
   path: crates/webidl/selection.txt
 - confidence: cited
   path: docs/design/scripts.md
-revision: 38
+revision: 40
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-26T07:10:09Z", actor: "human:operator", revision: 38, executor: "agent:implementor"}
+- {from: "active", to: "implemented", at: "2026-11-26T16:45:22Z", actor: "human:operator", revision: 40, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -1405,3 +1406,336 @@ merge makes them its base. `story:scripts-html-conformance` waits for this story
 
 The selector members the epic's acceptance 3 names, and the `querySelector("table")` of the
 `needs-script` cases of web-platform-tests (`scripted_foster01.dat`, `epic:396-398`).
+
+## As built
+
+The unit is on `main` at `21b09df` (the merge of `impl/scripts-dom-selectors` at `ecd06c9`; its
+code is that of `4d5d4c9`, the two commits after it are a merge of planning files and the
+public numbers of the gate run). Against
+the unit that goes to `main` before it (`e507a7b`, the move of the engine's pin to 0.10.0) it
+changes 14 files, 5,192 lines added and 42 removed. Ten are the paths of the story's scope; four
+are not (three review modules of `crates/script/tests` and `tests/main.rs`, 3 lines). Four files
+are new (`selector_reads.rs` 325 lines and the three review modules 364, 633 and 290).
+`selectors.rs` was an empty `impl` of 8 lines and is 1,290; `dom_selectors.rs` holds 2,233 lines.
+
+- What was built.
+  - The nine members, answered by `SurfSelectors` (a unit struct that keeps nothing): `closest`,
+    `matches`, `webkitMatchesSelector`, `querySelector`, `querySelectorAll` of `Element`;
+    `querySelector` and `querySelectorAll` of `Document` and of `DocumentFragment`. `qS` and `qSA`
+    answer the descendants of `this`, never `this`, in tree order, and a combinator sees an
+    ancestor outside `this`; `closest` tests `this` and then its element ancestors; a parent that
+    is no element ends every upward walk. `querySelectorAll` is a static `NodeList`, a new object
+    each call, not a `[SameObject]`. The nine rows of `selection.txt` carry the two-clause note
+    of the deviation; `bindings.rs` is regenerated (two header lines and nine doc comments).
+  - The subset: type, `*`, `#id`, `.class`, `[a]`, `[a=v]` (an identifier or a string), compounds,
+    the descendant and child combinators, lists. Case rules of the HTML Standard: a type name
+    and an attribute name are lower-cased for an element of the HTML namespace and compared
+    exactly, compared as given for any other; a value is compared exactly, except the 46 names
+    of the HTML Standard's list (one sorted table, `CASE_INSENSITIVE_VALUES`) on an HTML
+    element; `#id` and `.class` are exact and ASCII case-insensitive in quirks mode.
+  - Refused as "not valid": a text that is no selector list of the grammar. The message is
+    `selector is not valid`. Examples held by cases: `""`, `a[`, `a:`, `a,`, `a >`, `> a`,
+    `a:hover[`, `a b)`, `[a=`, `ns|a`, `[ns|a]`, `a || b`, `#123`, a string with an unescaped
+    newline, a url where a selector goes, a code point outside the name list where a name goes.
+  - Refused as "not supported": the message is `selector is not supported by surf: ` and one
+    word: `pseudo-class`, `pseudo-element`, `sibling combinator`, `attribute matcher`,
+    `attribute flag`, `namespace prefix`, `nesting selector`, `text over 4096 bytes`,
+    `more than 512 simple selectors`. A pseudo-class or pseudo-element is recognised by its
+    shape; its name and argument are not validated (`a:hovr`, `a:nth-child(x y z)`). The parse
+    reads the whole text: a fault anywhere is "not valid", else the first construct outside the
+    subset is named. Both are `SyntaxError`, code 12; no member throws `NotSupportedError` for a
+    selector. A message holds no text of the page.
+  - Bounds: 4,096 bytes of text, counted as given, refused before anything is read; 512 simple
+    selectors, the 513th ends the parse and a fault after it is not read. No recursion.
+  - The lexer, by CSS Syntax Level 3 (Editor's Draft of 20 October 2026):
+    - CR, FF and CR LF are one newline and U+0000 is U+FFFD (3.3). An escape is up to six hex
+      digits and one whitespace, or any other code point but a newline; 0, a surrogate and a
+      value over U+10FFFF are U+FFFD. A string ends at its quote or at the end of the text; an
+      unescaped newline makes it bad. The end of the text closes an open `[` or `(`. A comment
+      is dropped; an unterminated one runs to the end.
+    - Name code points (4.2): ident-start and ident code points beyond ASCII are the 15
+      inclusive ranges of the section (`is_non_ascii_ident`). U+00A0, U+00D7, U+00F7, U+200B,
+      U+2028 and U+E000 are delims: where a name goes the text is not valid. An escape, a string,
+      a comment or a pseudo-class argument may hold them.
+    - The argument of a pseudo-class is read by blocks (5.5.9, 5.5.10): a function token or `(`
+      pushes `)`, `[` pushes `]`, `{` pushes `}` on a stack of one byte a block; a closer pops
+      only its own kind; the function's `)` ends the argument; the end closes every open block.
+      `a:is([)])` is a pseudo-class by shape.
+    - `url(` (4.3.4, 4.3.6, 4.3.15): with no quote after it, whitespace or not, one url token to
+      the first `)` or the end, or a bad url whose remnants run to the first `)` not escaped; with
+      a quote, a function token. The name `url` is read decoded and without case (`\75 rl(`).
+      A url is a token no production takes: skipped in a pseudo-class argument, not valid
+      anywhere else.
+    - `:before`, `:after`, `:first-line` and `:first-letter` after one colon are pseudo-elements
+      (Selectors 16): message `pseudo-element`, and a class, id, attribute or type after one is
+      not valid.
+  - The matching. The walk keeps a stack of frames (`Frames`: a parent and the index of its next
+    child, at most 513) and copies no child list. For each element and each complex selector the
+    gate tests the rightmost compound at the element; a selector of one compound is answered
+    there and reads no chain. Else the chain of element ancestors is read once for the element
+    (a list shares it), a memo of two bytes for each (compound, position) is made, every cell is
+    filled row by row with no recursion (`yes`, and `some` for a descendant step), and the answer
+    is the cell of the rightmost compound at the element.
+  - The charges, against the entry's 10,000,000 steps, each before the work it pays:
+    - The glue: 1 step a call; the copy of the argument one step per 8 UTF-16 code units (2 bytes
+      a unit, 16 bytes a step), charged before the copy; a `NodeList` 8 steps a node.
+    - The slice: a text over 4,096 bytes charges nothing; else `1 + bytes / 16` for the text; a
+      step a token (a url, a bad url with its remnants, and each token of a pseudo-class
+      argument is one token); a type or attribute name `bytes / 16` once at the parse and a type
+      name again at each test; a step a node the walk visits and one for the gate; a step for each
+      ancestor read, the read that finds no element parent included; the memo `bytes / 16`; a step
+      a cell; a step for each further simple selector of a compound; for an attribute test
+      `attribute_count x (name bytes / 16)`, then the reading unit's scan (a step per 4
+      attributes, the value's bytes at 16 a step, a step a class token).
+    - The copy price is the glue's and stays as `main` has it (deviation 1).
+  - The files and which of them may name the tree:
+    - `selector_reads.rs` (new) holds every read of the tree and every charge, through
+      `reads::charge`: 13 `pub(super)` functions and `Frames`. `children(` occurs in it only in
+      `Frames::next`; it holds no `tree_mut()` and no `charge_steps(`; no `pub(super) fn` of it
+      answers a `&`, a `Tree` or a `Cx`.
+    - `selectors.rs` holds the lexer, the parser, the matcher, the table of 46 names and the nine
+      methods. Its code lines hold none of the words `tree`, `Tree`, `engine`, `charge`; it
+      reaches `reads` only as `use super::reads;` and `reads::quirks(`.
+    - `reads.rs` changes by visibility and the lifetime of `Reads` only (16 lines added, 8
+      removed). `dom/mod.rs`: `mod selector_reads;` and `pub use selector_reads::Frames;`.
+    - `docs/design/scripts.md`: one row of the Q4 table and one paragraph. `AGENTS.md`: the entry
+      of `crates/script`.
+- Acceptance. Each item "shown" by what, or "not shown" and why. A name is a test of
+  `crates/script/tests/dom_selectors.rs` unless a module is given.
+  - 1a. Shown at the base `53ab365`: `git ls-files --error-unmatch` rc 0; both `git grep` print
+    nothing. Run again at `4d5d4c9`: the same.
+  - 1b. Shown: `cases_are_the_rows` (the nine rows of `selection.txt`, 76 cases, each in a
+    runner of its own, end `Ran`, no recorded limit).
+  - 2. Shown: `the_meaning_of_the_members` (scope, removed subtree, fragment, template, the brand
+    check of the glue); `adversary_dom_selectors_2::a_foreign_this_is_a_type_error` (each of the
+    nine).
+  - 3a to 3e. Shown: rows of `CASES` and `names_built_in_rust` (the Rust-built cases of 3c, 3d).
+    3f: `ids_and_classes_in_the_three_modes`.
+  - 4a to 4c. Shown: `the_one_exception_and_its_two_messages`, `the_two_messages_are_apart`.
+    `git grep -F NotSupportedError` in `dom_selectors.rs` prints nothing at the tip.
+  - 5. Shown: `the_bounds_of_a_text`. The steps asserted are not the story's (deviation 1).
+  - 6a to 6f. Shown: `a_walk_charges_a_visit_and_a_gate`, `a_long_selector_over_a_deep_chain`,
+    `a_loop_of_calls_ends_at_the_step_limit`, `five_hundred_and_twelve_compounds_over_a_deep_chain`,
+    `lists_end_at_the_memory_limit`, `deep_and_wide_trees_run`. 6g: shown by the helper of the
+    runner's cases (the recorded limit is `None` unless the case asserts a limit).
+  - 7. Shown: `the_lists_are_static`;
+    `adversary_dom_selectors::a_list_and_its_wrappers_survive_a_collection`.
+  - 8. Shown: `the_foster_parenting_cases_find_their_table`.
+  - 9. Shown: `slot task webidl-check` rc 0 at the merge; `webidl-slow` rc 0 byte for byte at
+    `e2fe9e6`, not run again after the merge (the merge regenerated `bindings.rs` with the
+    generator's command); `the_rows_carry_the_note`; nothing under `crates/webidl/src/` in
+    `git diff --stat e507a7b 4d5d4c9`; 11 hunks of `bindings.rs` (2 header lines, 9 doc
+    comments); the `reads.rs` command prints nothing, rc 0; `other_slices_still_throw` reads
+    `el.attachShadow({})`; `git grep -F 'Element.querySelector is not supported'` prints nothing.
+    The `TestSelectors` types compile unchanged: shown by the build of the crate's tests. Not
+    shown: `slot task check` (no gate was run); the file list names 14 files, not 10
+    (deviation 9).
+  - 10. Not shown. The public surfaces (`README.md`, `docs/badges`, `website/docs`) are not in
+    this unit; their numbers are written from a gate run in a commit after it.
+  - 11. Shown in part. `AGENTS.md` prints one line (`:373`) that cites the story beside `selectors`;
+    the entry counts 331 tests (deviation 13). `docs/design/scripts.md` prints three lines
+    (deviation 10).
+  - 12. Shown in part. No test of the unit ran over 5 s in the reports of the build, the fix
+    rounds and the merge; no test asserts a time; `test-clocks-check` rc 0 at the merge; the
+    generator gained no source. Not shown: the test step of the gate.
+  - 13a to 13j. Shown: `the_lexical_rules`, the three newlines in its loop (13j, twelve cases).
+    13f's closing of a block by the end of the text agrees with CSS Syntax 5.4, 5.5.9.
+  - 14a to 14e. Shown: `attribute_values_and_their_case`,
+    `every_name_of_the_list_compares_without_case`, `the_table_of_values_compared_without_case`
+    (sorted, 46, equal to the test's own list), `the_one_exception_and_its_two_messages` (14d).
+    14f: shown with a difference (deviation 8).
+  - 15a. Shown, by four guards in place of the story's one test (deviation 11).
+  - 15b to 15g. Shown by the cost module: `the_parse_charges_bytes_and_tokens` (15b, floor 700,
+    deviation 1), `attribute_tests_charge_the_list_and_the_name` (15c),
+    `class_tests_charge_bytes_and_tokens` (15d), `an_equality_test_charges_its_value_alone` (15e),
+    `a_type_name_is_charged_at_the_parse_and_at_each_test` (15f), `the_memo_is_made_late` (15g).
+  - 15h. Shown: 13 charge changes, each red on at least one test (deviation 15).
+  - 15i. Shown: `the_walk_keeps_a_frame_a_level` (`most()` 3 over 100,003 nodes, 512 over a chain
+    of 513).
+  - 16. Shown: `pub struct SurfSelectors;` at `selectors.rs:85`; `SameObject` keeps 4 variants;
+    `the_lists_are_static` (two calls, two objects).
+  - 17a to 17i. Shown by the cost module, one case for each member
+    (`element_query_selector`, `element_query_selector_all`, `element_closest`, `element_matches`,
+    `a_list_of_512`, `a_text_of_the_most_tokens`, `the_other_members`,
+    `the_memo_of_a_hundred_compounds`, `the_further_simple_selectors_of_a_compound`).
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written. 15 deviations.
+  1. The glue's copy price. The glue charges before the copy, when only the count of UTF-16 code
+     units is known: one step per 8 code units, 16 bytes of the engine's form. The story took
+     the bytes of UTF-8 (one step per 16). The price is `main`'s and the story does not change
+     it, so three numbers of the story moved:
+     - Acceptance 5, the call with a 4,097-byte text: story at most 277 (`1 + 4,097 / 16 + 20`);
+       asserted 513 to 640, measured 542. With the slice's text charge before the refusal it
+       would be 799; the bound's check moved after that charge turns the case red.
+     - The 1,048,576-byte text: story at least 65,536 and under 70,000; asserted 131,072 to under
+       135,000, measured 131,099. The old price of 64 bytes a step gives 32,768.
+     - 15b, the floor of the bytes' difference: story 500, asserted 700, measured 765 (795 steps
+       for 4,096 bytes, 30 for 16). Without the parse's text charge the difference is 510, so
+       the story's floor of 500 let that change live; 700 kills it.
+  2. `value_at` stays private. The story makes it `pub(super)`; a guard of the reading unit fails
+     on any `pub(super) fn` of `reads.rs` whose return type holds `&`. `selector_reads.rs` reads
+     the value a scan found through a private copy, `value_of`, a fourth copied rule beside the
+     story's three; its module doc says why. A test is added for the second reads file:
+     `the_selector_reads_answer_no_reference` (no `&`, `Tree` or `Cx` in a return type; 12 or
+     more functions found, 13 today).
+  3. The argument of a pseudo-class is read by blocks (`(`, `[`, `{`), not by balanced
+     parentheses as decision 5 says; `{` and `}` are tokens of their own. Reason: a `)` inside
+     `[ ]` or `{ }` closes nothing (CSS Syntax 5.5.9, 5.5.10), found by the first review.
+  4. One colon before `before`, `after`, `first-line` or `first-letter` is a pseudo-element
+     (Selectors 16). The story is silent, and the shape rule of decision 5 (a colon, an
+     identifier) made it a pseudo-class in the first build. A class, id, attribute or type
+     after one is not valid. Found in the reading duty of decision 16.
+  5. Name code points. The story is silent; the first build took every code point beyond ASCII as
+     a name code point. Now the 15 ranges of CSS Syntax 4.2 decide, so `div` U+00A0 `span` is not
+     valid; an escape, a string, a comment or a pseudo-class argument holding it leaves the text
+     valid. The design note says it is a place where a browser may answer otherwise; its
+     sentence names a string, an escape and a pseudo-class argument (see "Left as it is").
+  6. `url(`. The story is silent; the first build lexed every `url(` as a function token, which,
+     with the block reading of the first fix round, made 8 texts of a pseudo-class argument get
+     the wrong one of the two messages (7 one way, 1 the other). Now the url token of 4.3.4,
+     4.3.6, 4.3.15 (see what was built).
+  7. The HTML list: the section was read at the Living Standard of 26 November 2026 and the commit
+     the index page names (the story: 25 November 2026). The 46 names and their order are equal;
+     the table's doc comment and the module doc name the new date and that commit.
+  8. Decision 16 has the implementor fetch the four texts; the build fetched nothing. The four
+     were fetched once for it and read as data, nothing copied into the tree. Case 14f: no
+     directory of a fetched text exists under `.out/`; `git status --short --ignored -- .out`
+     prints `!! .out/`, which holds the output of `webidl-check` and `webidl-slow`; the diff
+     names no file of a standard's text. Each address and date was recorded: Selectors Level 4
+     (Editor's Draft of 10 November 2026), CSS Syntax Level 3 (Editor's Draft of 20 October
+     2026), DOM (Living Standard of 25 November 2026), HTML 4.16.2 (26 November 2026). The steps of
+     scope-match, `querySelector`, `closest` and `matches` in the fetched DOM page and in the
+     repository's copy (the snapshot of 15 November 2026) are word for word equal.
+  9. Beyond the Change: three modules of the reviews (`adversary_dom_selectors.rs`, `_2`, `_3`)
+     and 3 lines in `tests/main.rs`, which the story says is not edited.
+  10. `docs/design/scripts.md`: besides the one row, a paragraph of 5 lines on the name code
+      points (asked by the first fix round, sentence corrected by the second). `git grep -F
+      scripts-dom-selectors` prints lines 5, 412 and 1251, the story says two.
+  11. Acceptance 15a. The story's one test `the_selectors_read_the_tree_only_through_the_reads`
+      was replaced in the first fix round by the review's check of words (`tree`, `Tree`,
+      `engine`, `charge`) in `adversary_dom_selectors`, which the unit's weaker test (four
+      strings) passed around. The walk's check stays, as
+      `the_selector_reads_write_nothing_and_walk_in_frames`; the first review's guard
+      `the_selector_reads_copy_no_list_of_the_tree` stays beside it; a fourth guard, of the
+      second review,
+      `the_selectors_reach_the_tree_through_no_other_door`, holds the `reads::` paths. Red once:
+      7 of 7 source changes failed the first test; the guards of the reviews each went red on a
+      hand-made defect (see the reviews).
+  12. `Frames::is_empty` is added beside `len` and `most` (clippy `len_without_is_empty`).
+  13. `AGENTS.md`: the story sets the count of tests from the log of the unit's own tip; no gate
+      was run, so the entry's 331 is the list of `cargo nextest list` by module (329) and the
+      two ignored tests of `engine`.
+  14. Numbers the cases measured differ from the story's "about" figures, every floor and
+      ceiling holding: 6a without the walk's step about 1,020 (story 1,010); 6d without the
+      memo's charge about 260,500 and without the cells' about 35,100 (story 260,300 and
+      35,000); 17i without the further steps about 3,800 (story 3,700); 15c measured 259,304
+      and 259,310 (story about 251,030, floor 250,000).
+  15. 15h lists 12 charges; 13 are held. The 13th, the `1 +` of the text charge (one step a
+      call), was not on the story's list and no floor saw it; an exact count, `[13, 17, 22]` in
+      `one_small_call_to_the_step`, holds it. The two one-step charges the story says no floor
+      holds (the end of the walk, the read that finds no element parent): no report names a
+      case for them.
+- The three reviews. Each by a reader who did not write the unit; all three ended NEEDS-CHANGE.
+  - First review (on `54a6540`): 10 findings, 3 must, 5 should, 2 note; 9 introduced, 1 undecided.
+    - Must: every non-ASCII code point was taken as a name code point; two statements no case
+      held: the answer of a one-compound selector before any chain, and the chain read once for
+      an element of a list.
+    - Should: a `)` inside `[ ]` or `{ }` of a pseudo-class argument; the source guard of
+      `selectors.rs` passed `DomCx::tree(cx)`; the walk guard passed a list copy through
+      `Tree::descendants`; the `1 +` of the text charge changed with every case green (no floor
+      sees one step); the entry of `AGENTS.md` said 232 tests and that `dom_selectors` holds none.
+    - Notes: a `querySelectorAll("*")` costs about 4,000 ns a step against 224.5 ns for the
+      reading unit's plain walk, the glue's wrapping and not the slice; `cases_are_the_rows` took
+      4.838 s in its run.
+    - 9 cases written (`adversary_dom_selectors`): 2 red on `54a6540` (the code points, the
+      block in an argument), 4 green and each red on one of two hand-made defects, 3 green
+      properties with no defect claimed.
+    - Fix round (merge `78c9b19`, fix `1b0222e`): the 15 ranges of 4.2 and a test of the edges of
+      each (46 code points, three places); `pseudo` reads by blocks, a step a token; the
+      review's two guards are the checks, the weaker one removed; `one_small_call_to_the_step`;
+      both defects red once and taken back; the review's raw invisible characters written as
+      escapes (clippy). The crate: 276 run with 2 red, then 278 with none.
+  - Second review (on `1b0222e`): 7 findings, 1 must, 3 should, 3 note; 6 introduced, 1
+    undecided.
+    - Must: the step a token of a pseudo-class argument, held by no case (an uncharged skip left
+      every case green; up to 4,096 uncharged tokens a call).
+    - Should: `url(` lexed as a function (7 texts of the wrong class, 1 the other way); the
+      guard passed a tree call after `//` in a string and any `reads::` call but `quirks`; the
+      edge case did not see a range added inside a gap (`U+2500` to `U+257F`).
+    - Notes: the design note's sentence on code points was false in a string, an escape or an
+      argument; the walk guards do not see a child list copied inside `Frames::next`; the engine
+      has no `Proxy`.
+    - 8 cases (`adversary_dom_selectors_2`): 1 red (the url texts), 7 green; two hand-made defects.
+    - Fix round (merge `129322f`, `544b853`, `88c0675`): the url token, one step; the defects
+      copied and shown red once each (steps of the argument, the guard, the gap); the
+      design note and the head comment corrected; a comment's count corrected (4,086, not 4,084).
+      The crate: 286 with 1 red, then 288; `dom_selectors` 40, then 42.
+  - Third review (on `88c0675`): 5 findings, 2 must, 0 should, 3 note; all introduced. No red
+    case: the lexer answers every text by the text; it found no wrong answer.
+    - Must: where a url ends (an escape in the url or in the remnants, whitespace then `)`) and
+      the quote after `url(` that makes a function: no earlier case saw them; for each of the
+      two, three defects each left all 59 earlier selector cases green.
+    - Notes: the non-printable arm of a url is equivalent to the bad-url branch (no case can see
+      it); the url cost case tolerated 72 steps more than measured; the design note's list of
+      what leaves a text valid omits a comment and a pseudo-element's argument.
+    - 6 cases (`adversary_dom_selectors_3`), all green on `88c0675`; the crate 288 to 294.
+      Merged by `9c9fe26`, tests only: no fix round, the code did not change after `88c0675`.
+- Numbers.
+  - Tests of the unit at `4d5d4c9`, by module: `dom_selectors` 42 (19 outside the module
+    `cost`, 23 in it), `adversary_dom_selectors` 9, `adversary_dom_selectors_2` 8,
+    `adversary_dom_selectors_3` 6: 65. `surf-script`: 329 run and 2 skipped at the merge; the
+    entry of `AGENTS.md` says 331. Test files: 252 (`test-layout`).
+  - The crate's run count through the rounds: 229 before the unit; 266 (first build); 267; 276
+    (first review); 278; 286 (second review); 288; 294 (third review); 329 at the merge with the
+    other unit's modules. `surf-webidl`: 131 passed.
+  - Step counts (the first build, unchanged at the merge: none moved with the engine's pin):
+    6a 2,023; 6b 7,215 and 6,646; 6d 292,667; 15b 795, 30, 1,773, 775; 15c 226, 25,826, 259,304,
+    259,310; 15d 3,686,625 and 3,686,624; 15e 409,828; 15f 1,774, 775, 1,774; 15g 2,023, 2,025,
+    11,025; 17a 135,018 and 7,208; 17b 500,021; 17c 7,211; 17d 800; 17e 515,769; 17f 4,907 (4,096
+    tokens); 17g 135,026, 500,048, 27,018, 100,021, 795; 17h 596,540; 17i 514,844.
+    `one_small_call_to_the_step` 13, 17, 22. The call with 4,097 bytes 542; with 1,048,576 bytes
+    131,099. A url of 4,096 bytes costs 801 steps, as a string of that length (512 copy, 257
+    text, 5 tokens, 27 of the script); read as a function it would cost 4,887. The tokens of a
+    pseudo-class argument: 3,994 tokens 4,776 steps, 5 tokens 787. `Frames`: 3 over 100,003
+    nodes, 512 over a chain of 513.
+  - Times. 6c: the parse of 100,000 elements 140.9 ms (first build; the local load was 64.84, the
+    load of the job's node was not read). Slowest tests of the unit: `cases_are_the_rows` 1.745 s
+    (first build), 1.539 s, 2.410 s, 2.025 s in later runs and 4.838 s in the first review's run
+    (a loaded node; no load number); `cost::the_other_members` 1.832 s (first fix round). No
+    test of the unit over 5 s; none over 60 s. The crate's step: 26.420 s (266 tests), 16.622 s
+    (267), 26.379 s (278), 49.035 s (288), 20.292 s (294, third review), 17.387 s and 9.894 s
+    at the merge (329); the second review's first form of the code-point cases took 12.4 s and
+    was cut to samples (the gaps case 1.403 s). Over 5 s in the crate, not the unit's:
+    `adversary_5` 5.838 s, `dom_reading` 5.239 s and 5.606 s, `adversary_dom_reading_3` 5.194 s
+    and 5.216 s, `adversary_dom_reading_4` 5.589 s.
+  - Checks at `081b014`: `clippy` with `-D warnings` on `surf-script` and `surf-webidl` rc 0;
+    `lock-check`, `doc-tests-check`, `webidl-check`, `test-clocks-check` and
+    `test-clocks-check-test` rc 0.
+  - Mutants: 13 of 13 charge changes red; 7 of 7 source changes red on the first guard; the
+    review's defects each red once on the case written for it; the ceiling change (the bound's
+    check after the text charge) red twice, on `54a6540` and `544b853` (799).
+- Left as it is.
+  - The engine has no `Proxy` at the pin of 0.8.0 and still none at 0.10.0 (its change log says
+    `Proxy` does not exist and 0.10.0 changes nothing else of the kind): a `Proxy` as `this`
+    cannot reach the nine members from a page. No probe case was added.
+  - The nesting selector `&`: the Selectors draft read (10 November 2026) has no production for
+    it; its definition is in CSS Nesting, not among the four texts. The code treats `& a` as
+    valid and not supported (`nesting selector`), as decision 5 lists it; by the four texts it
+    would be not valid. Both are `SyntaxError`, code 12; only the message differs. Open.
+  - The design note's list of what leaves a text valid despite a code point outside the name
+    list (a string, an escape, a pseudo-class argument) omits a comment and a pseudo-element's
+    argument; the head comment of `selectors.rs` says the same. True as written.
+  - The walk guards do not see a child list copied inside `Frames::next`; only the 60 s kill of
+    the wide walk case would show it.
+  - The non-printable arm of a url and the split of url and bad url have no observable effect.
+  - `querySelectorAll` over 50,000 elements costs about 4,000 ns a step in the glue's wrapping;
+    the slice's own shapes grow no faster than their steps.
+  - `cases_are_the_rows` makes one runner for each of its 76 cases and took 4.838 s on a loaded
+    node; it is the unit's slowest test.
+  - The type and attribute tests check the HTML namespace where the HTML Standard says "HTML
+    elements in HTML documents"; surf has no other kind of document, so no result changes.
+  - Three of the story's copied rules and the fourth (`value_of`) are not shared with `reads.rs`.
+  - `CHANGELOG.md`: no commit of the unit touches it and it has no line on selectors.
+- A later story takes up: no report names a story. The story's own text says
+  `story:scripts-dom-mutation` writes the real mutation slice and that a later story may
+  share the three copied rules with `reads.rs`.

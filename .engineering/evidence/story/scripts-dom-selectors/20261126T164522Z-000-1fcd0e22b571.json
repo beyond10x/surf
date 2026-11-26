@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:45:22Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-selectors",
+  "kind": "story",
+  "revision": 39,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on ecd06c9, the tip of impl/scripts-dom-selectors, through the pool on the build host, 2026-11-26 17:37 CET",
+    "reference": "task check exit 0 in 75 s at a load of 6.46 at its start; 2,115 tests: 2,113 passed, 0 failed, 2 ignored; 552 TLS tests; 72 page tests; four steps 38.1 s (test step 18.3 s); no raise line; the docs site build exit 0"
+  }
+}
