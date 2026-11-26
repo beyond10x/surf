@@ -10,6 +10,7 @@ mod adversary_4;
 mod adversary_5;
 mod adversary_6;
 mod adversary_dom_attributes;
+mod adversary_dom_attributes_2;
 mod adversary_dom_reading;
 mod adversary_dom_reading_2;
 mod adversary_dom_reading_3;
