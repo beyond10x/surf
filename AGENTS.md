@@ -146,8 +146,10 @@ above, and the list of standards itself was written from memory.
   the task `view-stream-check`, `taskfiles/view-test.yml` the tasks `view-test` and
   `view-test-setup` (over `taskfiles/view-test-setup.sh`), and
   `taskfiles/release.yml` the task `release-smoke`
-  (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
-  release workflow calls that script with `sh`. `taskfiles/check-runner.yml` holds the task
+  (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`, and
+  the tasks `release-static` and `release-static-test` over `taskfiles/release-static.sh`
+  (`DIR=<unpacked archive>`, optional `IMAGE`) and `taskfiles/release-static-test.sh`; the
+  release workflow calls both release scripts with `sh`. `taskfiles/check-runner.yml` holds the task
   `check-runner`, which runs `taskfiles/check-runner.sh`; `taskfiles/forge-watch.yml` the tasks
   `forge-watch` and `forge-watch-test` over `taskfiles/forge-watch.sh` and the recorded runs
   under `taskfiles/forge-watch-test/` (`runs-61fb7a9.json` and `runs-e47b1d1.json` as the forge
@@ -1486,7 +1488,13 @@ is on that old history too, and stays local.
   `/proc/self` and need `XDG_RUNTIME_DIR`. The packages `surf-cli`, `surf-agent`, `surfd` and
   `surf-session` carry the release version; the tag is checked against `surf-cli`. The smoke
   test is `taskfiles/release-smoke.sh` (task `release-smoke`, `DIR=<unpacked archive>`): the
-  release workflow calls it with `sh`, and it runs unchanged on a workstation.
+  release workflow calls it with `sh`, and it runs unchanged on a workstation. The static check
+  is `taskfiles/release-static.sh` (task `release-static`, `DIR=<unpacked archive>`, optional
+  `IMAGE`): after the smoke test and before the upload, the job `package` runs it on each
+  unpacked Linux archive with `--image "$STATIC_IMAGE"`, an Alpine image named by digest in the
+  workflow's `env:`; it fails a binary with an `INTERP` row (`readelf -lW`), a `(NEEDED)` entry
+  (`readelf -d`) or no readable ELF form, then runs `surf-agent help --for-agent` in that
+  image without network (story:release-linux-static-check).
   `docs/releasing.md` is the procedure. Since `story:tls-release`: every shipped binary is
   built with ring through `surf-tls`, and `NOTICE` names ring, the four crates it needs and the
   root list; the job `package` installs `musl-tools` on the two Linux runners, because ring
@@ -1629,7 +1637,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
   `build`, and runs `doc-tests-check-test` after `sh-echo-test`.
   Since `story:tests-without-wall-time-bounds` it runs `test-clocks-check` after
-  `doc-tests-check` and `test-clocks-check-test` after `doc-tests-check-test`. Since
+  `doc-tests-check` and `test-clocks-check-test` after `doc-tests-check-test`.
+  Since `story:release-linux-static-check` it runs `release-static-test` after
+  `test-layout-test`, before `sh-echo-test`. Since
   `story:page-test-step-within-budget` it ends with `step-budgets` (`taskfiles/step-budgets.sh`),
   which reads the seconds the four timed steps wrote, `.out/test-step.seconds` (`test`),
   `.out/tls-test-step.seconds` (`test-tls`), `.out/conform-step.seconds` (`conform-rust`) and
@@ -1891,6 +1901,18 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`), from a checkout of the commit
   built: step 2 reads `crates/tls/src/anchors/SOURCE`.
+- `task release-static DIR=<unpacked archive>`, optional `IMAGE=<image>@sha256:<digest>`:
+  `taskfiles/release-static.sh` on an unpacked Linux archive, as the release workflow runs it:
+  `surf`, `surf-agent`, `surfd` and `surf-session` with no `INTERP` row, no `(NEEDED)` entry
+  and an ELF form `readelf` reads, then, with `IMAGE`, `surf-agent help --for-agent` in that
+  image with `docker` (`DOCKER` names another program). Exit 0, 1, or 2 for a usage error.
+- `task release-static-test`: that script on five ELF files written with `printf` under
+  `.out/release-static-test/` and a stand-in `docker`, eighteen cases, each compared on its
+  exit status, a text of the output and, for the container cases, the stand-in's recorded
+  arguments; then fourteen planted defects, copies of the script made with `sed`, each run on
+  the cases it names, which must fail, and on case 1, which must pass. It builds nothing and
+  starts no container. `SCRIPT=<path>` runs a copy
+  of the script.
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
   taskfiles/conform-noticed.sh check`: the sha256 of the sources of
