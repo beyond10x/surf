@@ -326,6 +326,35 @@ fn a_process_that_still_runs_is_left_and_ended() {
     let _ = child.0.wait();
 }
 
+/// A case of `sleeping` that the two tests beside it do not hold: a `sleep` that still runs at
+/// the first read and ends inside the bound is not left. Only a wait answers that; one read of
+/// the state, which counts a zombie as ended too, takes the process for one left.
+#[test]
+fn a_process_that_ends_during_the_wait_is_not_left() {
+    let mut child = Spawned(
+        Command::new("/bin/sleep")
+            .arg("0.5")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("/bin/sleep starts"),
+    );
+    let pid = child.0.id();
+    let pids = tmp().join(format!(
+        "adversary2-a_process_that_ends_during_the_wait_is_not_left-{}",
+        std::process::id()
+    ));
+    fs::write(&pids, format!("{pid}\n")).unwrap();
+    let left = sleeping(&pids, END_BOUND);
+    let _ = child.0.wait();
+    assert_eq!(
+        left,
+        Vec::<u32>::new(),
+        "sleeping took a process that ended within its bound for one left"
+    );
+}
+
 #[test]
 fn a_model_that_leaves_a_child_leaves_no_process() {
     let pids = tmp().join(format!("adversary2-child-pids-{}", std::process::id()));
@@ -423,5 +452,3 @@ fn every_call_is_one_line_that_reads_back() {
                     surf-agent a\\x09b\\x1bc\\\\\n  surf-agent cr\\rz\n  answered \"unknown\"\n";
     assert!(written.contains(expected), "{written:?}");
 }
-
-mod wait;
