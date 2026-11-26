@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 53
+revision: 55
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -180,8 +180,8 @@ The form chosen (S1, option a): that git dependency, on a release tag. What chan
   the same change.
 - Which tag: page scripts run only on a tag that holds the fixes of "From the security review of
   2026-11-22". `0.2.0` may enter for tests of the engine without a page; the tag that runs a
-  page's script is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by
-  `story:swell-0-9-0`.
+  page's script is `0.10.0`, commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, which holds the
+  fixes of `0.9.0`, taken by `story:swell-0-9-0`.
 
 Two things hold in this form: swell's `[profile.*] overflow-checks = true` (its root
 `Cargo.toml`) does not apply inside surf's build, because cargo reads profiles from the root
@@ -484,7 +484,7 @@ story of those waves writes.
     and a wall-clock interrupt, writes each script's end, and the session shows the two examples
     of "Outcome" (`surf-agent look`, and the document's rows); `surf <url>` keeps running no
     script, tested; the `noscript` rule. Depends on 4, 5, 7, 9, 10,
-    `story:html-document-port`, and swell `0.9.0`, taken by `story:swell-0-9-0`. Writes
+    `story:html-document-port`, and swell `0.10.0`, taken by `story:swell-0-9-0`. Writes
     `crates/surf/src/lib.rs`, `crates/session/`, `crates/page/src/lib.rs`,
     `conformance/src/target.rs`, `docs/agent-answer.md`, and only a test in
     `crates/surf-cli/tests/`. **Waits for
@@ -608,8 +608,8 @@ reviews of `docs/design/scripts.md`:
 
 - The tag of swell (Q13 of the note): `story:scripts-engine-dependency` pins swell `0.8.0`.
   `story:scripts-document-port`, which lets a page's scripts run in a session, runs on the swell
-  tag that holds requirement 11 (Q18 of the note): that tag is `0.9.0`, commit
-  `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0` before it. Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
+  tag that holds requirement 11 (Q18 of the note): that tag is `0.10.0` (the newest that holds it; `0.9.0` is the first), commit
+  `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, taken by `story:swell-0-9-0` before it. Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
   until they are charged, the only bound on them is the session's address-space backstop.
 - Which sessions get which bound (Q11): no new privileges and no core file for every session;
   the address-space, CPU and open-files bounds for a session opened with scripts only. Reason:
@@ -632,7 +632,7 @@ reviews of `docs/design/scripts.md`:
 
 A security review of surf and swell of 2026-11-22 names two conditions for running page scripts. The operator forwarded it: "Fix Swell's resource limits before Surf runs untrusted JavaScript."
 
-- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is `0.9.0`, commit `d49a09bcc44fbdd155f705f913a90b676518afbc`, taken by `story:swell-0-9-0`.
+- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is `0.10.0` (`0.9.0` is the first that holds them), commit `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`, taken by `story:swell-0-9-0`.
 - Before a session process runs a script, its environment is reduced to what it needs (today it inherits the caller's environment but two variables of surf), its privileges of the operating system are restricted, and it has resource limits of its own. This is part of the candidate story `scripts-hostile-pages` or a story before it.
 
 ## The DOM from Web IDL
@@ -814,7 +814,7 @@ script wrote in its page line (example 1), with the option off by default. It ne
 candidate stories: `scripts-decisions`, `webidl-reader`, `scripts-engine-dependency`,
 `scripts-spec`, `session-process-hardening`, `webidl-bindings`, `html-script-hook`,
 `scripts-dom-reading`, `scripts-dom-mutation`, `scripts-dom-attributes` (example 2 comes in the same
-story) and `scripts-document-port`, with `story:html-document-port` and swell `0.9.0`, the tag that
+story) and `scripts-document-port`, with `story:html-document-port` and swell `0.10.0`, the newest tag that
 holds the review's fixes, taken by `story:swell-0-9-0`. After it, without blocking it: `scripts-dom-selectors`,
 `scripts-html-conformance` and `scripts-hostile-pages`, which the epic's acceptance needs. Of the
 11, `scripts-decisions` and `webidl-reader` start now, three more after the note, and the rest
@@ -969,3 +969,15 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
   implements the trait `Host`. Not in `0.8.0`: the host requirements HOST-112 and HOST-114
   (swell's slice 9), HOST-201 and HOST-203, the microtask checkpoint and the promise hooks
   (slice 10).
+
+## Corrections of 2026-11-25
+
+2026-11-25. `story:scripts-dom-reading` (revision 2 of its draft) corrects these places of this epic; where they differ, the story's decisions win, and the lines named are this file's:
+
+- Lines 464-468 (candidate 8): "with no hook. Depends on 6. Writes `crates/script/src/dom/` (the wrapper, reading and window modules), `crates/script/tests/`". Now: the story depends on 6 and on 7 (`html-script-hook`), because the hook cases (a script in `head` of a page without a doctype reads `compatMode`) run through `parse_document_with_hook` and because the story writes files of 7 (`tree.rs`, `tree_builder.rs`, `tree_builder/modes.rs`, `lib.rs`); the cases other than those need no hook. There is no window module: the `Window` global is candidate 6's (`runner.rs`), and the four `Window` members are written in `reading.rs`. The list of members gains `Window.event` (a row of 6). The story also writes the generator (`crates/webidl/src/generate.rs`, `prelude.rs`), `crates/webidl/selection.txt`, `crates/script/src/bindings.rs`, `crates/html/src` (four files), `crates/script/Cargo.toml`, `Cargo.lock`, `docs/design/scripts.md`, `AGENTS.md` and the public surfaces. Decisions 10 to 12 of the story.
+- Lines 342-343 and 854 (requirement 4): "a `Root` per wrapper kept until the document is dropped, bounded by the parser's node limit". Now: the wrappers are bounded by the engine's budget, `memory_bytes` 67,108,864 (`crates/script/src/runner.rs:42`), not by the parser's node limit of 1,048,576: 262,144 wrappers of 256 bytes fill it (`docs/design/scripts.md:322-330`), and a script that reaches more nodes ends `limit: memory`. Decision 4.
+- Lines 749-754 (deviations): "the 9 members that return a live collection ... `[SameObject]` holds for `childNodes` and `children` only as the same snapshot object refreshed when it is read". Now: ten rows return a snapshot for a live collection (`DocumentFragment children`, `selection.txt:223`, is the tenth and gains the notes), and `[SameObject]` holds for four rows, `Node childNodes`, `Element children`, `Document children` and `DocumentFragment children`, by the generator and `Wrap`, with the same object refreshed only when the tree's write counter moved since it was last filled. Decisions 9 and 10 of the story.
+- Lines 704-705 (`[SameObject]` 11): "the wrapper keeps the returned object in its host data, listed by `trace`". Now: `SurfWrap` keeps the object in a table of rooted handles, keyed by node and member (the generated enum `SameObject`), found and kept through two provided methods of `Wrap`; the host data of a collection holds only its nodes and the counter value of its last fill. Decision 10.
+- Lines 919-920 ("Where the stories differ": "The table that selects which members are generated lives in `webidl-bindings` alone; each later slice names the members it turns from "throws" to "works""). Now: `scripts-dom-reading` also changes the generator and the table (`generate.rs`, `prelude.rs`, `selection.txt`) for `[SameObject]` and for the notes of `Node baseURI` and `DocumentFragment children`, and regenerates `bindings.rs`; a later story that changes the selection does the same and lists `selection.txt` and `bindings.rs` in its scope. Decision 10.
+- Lines 910 and 925-927 ("Where the stories differ" and "Candidates 12 and 13 are not disjoint (`Cargo.lock`, `crates/script/Cargo.toml`...)"): `Cargo.lock` and `crates/script/Cargo.toml` are no longer only those two stories': `scripts-dom-reading` adds the dependency `surf-url` to `surf-script` (one line in each; `taskfiles/lock-check.sh` and the owners file do not change, because `surf-url` is a crate of this repository and not a dependent of `surf-script`), and `story:swell-0-9-0` changes the pin in the same two files; those two are merged one after the other, the second merging `main` first. Decision 12 and the Placement of the story.
+- Lines 716-724 ("Tree reading, 73"): `compatMode`, `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and `contentType` need the document's facts, which no generated type holds: `surf_script::dom::DocumentInfo` (address as a `surf_url::Url`, content type, encoding name), built by `story:scripts-parse-run`, and the quirks mode, which the parser writes into `surf_html::Tree`. `Node.baseURI` is the HTML document base URL (the first `base` element with an `href`, parsed against the address), with three named deviations. Decisions 11 to 13.

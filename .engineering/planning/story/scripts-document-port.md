@@ -59,7 +59,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 40
+revision: 41
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -86,8 +86,8 @@ S5 is decided (option a, the operator session, 2026-11-24): a session with scrip
 `setpriv` and `prlimit`, in the form with scripts of `docs/design/scripts.md`, Q11
 (`story:session-process-hardening`, an edge of this story).
 
-The tag of swell: `story:swell-0-9-0` took `0.9.0` (commit
-`d49a09bcc44fbdd155f705f913a90b676518afbc`), which holds requirement 11 (HOST-215), with the
+The tag of swell: `story:swell-0-9-0` took `0.10.0` (commit
+`b9d3d46fa7ac4abc982f2248e903e6301e277a9f`), which holds requirement 11 (HOST-215), with the
 microtask checkpoint after each script and swell's new error kind and host error;
 `story:script-error-kind-aggregate` took the specification's word `AggregateError`. Both are
 edges of this story; it takes no tag of its own.
@@ -154,7 +154,7 @@ error kind and host error are `story:swell-0-9-0`'s, and the specification's wor
    end, after the parse and before `FinishParsing`, in the order the ends happened (Q7's
    `written:`). Without the option, `HtmlParser` as today, and no record.
 3. The bounds of a session with scripts (Q11). This story ships the address space `--as=2147483648`
-   (2 GiB): with swell `0.9.0`, which holds requirement 11 (`story:swell-0-9-0`), the copies are
+   (2 GiB): with swell `0.10.0`, which holds requirement 11 (`story:swell-0-9-0`), the copies are
    charged to `memory_bytes`, and with
    `story:session-memory-bound` keeping the tree of the current document only, Q11's sum for one
    tab is 208,736 kB (the session) + 2 × 536 MiB (the current tree and the one being parsed) +

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T08:44:47Z",
+  "actor": "human:operator",
+  "artifact": "story:html-script-hook",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "six passes of the adversary review on the unit by a reviewer who did not write it, 2026-11-24 and 2026-11-25",
+    "reference": "pass 1 on edbd073: 23 cases, 7 red, three musts; pass 2 on 72de3b9: 13 cases, 3 red, one must; pass 3 on d69866b: 9 cases, 1 red, no must; pass 4 on 4ce6829: 4 cases and one rewritten, 1 red, one must; pass 5 on dc175e9: 2 cases, 1 red, one must; pass 6 on 5d9b011: 8 cases, 1 red, no must; every red case green at 58d720b (245 tests of surf-html run, 245 passed, 0 skipped)"
+  }
+}

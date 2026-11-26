@@ -21,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 24
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -47,7 +47,7 @@ What exists before it, and what this story only calls:
 - the bindings and `DomCx` of `story:webidl-bindings`, and its rule `Runner::document_end` in
   `crates/script/src/runner.rs` that maps an interrupted entry to the limit `DomCx` recorded,
   otherwise to `limit: wall-clock`;
-- swell `0.9.0` and the microtask checkpoint after each script of `story:swell-0-9-0`, its steps
+- swell `0.10.0` and the microtask checkpoint after each script of `story:swell-0-9-0`, its steps
   in the step total and its end taken as the script's end;
 - the reading slice and the document over a parsed tree (`story:scripts-dom-reading`);
 - the hook, which reports each script element it runs and each it skips with a word of Q1's line
@@ -76,8 +76,11 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
   This story decides which tree a page with such a `meta` gets when scripts are on and
   holds it with a test on one page whose `meta` names an encoding the sniffing did not
   pick.
-- After a hook has written, the parser's depth limit holds for the tree and no longer for
-  the stack of open elements alone; a parse stopped that way has `stopped_by` `Depth`.
+- In every parse, with a hook or without, the parser's depth limit holds for the tree and no
+  longer for the stack of open elements alone; a parse stopped that way has `stopped_by`
+  `Depth`. A parse that has passed the step limit stops with `stopped_by` `Steps` and names no
+  other limit (`story:html-script-hook`, "As built").
+- The document facts of a page reach the DOM slices through this story. `story:scripts-dom-reading` gives `surf_script::dom` a public `DocumentInfo { address: surf_url::Url, content_type: String, encoding: String }` and `dom::slices(info: DocumentInfo) -> Slices`; the members `URL`, `documentURI`, `baseURI`, `contentType`, `characterSet`, `charset` and `inputEncoding` read it, and `compatMode` comes from the tree (`surf_html::Tree::quirks_mode`, written by the parser). This story builds the `DocumentInfo` of a page: the address as a `surf_url::Url` (the `address` of decision 1, whose type is this story's to state), the response's content type, and the name of the encoding the parse decodes with. It makes the runner at the first script element that runs, while the encoding may still be tentative (the bytes-with-a-hook bullet above); which encoding name it passes then is this story's to decide, with its own critics. The `DocumentInfo` it passes must name the address the document was fetched from, because `baseURI` resolves a `base` element's `href` against it.
 
 ## Decisions taken
 
@@ -132,7 +135,7 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
 5. The values of Q4 were measured without bindings or DOM; this story measures them again with both
    (steps per second in the test profile and in release, the heap of a realm with the bindings,
    whether a page with more than 1,000 scripts reaches the script count) with probes in the session
-   scratch directory, never committed. The measurements are taken on swell's tag `0.9.0`, which
+   scratch directory, never committed. The measurements are taken on swell's tag `0.10.0`, which
    `story:swell-0-9-0` takes before this story. A value holds if a script at that limit ends with that
    limit's end word. Where one does not hold, the story changes it where it lives in code (the
    agent's limits, the wall-clock bound and the stack in `crates/script/src/runner.rs`; the
@@ -214,6 +217,19 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
     build or test job in the pool ends within 10 minutes or names its time with `slot --timeout`,
     at most 30 minutes; a test over 5 s is named (`wall_clock` waits 100 ms by design;
     `deepest_nesting_on_parse_thread` is timed and named if over 5 s).
+17. `document_facts_reach_the_script`: the test's own page (no network request, no model call),
+    in bytes, parsed by `parse_with_scripts` with the address `https://example.com/dir/page` and
+    the content type `text/html`, has one inline script that compares `document.URL`,
+    `document.baseURI`, `document.contentType` and `document.compatMode` with
+    `https://example.com/dir/page`, `https://example.com/dir/page` (no `base` element),
+    `text/html` and `BackCompat` (no doctype), and throws an `Error` whose message is the four
+    values read, joined by a space, when one differs. The script's end is `ran`; a `threw` end
+    shows the values in its record. The same page after `<!DOCTYPE html>`, its script comparing
+    with `CSS1Compat`, ends `ran`. The script's end is the reader: the test reads nothing from
+    the realm, which is dropped when the parse ends (decision 1). Decision 1's signature has no
+    place for the content type yet: how it reaches `parse_with_scripts` (a parameter or a field
+    of `options`) is stated in decision 1 when this story is revised against
+    `story:scripts-dom-reading` as built, and this item names that place then.
 
 ## Out of scope
 

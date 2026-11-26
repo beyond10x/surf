@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T08:44:47Z",
+  "actor": "human:operator",
+  "artifact": "story:html-script-hook",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at f1d0e4f (the merge of impl/html-script-hook at 1925eaf), 2026-11-25",
+    "reference": "check 45577656842 success; Shared source gates 45577657202 success; Documentation validation 45577656846 success; Documentation site 45578493125 success"
+  }
+}
