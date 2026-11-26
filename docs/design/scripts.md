@@ -333,7 +333,11 @@ there. An add charges its strings and the slots the list gains (none when it goe
 the list holds), a removal gives back its strings and the slots the list gives back (none when
 the list keeps its allocation; all of them when it empties), a replaced value moves its own
 bytes, and the charge stops at 0, so a removal of what the parser stored gives back no more
-than was charged. It is held through one `HostBytes` that the engine
+than was charged. The stop is taken at each write, not on the net rise since the parse, so a
+script that removes bytes the parser stored and then adds is charged for the add, although the
+tree then holds less than the parse left (the test
+`dom_attributes::a_removal_from_a_parsed_list_gives_back_down_to_zero` holds it). It is held
+through one `HostBytes` that the engine
 resizes (`Cx::resize_host_bytes`, `crates/swell/src/host/mod.rs:585 @ 0.8.0`), grown before the
 write and shrunk after a write that removes bytes, so removing what a script wrote gives its
 charge back. A node's charge is never refunded, since a node is never taken out of the tree's

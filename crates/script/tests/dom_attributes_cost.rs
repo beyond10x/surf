@@ -444,15 +444,174 @@ fn four_thousand_new_names_on_one_element() {
     report("4,096 new names on one element", &calls);
 }
 
-/// `source` with every line comment, the rest of a line after `//`, and each line left blank
-/// cut.
+/// `source` with its comments cut, and each line left blank: a line comment from its `//` to
+/// the end of its line, a block comment from its `/*` to the `*/` that closes it. A `//` or a
+/// `/*` inside a string literal (also a raw one, `r"…"` or `r#"…"#`, and one that runs over
+/// several lines) or a character literal is code, so a call after such a string on the same
+/// line is kept and searched.
 fn code_lines(source: &str) -> String {
-    source
+    let bytes = source.as_bytes();
+    let mut code = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let rest = &bytes[at..];
+        if rest.starts_with(b"//") {
+            at += rest.iter().position(|&b| b == b'\n').unwrap_or(rest.len());
+        } else if rest.starts_with(b"/*") {
+            let mut depth = 0_usize;
+            while at < bytes.len() {
+                if bytes[at..].starts_with(b"/*") {
+                    depth += 1;
+                    at += 2;
+                } else if bytes[at..].starts_with(b"*/") {
+                    depth -= 1;
+                    at += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    if bytes[at] == b'\n' {
+                        code.push(b'\n');
+                    }
+                    at += 1;
+                }
+            }
+        } else {
+            let length = literal_length(bytes, at);
+            code.extend_from_slice(&bytes[at..at + length]);
+            at += length;
+        }
+    }
+    String::from_utf8(code)
+        .expect("cut at ASCII bytes")
         .lines()
-        .map(|line| line.find("//").map_or(line, |at| &line[..at]))
         .filter(|line| !line.trim().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The bytes of the literal that starts at `at` of `bytes` (a string, a raw string, a byte
+/// string or a character), or 1 for a byte that starts none (a lifetime's `'` included).
+fn literal_length(bytes: &[u8], at: usize) -> usize {
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let after_ident = at > 0 && ident(bytes[at - 1]);
+    let raw_start = match bytes[at] {
+        b'r' if !after_ident => Some(at + 1),
+        b'b' if !after_ident && bytes.get(at + 1) == Some(&b'r') => Some(at + 2),
+        _ => None,
+    };
+    if let Some(from) = raw_start {
+        let hashes = bytes[from..].iter().take_while(|&&b| b == b'#').count();
+        if bytes.get(from + hashes) == Some(&b'"') {
+            let mut end = b"\"".to_vec();
+            end.extend(std::iter::repeat_n(b'#', hashes));
+            let body = from + hashes + 1;
+            let close = bytes[body..]
+                .windows(end.len())
+                .position(|w| w == end.as_slice())
+                .map_or(bytes.len(), |p| body + p + end.len());
+            return close - at;
+        }
+    }
+    match bytes[at] {
+        b'"' => {
+            let mut end = at + 1;
+            while end < bytes.len() && bytes[end] != b'"' {
+                end += if bytes[end] == b'\\' { 2 } else { 1 };
+            }
+            (end + 1).min(bytes.len()) - at
+        }
+        b'\'' if bytes.get(at + 1) == Some(&b'\\') => {
+            let close = bytes[at + 2..]
+                .iter()
+                .position(|&b| b == b'\'')
+                .map_or(bytes.len(), |p| at + 2 + p + 1);
+            close - at
+        }
+        b'\'' if bytes.get(at + 2) == Some(&b'\'') => 3,
+        _ => 1,
+    }
+}
+
+/// The cut of comments reads a string literal as code: `//` and `/*` in a string, a raw string,
+/// a byte string or a character stay, a comment after them goes, and a lifetime is no literal.
+#[test]
+fn the_comment_cut_keeps_what_a_string_holds() {
+    let rows = [
+        ("a(\"x//y\"); b(); // c", "a(\"x//y\"); b(); "),
+        ("/// doc\nf();", "f();"),
+        ("a(r#\"q\"//\"#); b(); // c", "a(r#\"q\"//\"#); b(); "),
+        ("a(r\"\\\"); b(); // c", "a(r\"\\\"); b(); "),
+        ("a(b\"//\"); b();", "a(b\"//\"); b();"),
+        ("a('\"'); b(\"//\"); c(); // d", "a('\"'); b(\"//\"); c(); "),
+        ("a('\\''); b(\"//\"); c();", "a('\\''); b(\"//\"); c();"),
+        ("fn f<'a>(x: &'a str) {} // y", "fn f<'a>(x: &'a str) {} "),
+        ("a(\"x\\\"//\"); b();", "a(\"x\\\"//\"); b();"),
+        ("a(\"one\n//two\"); b();", "a(\"one\n//two\"); b();"),
+        ("a(); /* b(); /* c */ d(); */ e();", "a();  e();"),
+        ("a(); /* b\n c */ d();", "a(); \n d();"),
+        ("letter(); // x", "letter(); "),
+    ];
+    for (source, code) in rows {
+        assert_eq!(code_lines(source), code, "{source}");
+    }
+}
+
+/// The files of `crates/script/src/dom/` that may name a writable tree, from the story's
+/// Placement and its decision 2 ("`attribute_writes.rs` holds every `tree_mut()` call of this
+/// slice"; the members' file and the reads' file hold none). A later story whose slice writes
+/// the tree adds its own file here.
+const WRITERS_OF_THE_TREE: [&str; 1] = ["attribute_writes.rs"];
+
+/// The spellings that give a file of `dom/` a tree to write: the context's accessor, a
+/// parameter or a value of the type, the engine's host (whose bindings hold the document's
+/// state) and the state itself.
+const WRITABLE_TREE: [&str; 5] = [
+    "tree_mut",
+    "&mut Tree",
+    "&mut surf_html::Tree",
+    "host_mut",
+    "DomState",
+];
+
+/// No file of `crates/script/src/dom/` but those the story allows names a writable tree, in
+/// any spelling: a helper in `reads.rs` or another file that takes `tree_mut` is red. The
+/// directory is read whole, so a file added to it is read too.
+#[test]
+fn only_the_writes_file_names_a_writable_tree() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/dom");
+    let mut files: Vec<(String, String)> = std::fs::read_dir(dir)
+        .expect("the dom directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("a file name")
+                .to_string();
+            let text = std::fs::read_to_string(&path).expect("the source");
+            (name, code_lines(&text))
+        })
+        .collect();
+    files.sort();
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    for allowed in WRITERS_OF_THE_TREE {
+        assert!(names.contains(&allowed), "no {allowed} in {names:?}");
+    }
+    assert!(names.len() > WRITERS_OF_THE_TREE.len(), "{names:?}");
+    let mut found = Vec::new();
+    for (name, code) in &files {
+        if WRITERS_OF_THE_TREE.contains(&name.as_str()) {
+            continue;
+        }
+        for spelling in WRITABLE_TREE {
+            if code.contains(spelling) {
+                found.push(format!("{name} names `{spelling}`"));
+            }
+        }
+    }
+    assert!(found.is_empty(), "{found:?}");
 }
 
 /// The text of the function `head` names, from its line to the next line that starts a

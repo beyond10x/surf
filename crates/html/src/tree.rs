@@ -561,9 +561,11 @@ impl Tree {
     }
 
     /// Adds `attributes` to `element`, in order. The caller has left out every name the element
-    /// has an attribute of (the `html` and `body` start tag rules of "in body"). A list that was
-    /// empty gets exactly the room it needs, so that a list never holds more than twice the
-    /// records it has (the heap bound of [`crate::limits::Limits::max_stored_bytes`]).
+    /// has an attribute of (the `html` and `body` start tag rules of "in body"). The list gets
+    /// exactly the records it adds, so a list the parser built holds no room beyond its
+    /// records however many merges built it ([`Tree::attribute_room_grown`]), and never more
+    /// than twice the records it has (the heap bound of
+    /// [`crate::limits::Limits::max_stored_bytes`]).
     pub(crate) fn add_attributes(&mut self, element: NodeId, attributes: Vec<Attribute>) {
         if let NodeData::Element {
             attributes: existing,
@@ -571,9 +573,7 @@ impl Tree {
         } = &mut self.nodes[element.0].data
         {
             self.stored_bytes += attributes.iter().map(attribute_bytes).sum::<usize>();
-            if existing.is_empty() {
-                existing.reserve_exact(attributes.len());
-            }
+            existing.reserve_exact(attributes.len());
             existing.extend(attributes);
         }
     }

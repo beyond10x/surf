@@ -3300,3 +3300,148 @@ fn read_attribute_room() {
     assert_cost_line("pub fn attribute_room_freed(");
     assert_cost_line("pub fn held_bytes(");
 }
+
+/// Every element of `tree`, template contents included: its local name and the length and
+/// the room of its attribute list, in records.
+fn every_list(tree: &Tree) -> Vec<(String, usize, usize)> {
+    let mut lists = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(node) = pending.pop() {
+        pending.extend(tree.children(node));
+        if let NodeData::Element {
+            local_name,
+            attributes,
+            template_contents,
+            ..
+        } = tree.data(node)
+        {
+            lists.push((local_name.clone(), attributes.len(), attributes.capacity()));
+            pending.extend(*template_contents);
+        }
+    }
+    lists
+}
+
+/// Every way the parser builds or extends an attribute list leaves it with no room past its
+/// records, so `attribute_room_grown`'s "a list the parser built has no room" holds whichever
+/// way the parser built it: an element of one start tag, a later `html` or `body` start tag
+/// merged into the element (into an empty list, into a list of the first tag, several times,
+/// with names it has and names it lacks, or with nothing new), the adoption agency's copy of a
+/// formatting element, the reconstruction of one, an element foster parented out of a table,
+/// the `selectedcontent` copy of an option's elements, foreign elements with their adjusted
+/// names, an element in template contents and `image` read as `img`. Each page names an
+/// element and how many lists of that name with how many attributes the path leaves.
+#[test]
+fn every_list_the_parser_builds_has_no_room_past_its_records() {
+    let pages: [(&str, &str, &str, usize, usize); 13] = [
+        ("one start tag", "<!DOCTYPE html><p a b c d e>", "p", 1, 5),
+        (
+            "merged html",
+            "<html a1=1><html a2 a3 a4 a5><p>x<html a6>",
+            "html",
+            1,
+            6,
+        ),
+        ("html merged into no list", "<p>x<html a b c>", "html", 1, 3),
+        (
+            "merged body",
+            "<body b1><p>x<body b2 b3 b4 b5><body b6>",
+            "body",
+            1,
+            6,
+        ),
+        (
+            "a merge of nothing new",
+            "<body b1 b2><body b2 b1>",
+            "body",
+            1,
+            2,
+        ),
+        (
+            "a merge of names it has and lacks",
+            "<html a1 a2><html a1 a3 a2 a4 a5>",
+            "html",
+            1,
+            5,
+        ),
+        ("adoption agency", "<b x=1 y=2 z=3><p>t</b>u", "b", 2, 3),
+        ("reconstruction", "<p><i r=1 s=2 t=3>t</p><p>u", "i", 2, 3),
+        (
+            "foster parent",
+            "<table><b f=1 g=2 h=3>t</b><tr><td>x</table>",
+            "b",
+            1,
+            3,
+        ),
+        (
+            "selectedcontent copy",
+            "<select><button><selectedcontent></selectedcontent></button>\
+             <option selected><b c=1 d=2 e=3>x</b></option></select>",
+            "b",
+            2,
+            3,
+        ),
+        (
+            "foreign",
+            "<svg viewbox=\"0 0 1 1\" xlink:href=x xml:lang=y><math definitionurl=z w=1 v=2>",
+            "svg",
+            1,
+            3,
+        ),
+        (
+            "template contents",
+            "<template><p t1 t2 t3></p></template>",
+            "p",
+            1,
+            3,
+        ),
+        (
+            "image read as img",
+            "<image src=x alt=y title=z>",
+            "img",
+            1,
+            3,
+        ),
+    ];
+    // The steps of a parse with 64 merged start tags: the exact room of a merge costs no step.
+    let page: String = (0..64)
+        .map(|i| {
+            if i % 2 == 0 {
+                format!("<html h{i}=x>")
+            } else {
+                format!("<body b{i}=x>")
+            }
+        })
+        .collect();
+    let tree = parse_document(&page, &ParseOptions::default());
+    eprintln!(
+        "64 merged start tags: {} steps; lists {:?}",
+        tree.steps(),
+        every_list(&tree)
+            .into_iter()
+            .filter(|(name, ..)| name == "html" || name == "body")
+            .collect::<Vec<_>>()
+    );
+    let mut roomy = Vec::new();
+    for (path, page, name, count, len) in pages {
+        let tree = parse_document(page, &ParseOptions::default());
+        let lists = every_list(&tree);
+        let named: Vec<(usize, usize)> = lists
+            .iter()
+            .filter(|(local_name, ..)| local_name == name)
+            .map(|&(_, len, room)| (len, room))
+            .collect();
+        assert_eq!(
+            named.iter().filter(|&&(l, _)| l == len).count(),
+            count,
+            "{path}: {page}: lists of {name}: {named:?}"
+        );
+        roomy.extend(
+            lists
+                .into_iter()
+                .filter(|&(_, len, room)| room != len)
+                .map(|(local_name, len, room)| format!("{path}: {local_name} {len} in {room}")),
+        );
+    }
+    assert!(roomy.is_empty(), "lists with room: {roomy:?}");
+}
