@@ -325,6 +325,83 @@ tasks:
         track
         verdict "$(decide 1 "test-clocks-check: $ledger:1: crates/x/tests/gone.rs names a file the check did not read (not tracked, renamed, deleted or outside the path patterns); delete the line")"
 
+        fresh elapsed_call_with_a_space_refused
+        test_fn '    assert!(s.elapsed () < LIMIT);'
+        refused 5
+        fresh elapsed_call_split_before_its_paren_refused
+        test_fn '    assert!(s.elapsed' '        () < LIMIT);'
+        refused 5
+        fresh checked_duration_since_refused
+        test_fn '    let took = Instant::now().checked_duration_since(s).unwrap();' '    assert!(took < LIMIT);'
+        refused 6
+        fresh assert_on_now_against_a_deadline_in_a_poll_loop_refused
+        test_fn '    let deadline = s + WAIT;' '    while !done() {' '        assert!(Instant::now() < deadline, "waited");' \
+          '        sleep(STEP);' '    }'
+        refused 7
+        fresh branch_on_now_past_a_deadline_that_panics_refused
+        test_fn '    let deadline = s + WAIT;' '    while !done() {' '        if Instant::now() > deadline {' \
+          '            panic!("timed out");' '        }' '        sleep(STEP);' '    }'
+        refused 7
+        fresh time_left_before_a_deadline_above_zero_refused
+        test_fn '    let deadline = s + WAIT;' '    work();' \
+          '    assert!(deadline.saturating_duration_since(Instant::now()) > Duration::ZERO);'
+        refused 7
+        fresh elapsed_cast_before_the_comparison_refused
+        test_fn '    assert!(s.elapsed().as_millis() as u64 < LIMIT_MS);'
+        refused 5
+        fresh elapsed_in_parentheses_refused
+        test_fn '    assert!((s.elapsed()) < LIMIT);'
+        refused 5
+        fresh deref_of_a_tracked_name_refused
+        test_fn '    let took = &s.elapsed();' '    assert!(*took < LIMIT);'
+        refused 6
+        fresh comparison_by_a_method_refused
+        test_fn '    assert!(s.elapsed().lt(&LIMIT));'
+        refused 5
+        fresh name_assigned_after_its_let_refused
+        test_fn '    let took;' '    work();' '    took = s.elapsed();' '    assert!(took < LIMIT);'
+        refused 8
+        fresh elapsed_summed_into_a_name_refused
+        test_fn '    let mut total = Duration::ZERO;' '    for _ in 0..3 {' '        total += s.elapsed();' '    }' \
+          '    assert!(total < LIMIT);'
+        refused 9
+        fresh if_let_binding_refused
+        test_fn '    if let Some(took) = Some(s.elapsed()) {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh branch_on_a_lower_case_limit_that_panics_refused
+        test_fn '    let limit = Duration::from_secs(2);' '    if s.elapsed() > limit {' '        panic!("slow");' '    }'
+        refused 6
+        fresh else_branch_that_panics_refused
+        test_fn '    if s.elapsed() <= LIMIT {' '        work();' '    } else {' '        panic!("slow");' '    }'
+        refused 5
+        fresh match_guard_that_panics_refused
+        test_fn '    match s.elapsed() {' '        t if t > LIMIT => panic!("slow"),' '        _ => {}' '    }'
+        refused 6
+        fresh time_left_under_the_wait_passes
+        test_fn '    let deadline = s + WAIT;' '    work();' \
+          '    assert!(deadline.saturating_duration_since(Instant::now()) < WAIT);'
+        passed
+        fresh difference_of_two_fixed_instants_passes
+        test_fn '    let expires = s + TTL;' '    assert!(expires.duration_since(s) <= TTL);'
+        passed
+        fresh unix_timestamp_passes
+        test_fn '    let secs = std::time::SystemTime::now()' '        .duration_since(std::time::UNIX_EPOCH)' \
+          '        .unwrap()' '        .as_secs();' '    assert!(secs < 4_102_444_800);'
+        passed
+        fresh crlf_line_ends_refused
+        test_fn "$(printf '    let x = 1;\r')" "$(printf '    assert!(s.elapsed() < LIMIT);\r')"
+        refused 6
+        fresh tab_indent_refused
+        test_fn "$(printf '\tassert!(s.elapsed() < LIMIT);')"
+        refused 5
+        fresh field_of_a_tracked_name_refused
+        test_fn '    let run = Run { took: s.elapsed() };' '    assert!(run.took < LIMIT);'
+        refused 6
+        fresh tests_common_module_refused
+        put crates/x/tests/common/mod.rs 'pub fn a(s: Instant) {' '    assert!(s.elapsed() < LIMIT);' '}'
+        track
+        verdict "$(decide 1 crates/x/tests/common/mod.rs:2 "$(over crates/x/tests/common/mod.rs 1 0)")"
+
         if [ "$wrong" -ne 0 ]; then
           echo "test-clocks-check-test: $wrong of $cases case(s) decided otherwise by $script"
           exit 1
