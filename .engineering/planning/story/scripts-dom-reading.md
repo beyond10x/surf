@@ -90,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 46
+revision: 47
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -590,14 +590,14 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       a child list; `children` and `whole_text` copy one); at `14f8a2a`, with the fix round
       `cd43273`, it holds. This unit owns it. `story:scripts-dom-mutation` checks it at its
       start with two `git grep` commands over `reads.rs` and builds its `Document.title` setter
-      on `find`. No test of this unit holds it: `dom_reading_cost.rs:597` is an `include_str!`
-      test over `reading.rs` only. A source test over `reads.rs` for the tokens
-      `pending.extend(`, `.to_vec()` and `.collect` is for this unit's review.
+      on `find`. Since its sixth fix round (`50a4239`) the unit holds the property by a source
+      test over `reads.rs`: `no_walk_of_the_reads_copies_a_child_list`
+      (`dom_reading_cost.rs:618`); `story:scripts-dom-mutation` keeps its two `git grep` gates.
     - One price for a byte: one step per 16 bytes (8 UTF-16 units), for every byte a member or
       the glue reads, compares, folds, collapses or copies, charged before the work. The
       64-byte rate of decisions 17 to 19 is gone. A String argument is charged at the same
-      price; at swell `0.8.0` a String is read only by copying it, so that charge comes after
-      the one copy, bounded by `string_length`; `story:scripts-utf16-length` moves it before.
+      price; at swell `0.8.0` a String was read only by copying it and charged after the copy;
+      the sixth fix round (`50a4239`) charges it before the copy, by `string_length`.
     - A piece costs a step beside its bytes: a class token (decision 19) and a word of a title.
     - `title` charges the bytes of every text child before the collapse reads them, and a step
       a word. The fold of a class token in quirks mode is paid by the bytes' price.

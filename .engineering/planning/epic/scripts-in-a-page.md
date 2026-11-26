@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 66
+revision: 67
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -1012,9 +1012,10 @@ the story's decisions win, and the lines named are this file's at plan commit `9
   `ProcessingInstruction`), 54 methods of the trait `Mutation`, in three files (`mutation.rs`,
   `mutation_reads.rs`, `mutation_writes.rs`); it also depends on `story:scripts-dom-attributes`
   and `story:scripts-parse-run`. The story also writes `crates/html/src/tree.rs` (a validity
-  check, a bulk removal, a work counter, a rule for the capacity of a child list that makes a
-  reallocation paid by the writes between two of them, and one read made public,
-  `parent_or_host`), `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs` and
+  check, a bulk removal, a public check of an offset, a work counter, a rule for the capacity
+  of a child list that makes a reallocation paid by the writes between two of them, and one
+  read made public, `parent_or_host`), `crates/html/src/limits.rs` (one doc sentence),
+  `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs` and
   `crates/script/src/bindings.rs` (a bulk node charge settled to what was made, a charge for each
   item of a variadic list, the refill charged before its copy), the selection, `reads.rs`
   (visibility only), `crates/script/src/dom/mod.rs` (two `mod` lines), the comment of `runner.rs`
@@ -1029,7 +1030,7 @@ the story's decisions win, and the lines named are this file's at plan commit `9
   before `limit: nodes`: a created node takes 408 bytes of charge and 423 of wrapper (80,756
   nodes, `docs/design/scripts.md:329-332`). A removed node is not refunded. A removal costs two
   steps for each child behind it, so 5,000 removals from the front of one child list (25,020,000
-  steps) end `limit: steps-per-script` at about the 1,127th, and a list of 3,161 children removed
+  steps) end `limit: steps-per-script` by the 1,127th, and a list of 3,161 children removed
   whole from the front ends it. A script can also end `limit: steps-per-script` where a browser
   throws a `DOMException`, because a check that needs a walk runs after the charge of its walk:
   a named allowance, not a deviation of behaviour (decision 13 of the story).
