@@ -8,6 +8,7 @@ summary: The wide bounds of story:test-step-holds-under-load let a limit applied
 relations:
 - decomposes: epic:headless-rust-target
 - depends_on: story:one-test-binary-per-crate
+- depends_on: story:tests-without-wall-time-bounds
 revision: 5
 ---
 ## Context

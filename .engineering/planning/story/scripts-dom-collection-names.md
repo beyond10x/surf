@@ -8,6 +8,7 @@ summary: collection["id"] and collection.name answer the element namedItem answe
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-dom-reading
+- depends_on: story:scripts-dom-mutation
 revision: 1
 ---
 ## Context
