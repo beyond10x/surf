@@ -30,7 +30,7 @@ scope:
   path: taskfiles/test-clocks-ledger.txt
 - confidence: cited
   path: taskfiles/test-clocks.yml
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 16}
 ---
@@ -194,14 +194,15 @@ does not see.
    parse after about 16,000 runs (16,000 x 16,000 / 2 = 1.28 x 10^8, near 2^27). The code stops
    a parse by `Limit::Steps` only when `steps > max_steps`: two lines call
    `stop_at(Limit::Steps)`, the check after each token (`tree_builder.rs:687`) and
-   `past_step_limit` (`:1039-1043`, through `spent(0)`, `:1034-1036`), and both compare with
-   `>` (`limits.rs:128`). `limits.rs:75` says a parse ends fewer than `4 * max_nodes` steps past
-   `max_steps`; `max_nodes` is `1024 * 1024` (`limits.rs:104`), so 4 x 1,048,576 = 4,194,304.
+   `past_step_limit` (`:1039-1045`, through `spent(0)`, `:1034-1036`), and both compare with
+   `>` (`:687` and `:1035`). `limits.rs:75` says a parse ends fewer than `4 * max_nodes` steps
+   past `max_steps`; `max_nodes` is `1024 * 1024` (`limits.rs:105`), so 4 x 1,048,576 =
+   4,194,304.
    The test asserts the end `Some(Limit::Steps)` (`:1753`, as today) and the documented
    window of the steps at that end:
    `Limits::default().max_steps < steps < Limits::default().max_steps + 4 *
    Limits::default().max_nodes`, that is more than 134,217,728 and less than 138,412,032 steps.
-   The window is built from `Limits::default()` (`limits.rs:108`, `:104`), so it moves with a
+   The window is built from `Limits::default()` (`limits.rs:108`, `:105`), so it moves with a
    changed default: the test sees a change of the comparisons, not of the default.
    It prints the steps and the time as today. The wait goes: the thread, the channel and
    `recv_timeout(10 s)` (`:1742-1751`) are replaced by the parse run in the test's own thread,
@@ -221,10 +222,11 @@ does not see.
      hand: the loop that reads the entries again after a hook run charges no step (the
      `self.visit()` of `settle_entries`, `tree_builder.rs:1199`, removed;
      `each_entry_read_again_after_a_hook_run_is_a_step`, `:1722`, asserts that charge at once:
-     `four - two >= 200 * 200`). The parse then probably ends with `stopped_by() == None`, 80,000
-     nodes being under `max_nodes`, and `assert_eq!(stopped, Some(Limit::Steps))` fails; if it
-     does not end, the 60 s kill does, whichever comes first. This red is shown once as a
-     demonstration, in one pool job, and not run again unchanged.
+     `four - two >= 200 * 200`). The parse then probably ends with `stopped_by() == None`, the
+     120,000 nodes of the 40,000 rounds (three per round: the `span`, the `script` and its
+     text) being under `max_nodes` (1,048,576), and `assert_eq!(stopped, Some(Limit::Steps))`
+     fails; if it does not end, the 60 s kill does, whichever comes first. This red is shown
+     once as a demonstration, in one pool job, and not run again unchanged.
    - Upper side: no one-line defect turns it red, and a two-line one does. Each stop line alone
      leaves the other:
      - `spent` written `> 2 * self.limits.max_steps` (`:1035`) alone: the scans and writes no
@@ -232,8 +234,9 @@ does not see.
        longer stops it) reads each entry of the stack once more. The hook's run is reported
        inside the token (`:680-684`), and the check after the token (`:687`, `steps >
        max_steps`) then stops the parse at `Limit::Steps`. The steps at the end pass
-       `max_steps` by the work between two token checks: a few passes over a stack of at most
-       40,000 open elements here, against a window of 4,194,304.
+       `max_steps` by the work between two token checks: one pass over the stack, about
+       16,400 entries at the 16,400 rounds the parse has made by then, which is 0.4 % of the
+       4,194,304 of the window.
      - `:687` written `> 2 * self.limits.max_steps` alone: `spent(0)` at `:1040` ends the parse
        at the first read past `max_steps`, which `settle_entries` makes at its next entry
        (`:1196`); the steps at the end are `max_steps` plus a few.
@@ -265,9 +268,13 @@ does not see.
    `doc-tests-check-test`. The forge runs `task check` (`.github/workflows/check.yml:159-161`),
    so the check runs there, on `ubuntu-latest`, whose `awk` is not gawk.
    - Usage: `sh taskfiles/test-clocks-check.sh [--count] [--ledger <file>] [<root>]`; `<root>`
-     is a git work tree (exit 2 when it is not one); the awk is the one named by the variable
-     `AWK` (default `awk`; it may hold words, as in `AWK="gawk --posix"`). `--ledger /dev/null`
-     is an empty ledger. `--count` prints the ledger's lines (`<path> <count>`) for a tree.
+     is the top of a git work tree: `git -C <root> rev-parse --show-toplevel` prints the path
+     that `cd <root> && pwd -P` prints. When it does not (no `.git`, or a directory inside an
+     outer work tree, as the case trees are inside this repository's), the script prints
+     `test-clocks-check: <root> is not the top of a git work tree` and exits 2. The awk is the
+     one named by the variable `AWK` (default `awk`; it may hold words, as in `AWK="gawk
+     --posix"`). `--ledger /dev/null` is an empty ledger. `--count` prints the ledger's lines
+     (`<path> <count>`) for a tree.
    - The header of the script says that it uses POSIX awk only and forbids by name:
      `nextfile` (POSIX since 2012 but not in every mawk), `length(array)`, `IGNORECASE`,
      `gensub`, `asort`, `asorti`, `strftime`, `\<` and `\>`, and a regular expression interval
@@ -278,7 +285,10 @@ does not see.
      four are kept out by the script's own rules and by the greps of Acceptance.
      `length(array)` is seen by no runner (gawk accepts it in every mode, `--posix` included):
      every array of the script is named with the prefix `arr_`, and `length(` is written only
-     on a string.
+     on a string (`length(arr_lines[n])` is a string; `length(arr_lines)` is refused by the
+     grep of Acceptance). A line of the script whose first non-blank character is `#` may hold
+     any of these words, as the header does, in the sh text and in the awk text; a `#` comment
+     after code on the same line is not used, so that no grep reads one by mistake.
    - Reading: the file list is `git ls-files` of `<root>` with the path patterns
      `crates/**/tests/**/*.rs`, `generated/**/tests/**/*.rs` and `conformance/**/tests/**/*.rs`
      (the `:(glob)` pathspec form), so only tracked files are read: an untracked file, a
@@ -295,26 +305,76 @@ does not see.
      (Rust nests them); `"` opens a string that ends at the next `"` that no backslash hides (a
      backslash hides the next character); `r`, `br` or `cr` not after a letter, a digit or `_`,
      then `n` times `#` and `"`, opens a raw string that ends at the first `"` followed by `n`
-     times `#`, with no escape inside; `'` opens a character literal when a backslash (and the
-     character it hides) or one character follows and then a `'` (`'"'`, `'\''`, `'\u{41}'`),
-     and any other `'` is a lifetime or a label (`'a`, `'static`) and stays code.
+     times `#`, with no escape inside; `'` opens a character literal in two cases. A backslash
+     follows: the reader skips the backslash and the character it hides, and reads on to the
+     next `'`, which closes the literal (`'\''`, `'\\'`, `'\n'`, `'\u{41}'`, `'\u{2028}'`). Or
+     one character follows and the character after it is a `'` (`'"'`, `'{'`, `'a'`, `'é'`;
+     the awk runs under `LC_ALL=C`, so a character is an ASCII byte or a UTF-8 sequence of 2 to
+     4 bytes). Any other `'` is a lifetime or a label (`'a`, `'static`, `'reading`) and stays
+     code: after `'a` or `'r` comes no `'` (`<'a,'b>` reads `'a,`, `'reading:` reads `'re`).
+     A probe of this paragraph alone, an awk run under `LC_ALL=C` over the lines
+     `crates/agent/tests/drift.rs:463 @ a14e3b0` (`'\u{8}'`) and
+     `crates/answer/tests/forging.rs:20 @ a14e3b0` (nine literals: `'a'`, `'"'`, `'\\'`,
+     `'\n'`, `'\r'`, `'\u{2028}'`, `'\u{202e}'`, `'é'`, `' '`), blanks every literal and
+     leaves no `'` in the second line; the cases below hold the lifetime, the label and each
+     escape form.
    - Refused: an upper bound on an elapsed value in a statement.
      - An `assert!`, `assert_eq!`, `assert_ne!` or `debug_assert!` (the `debug_assert_eq!` and
        `debug_assert_ne!` forms too) whose arguments, read to the closing parenthesis of the
        macro over any number of lines, hold a comparison with an elapsed value as its smaller
        operand: left of `<` or `<=` (`took < Duration::from_secs(2)`, `took <= LIMIT`), right of
-       `>` or `>=` (`LIMIT > took`, `LIMIT >= took`). An `assert!` on an elapsed value inside a
-       poll loop is refused like any other. `assert_eq!` and `assert_ne!` compare by equality,
+       `>` or `>=` (`LIMIT > took`, `LIMIT >= took`). Every comparison of the arguments is
+       read, not the first operator: `assert!(took >= IDLE && took < IDLE +
+       Duration::from_secs(2))` (`crates/tls-test-server/tests/adversary_request_body.rs:119-122
+       @ a14e3b0`) holds a lower and an upper bound and is refused for the upper one.
+       `assert_eq!` and `assert_ne!` compare by equality,
        which is no upper bound: `assert_eq!(took, LIMIT)` is not seen (the time of a run is
        never equal to a constant, so such a test fails at once on any machine and cannot be a
        flake), and `assert_eq!(took < LIMIT, true)` is refused, because its argument holds the
        comparison.
+     - An `assert!` on an elapsed value inside a poll loop (`while !condition() {
+       assert!(started.elapsed() < WAIT, ..); sleep(..); }`) is refused like any other, though
+       `AGENTS.md:1965-1967` allows a wait with a limit of 10 times the time alone: the scan
+       cannot know that limit, and the loop leaves through the assertion, not through the
+       `break` that Allowed names. Three statements of `a14e3b0` have that form:
+       `crates/view/tests/http.rs:389` (limit `WAIT`), `crates/view/tests/stream_bounds.rs:183`
+       (limit `within`, a parameter) and `crates/surfd/tests/hardening.rs:532` (limit
+       `ALLOWED`). Each goes to the ledger, and `story:time-bounds-in-tests` decides them; this
+       story does not edit them.
      - An elapsed value is `.elapsed()`, `.duration_since(..)`,
        `.saturating_duration_since(..)`, any method chain on one (`.as_secs_f64()`,
-       `.as_millis()`), and a name bound by `let` from one, directly, through another such
-       name (three rounds), or in a tuple pattern whose element name holds `took`, `elapsed`,
-       `seconds`, `secs`, `waited`, `duration` or `time`
-       (`let (end, grown, seconds) = ...`, `adversary_4.rs:645`).
+       `.as_millis()`, `.expect(..)`), and a name bound by `let` from one, directly (round 1),
+       through a name of round 1 (round 2) or through a name of round 2 (round 3), or in a
+       tuple pattern whose element name holds `took`, `elapsed`, `seconds`, `secs`, `waited`,
+       `duration` or `time` (`let (end, grown, seconds) = ...`, `adversary_4.rs:645`). A name
+       bound through a name of round 3 is not seen, the stated limit of the check.
+     - A `let` is read from its keyword to the first `;` outside brackets (`()`, `[]` and `{}`,
+       on the blanked text), over any number of lines: the four lines
+       `let elapsed = accepted_at.try_recv().ok().map(|at| ended.saturating_duration_since(at));`
+       of `crates/fetch/tests/fetch_bounds.rs:207-210 @ a14e3b0` are one statement that binds
+       `elapsed` from an elapsed value. The name is the identifier after `let` and an optional
+       `mut` (`_` binds nothing). A tracked name stays tracked to the end of the file: it is
+       not dropped at the end of its `fn`, and a later `let` of the same name from a value that
+       holds no elapsed value does not drop it, because a reader of POSIX awk decides the end
+       of a file and does not parse the end of a `fn`. The cost is a false refusal where a name
+       bound from an elapsed value in one `fn` is a plain `Duration` (a parameter, a loop
+       variable, a `let` from a constant) in an `assert!` of another `fn` of the same file. A
+       probe over the 291 files of `a14e3b0` (an awk over `git show`; one round of names, the
+       text not blanked, tuple patterns not read, so not the check) finds 34 files that bind
+       a name by `let` from `.elapsed()` or `duration_since(..)`: none binds the same name
+       elsewhere from a value that holds no elapsed value (but the `.expect(..)` of
+       `fetch_bounds.rs:221`, the same value), and none uses the name as a parameter, closure
+       parameter or loop variable, so the false refusals today are 0.
+       Three of the 291 files hold such a `let` over more than one line (`fetch_bounds.rs:207`,
+       `crates/script/tests/engine.rs:323`, `crates/view/tests/http.rs:379`); a reader that
+       took a `let` line by line would miss them. Only the first is an upper bound on a
+       measured time: `:221` rebinds `elapsed` through `elapsed.expect(..)` and `:222-223`
+       asserts `elapsed < NEVER_READ_BOUND`. By these rules that statement is in the ledger's
+       lines (the count of `crates/fetch/tests/fetch_bounds.rs`), reported at `:222`; a
+       line-by-line reader had missed it. The other two bind a reading of the system clock
+       and compare `(now - before).abs()` and `(now - then).abs()`: an operand is an elapsed
+       value when it is exactly the call or the name, with its method chain, so a difference
+       in parentheses is not one and neither is refused.
      - An `if` or `while` whose condition holds upward, with an elapsed value (the call or such
        a name) as its larger operand against a `Duration`, a number or an upper-case constant:
        left of `>` or `>=`, right of `<` or `<=`; and whose block fails the test. The scanner
@@ -327,8 +387,9 @@ does not see.
        flag is named (`failed = true; break;`): the word `fail` is no part of the rule. At
        `a14e3b0`, `git grep -n -i -E '\bfail[a-z_]*\s*(\(|!)' -- '*/tests/*.rs'` finds the value
        `Verdict::Fail(..)`, the helpers `fail`, `failed`, `failure`, `failed_with`, and
-       `fails` (`agent-tasks/tests/https_row.rs:64`), `fails_after_changing` and `fails_without`
-       (`tls-test-certs/tests/check.rs:82`, `:156`) that pass when the code under test fails,
+       `fails` (`crates/agent-tasks/tests/https_row.rs:64`), `fails_after_changing` and
+       `fails_without` (`crates/tls-test-certs/tests/check.rs:82`, `:156`) that pass when the
+       code under test fails,
        and `assert_fails*(..)` helpers that the word `assert` already holds; no call fails a
        test by itself and is spelled with `fail` without `assert`.
      - A `while` or `if` whose condition holds downward (`while started.elapsed() < LIMIT`, the
@@ -342,10 +403,11 @@ does not see.
      or a `recv_timeout`. The script's header names that spelling as the one to use.
    - Not seen (stated in the script's header): a bound written through a helper function, a
      macro, or a comparison split over a `let` of a `bool` (`let ok = took < LIMIT;
-     assert!(ok)`); the negated spelling `assert!(!(took >= LIMIT))`; `assert_eq!(took, ..)`
-     by equality; a bound recorded in a list that is asserted after the loop
-     (`if took >= LIMIT { slow.push(..) }`, then `assert!(slow.is_empty())`, the form of
-     `adversary_4.rs:229`, `:238` and `extraction.rs:195`); the passing form of a test that
+     assert!(ok)`); a name bound through a name of round 3; the negated spelling
+     `assert!(!(took >= LIMIT))`; `assert_eq!(took, ..)` by equality; a bound recorded in a
+     list that is asserted after the loop (`if took >= LIMIT { slow.push(..) }`, then
+     `assert!(slow.is_empty())`, the form of `crates/webidl/tests/adversary_4.rs:229`, `:238`
+     and `crates/webidl/tests/extraction.rs:195`); the passing form of a test that
      returns `Result` (`if took > LIMIT { return Err(..) }`; no `#[test]` of `a14e3b0` is
      followed within two lines by a `fn` that returns `Result`); a failure by `.expect(..)`,
      `.unwrap()` or `std::process::exit` in the block; a difference of two instants written
@@ -361,24 +423,56 @@ does not see.
      `--count` on the changed tree and reports both totals: the lines the scan prints on
      `a14e3b0` with an empty ledger and the sum of the committed ledger.
    - The cases of the check's own test, by name (no count is asserted beside the list). Each
-     case is a small tree under `.out/test-clocks-check-test/case`, made a git work tree with
-     `git init` and `git add` (no commit, so no identity is needed). Refused:
+     case is a small tree under `.out/test-clocks-check-test/case`, made the top of a git work
+     tree by `git init -q --template=` and `git add` (no commit, so no identity is needed).
+     Every `git` of the test runs with `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`
+     and with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` unset: no configuration of the
+     user or the system is read (no template directory, no global ignore file, no hook), and
+     everything git writes (`.git/` and its index) is inside the case tree. The case
+     `plain_directory_exit_2` is the one tree that is not made a work tree: a directory under
+     `.out/` inside this repository's own work tree. Refused:
      `elapsed_name_against_duration`, `elapsed_direct_in_assert`, `limit_above_name`,
      `float_seconds`, `tuple_with_seconds`, `branch_that_panics`, `assert_inside_poll_loop`,
      `less_or_equal_refused`, `limit_at_least_name_refused`, `duration_since_refused`,
-     `rebound_through_a_second_name_refused`, `assert_eq_over_a_comparison_refused`,
+     `rebound_through_a_second_name_refused`, `rebound_through_a_third_name_refused`,
+     `assert_eq_over_a_comparison_refused`, `compound_assert_refused`,
      `nested_block_with_assert_refused`, `condition_over_two_lines_refused`,
-     `assert_over_two_lines_refused`, `quote_char_before_a_bound_refused`,
-     `lifetime_before_a_bound_refused`. Passed: `wait_loop_with_break`,
+     `assert_over_two_lines_refused`, `let_over_two_lines_refused`,
+     `quote_char_before_a_bound_refused`, `lifetime_before_a_bound_refused`,
+     `label_before_a_bound_refused`, `unicode_escape_before_a_bound_refused`,
+     `two_unicode_escapes_before_a_bound_refused`, `non_ascii_literal_before_a_bound_refused`.
+     Passed: `wait_loop_with_break`,
      `branch_that_breaks_on_a_name`, `branch_that_returns_a_value`, `lower_bound`,
      `lower_bound_with_the_limit_first`, `print_only`, `deadline_loop_on_now`,
      `clock_in_comment_and_string`, `negated_spelling_not_seen`, `assert_eq_on_equality_not_seen`,
      `branch_that_sets_failed_and_breaks`, `assert_after_a_nested_block_passes`,
      `loop_head_under_the_limit_with_assert`, `raw_string_with_quote_and_clock`,
      `block_comment_with_a_bound`, `nested_block_comment_with_a_bound`,
-     `untracked_file_not_read`. Ledger: `count_equal_passes`, `count_above_refused`,
+     `fourth_round_of_rebinding_not_seen`, `untracked_file_not_read`. Exit 2:
+     `plain_directory_exit_2`. Ledger: `count_equal_passes`, `count_above_refused`,
      `count_below_refused`. The test task runs every case under each of `awk`, `mawk`,
      `gawk`, `gawk --posix` and `busybox awk` that exists on the machine and prints which ran.
+   - What the new cases hold, each decided by hand against the rules above:
+     - `let_over_two_lines_refused`: the shape of `fetch_bounds.rs:207-223`, a `let` of
+       `elapsed` over four lines ending in `.saturating_duration_since(at));`, a rebinding
+       `let elapsed = elapsed.expect("..");` and `assert!(` / `elapsed < LIMIT,` / `"m"` / `);`.
+     - `compound_assert_refused`: `assert!(took >= IDLE && took < IDLE + SLACK, "m");`.
+     - `rebound_through_a_third_name_refused`: `let a = s.elapsed(); let b = a; let c = b;
+       assert!(c < LIMIT);` (round 3). `fourth_round_of_rebinding_not_seen`: the same with
+       `let d = c;` and `assert!(d < LIMIT);` (round 4, the stated limit, passes).
+     - `unicode_escape_before_a_bound_refused`: `let a = ['\u{41}','"']; assert!(s.elapsed() <
+       LIMIT);`; a reader that does not blank the first literal pairs the `','` and opens a
+       string at the `"`, which hides the assert. `two_unicode_escapes_before_a_bound_refused`:
+       `let e = ['\u{2028}','\u{202e}','"'];` before the same assert, the same failure.
+       `non_ascii_literal_before_a_bound_refused`: `let m = ['é','"'];` before it.
+     - `label_before_a_bound_refused`: `'reading: loop { assert!(s.elapsed() < LIMIT); break
+       'reading; }`; a reader that took any `'` to the next `'` for a literal would blank from
+       `'reading` to the `'` of `break 'reading` and hide the assert. The case
+       `lifetime_before_a_bound_refused` holds `'a` (as before).
+     - `plain_directory_exit_2`: `<root>` is a directory with an untracked
+       `crates/x/tests/t.rs` and no `.git`, inside the outer work tree; exit 2 and the line of
+       Usage, though `git ls-files` run there succeeds and lists nothing, which a check without
+       the root test would end with exit 0 and the line `no elapsed-time bound`.
    - Refused example: `#[test] fn a() { let started = Instant::now(); work(); let took =
      started.elapsed(); assert!(took < Duration::from_secs(2), "{took:?}"); }` printing
      `<path>:<line>` of the `assert!` and exit 1.
@@ -403,10 +497,53 @@ does not see.
   doc comment loses the 10 s.
 - `taskfiles/test-clocks-check.sh`, `taskfiles/test-clocks.yml`,
   `taskfiles/test-clocks-ledger.txt`: new, decision 8. `Taskfile.yml`: the include and two steps.
-- `AGENTS.md`: the entry of `task check` lists the two steps; the entry of `task test` (the
-  sentence at `:1965-1967`) names the check; the entry of `crates/webidl` (`:1054`) says what
-  `depth` holds now. The test counts of the entries stay (no test is added or removed: `depth`
-  keeps 4, `crates/script` and `crates/html` keep their counts).
+- `AGENTS.md`, in five places (line numbers at `a14e3b0`). The test counts of the entries stay
+  (no test is added or removed: `depth` keeps 4, `crates/script` and `crates/html` keep their
+  counts). The lines written for the first four are these; 11 of them hold `test-clocks`.
+  - The list `taskfiles/<name>.yml` (`:137-170`): after the clause of `doc-tests.yml`
+    (`:160-161`, ending ``over `taskfiles/doc-tests-check.sh`;``), the lines
+
+          `taskfiles/test-clocks.yml` the tasks `test-clocks-check` and `test-clocks-check-test`
+          over `taskfiles/test-clocks-check.sh` and the ledger `taskfiles/test-clocks-ledger.txt`;
+
+  - The paragraph of `task check` (`:1593-1624`): after the sentence on `doc-tests-check`
+    (`:1612-1614`), the lines
+
+          Since `story:tests-without-wall-time-bounds` it runs `test-clocks-check` after
+          `doc-tests-check` and `test-clocks-check-test` after `doc-tests-check-test`.
+
+  - The entries of the tasks: after the entry of `task doc-tests-check-test`
+    (`:1840-1847`), the entries of `task test-clocks-check` and `task test-clocks-check-test`
+    in the form of the two `doc-tests` entries (`:1826-1847`):
+
+        - `task test-clocks-check`: `sh taskfiles/test-clocks-check.sh .`. A test proves a cost by
+          a count and bounds a time only by a wait with a limit (`task test`), so this reads the
+          tracked `*.rs` files under a `tests/` directory of `crates/`, `generated/` and
+          `conformance/` (`git ls-files`: an untracked file is not read), blanks comments, strings
+          and character literals, and fails, naming `<file>:<line>`, on an `assert!` that holds an
+          upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` or a name bound from
+          one) and on an `if` or `while` on such a value whose block fails the test. The ledger
+          `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, one file per line) lists the files
+          that still hold such statements: a file with more fails, a file with fewer fails and names
+          the count to write, so the ledger only shrinks. `AWK=<command>` names the awk (POSIX awk
+          only), `--ledger <file>` and `--count` are options, a root that is not the top of a git
+          work tree exits 2. Else it prints `test-clocks-check: no elapsed-time bound outside
+          taskfiles/test-clocks-ledger.txt`. It calls no cargo.
+        - `task test-clocks-check-test`: that script on small trees under
+          `.out/test-clocks-check-test/`, one case per name (refused, passed, exit 2, ledger), each
+          compared on its exit status and the lines printed, under each of `awk`, `mawk`, `gawk`,
+          `gawk --posix` and `busybox awk` that exists on the machine. `SCRIPT=<path>` runs a copy
+          of the script.
+
+  - The entry of `task test` (`:1965-1967`): its last line is written again as
+
+          `surf_page::attribute_visits()`), not by a wall time. `task test-clocks-check` (a step of
+          `check`) refuses the assertion of an upper bound on an elapsed time that its ledger does
+          not list.
+
+  - The entry of `crates/webidl` (`:1054`): `depth` holds now that the definitions a model
+    visits double when its interfaces double; the words `under 2 s` go. The sentence holds
+    no `test-clocks`.
 
 A file under `src/` changes (`crates/webidl/src/model.rs` and `lib.rs`), which the draft said
 no file would.
@@ -437,82 +574,105 @@ asserts. An item that is true on `main` and stays true is labelled a guard.
    prints the line of item 3 and exits 0; after `git add` of the first file it exits 1 and
    names it. The case `untracked_file_not_read` holds the two trees. Turns red by: the file
    list taken from `find` instead of `git ls-files`.
-5. `git grep -n -E 'seconds < |total < Duration|recv_timeout' --
+5. The root must be the top of a git work tree: `sh taskfiles/test-clocks-check.sh --ledger
+   /dev/null <dir>`, for a directory `<dir>` with an untracked `crates/x/tests/t.rs` and no
+   `.git`, inside the repository's own work tree (the case `plain_directory_exit_2`), prints
+   `test-clocks-check: <dir> is not the top of a git work tree` and exits 2; with the top of
+   a work tree it does not exit 2. Turns red by: the test replaced by `git -C <root> rev-parse
+   --is-inside-work-tree` (the plain directory then ends with exit 0 and the line `no
+   elapsed-time bound`).
+6. `git grep -n -E 'seconds < |total < Duration|recv_timeout' --
    crates/script/tests/adversary_4.rs crates/script/tests/adversary_5.rs
    crates/webidl/tests/depth.rs crates/html/tests/script_hook.rs` prints five lines at
    `a14e3b0` (`script_hook.rs:1750`, `adversary_4.rs:654`, `adversary_5.rs:241`, `:401`,
    `depth.rs:71`) and nothing on the changed tree. Turns red by: the `recv_timeout` of
    `script_hook.rs:1750` written back.
-6. `git grep -n 'under 2 s' -- AGENTS.md` prints one line at `a14e3b0`
+7. `git grep -n 'under 2 s' -- AGENTS.md` prints one line at `a14e3b0`
    (`AGENTS.md:1054:    `depth` also holds a model of 16,000 interfaces under 2 s).`, with the
    revision prefix when the revision is named) and nothing, exit 1, on the changed tree. Turns
    red by: the sentence of `:1054` left as it is.
-7. `git grep -c 'test-clocks-check' -- Taskfile.yml` prints nothing, exit 1, at `a14e3b0` and
+8. `git grep -c 'test-clocks-check' -- Taskfile.yml` prints nothing, exit 1, at `a14e3b0` and
    `Taskfile.yml:2` on the changed tree (the two steps; the include names the file
    `test-clocks.yml`, which the string does not match), and
    `git grep -n 'taskfiles/test-clocks.yml' -- Taskfile.yml` prints nothing at `a14e3b0` and
    one line, the include, on the changed tree. Turns red by: the second step left out (the
    count is 1).
-8. `task test-clocks-check-test` decides each case of decision 8 as written: it prints one line
-   `case <name>: ok` per case and ends with `test-clocks-check-test: all cases decided as
-   written`, exit 0. Turns red by: `SCRIPT=<copy>` with the upper-bound pattern weakened to
-   refuse only `<`; it prints each case decided otherwise (among them `less_or_equal_refused`
-   and `limit_at_least_name_refused`) and fails.
-9. The same task prints, for each of `awk`, `mawk`, `gawk`, `gawk --posix` and `busybox awk`,
-   whether it ran the cases (`ran under <name>` or `not on this machine`); every one that ran
-   decides all cases as written. Turns red by: a `gensub(` written into the script (it fails
-   under `gawk --posix`, where `gensub` is undefined).
-10. The header of `taskfiles/test-clocks-check.sh` names every forbidden feature of decision 8,
-    and the script uses none of them outside the header. For each of `nextfile`,
-    `length(array)`, `IGNORECASE`, `gensub`, `asort`, `asorti`, `strftime`, `\<`, `\>` and
-    `{n,m}`, `sed -n '/^#/p' taskfiles/test-clocks-check.sh | grep -c -F -e '<name>'` prints a
-    number above 0; and
-    `sed '/^#/d' taskfiles/test-clocks-check.sh | grep -c -E -e 'nextfile|IGNORECASE|gensub'
-    -e 'asorti?|strftime|\\[<>]' -e '\{[0-9]+(,[0-9]*)?\}|length\(arr_'` prints 0. Turns red
-    by: a regular expression `/a{1,2}/` written into the script.
-11. The forge's run of `task check` on the branch shows the step `test-clocks-check` and
+9. `AGENTS.md` names the check in the places of the Change. `git grep -c 'test-clocks' --
+   AGENTS.md` prints nothing, exit 1, at `a14e3b0` and `AGENTS.md:11` on the changed tree (the
+   11 lines of the text of the Change that hold the string), and each place is shown by one
+   `git grep -n -F` of one phrase, which prints nothing at `a14e3b0` and one line on the
+   changed tree: `'taskfiles/test-clocks.yml'` (the list `taskfiles/<name>.yml`),
+   ``'it runs `test-clocks-check` after'`` (the paragraph of `task check`),
+   ``'- `task test-clocks-check`: '`` and ``'- `task test-clocks-check-test`: '`` (the two
+   entries) and `'refuses the assertion of an upper bound'` (the entry of `task test`; the
+   place `:1054` is item 7). Turns red by: the entry of `task test` left as it is (its phrase
+   prints nothing and the count is 10).
+10. `task test-clocks-check-test` decides each case of decision 8 as written: it prints one
+    line `case <name>: ok` per case and ends with `test-clocks-check-test: all cases decided as
+    written`, exit 0. Turns red by: `SCRIPT=<copy>` with the upper-bound pattern weakened to
+    refuse only `<`; it prints each case decided otherwise (among them `less_or_equal_refused`
+    and `limit_at_least_name_refused`) and fails.
+11. The same task prints, for each of `awk`, `mawk`, `gawk`, `gawk --posix` and `busybox awk`,
+    whether it ran the cases (`ran under <name>` or `not on this machine`); every one that ran
+    decides all cases as written. Turns red by: a `gensub(` written into the script (it fails
+    under `gawk --posix`, where `gensub` is undefined).
+12. The header of `taskfiles/test-clocks-check.sh` (its lines that start with `#`) names every
+    forbidden feature of decision 8, and the rest of the script uses none of them. For each of
+    `nextfile`, `length(array)`, `IGNORECASE`, `gensub`, `asort`, `asorti`, `strftime`, `\<`,
+    `\>` and `{n,m}`, `sed -n '/^#/p' taskfiles/test-clocks-check.sh | grep -c -w -F -e
+    '<name>'` prints a number above 0 (`-w`: a header that names only `asorti` prints 0 for
+    `asort`); and
+    `sed '/^[[:space:]]*#/d' taskfiles/test-clocks-check.sh | grep -c -E -e
+    'nextfile|IGNORECASE|gensub' -e 'asorti?|strftime|\\[<>]' -e
+    '\{[0-9]+,[0-9]*\}|length\(arr_[A-Za-z0-9_]*\)'` prints 0 (the `sed` drops the header and
+    every comment line, an indented one too; `${1}` of sh and `length(arr_lines[n])` of a
+    string do not match). Both commands were run on a sample script with those lines: the
+    first printed 1 for each of the ten names, the second 0; with a header that left out
+    `asort`, the first printed 0 for it, and with `a{1,2}` or `length(arr_x)` written in, the
+    second printed 1. Turns red by: a regular expression `/a{1,2}/` written into the script.
+13. The forge's run of `task check` on the branch shows the step `test-clocks-check` and
     `test-clocks-check-test` green under the forge's `awk` (the report names the run).
-12. Guard: `adversary_5.rs:373` asserts `G.rounds` (`rounds[2] * 2 > rounds[1]`) and the three
+14. Guard: `adversary_5.rs:373` asserts `G.rounds` (`rounds[2] * 2 > rounds[1]`) and the three
     ends; true on `main` at `:393` and `:398`, and the change only removes the time assertion
-    (item 5 shows the removal). Red with the guard of `dom_exception_code`
+    (item 6 shows the removal). Red with the guard of `dom_exception_code`
     (`bindings.rs:1619-1621`) removed.
-13. `adversary_5.rs:231` asserts the steps of its three scripts at the ceilings; red with
+15. `adversary_5.rs:231` asserts the steps of its three scripts at the ceilings; red with
     `k < 4000`, and with the code-side defect of decision 2 when its steps pass the margin (the
     report gives the steps it adds either way).
-14. `adversary_4.rs:641` asserts `Limit(Memory)` or `Ran` with `mib < 4`; red with
+16. `adversary_4.rs:641` asserts `Limit(Memory)` or `Ran` with `mib < 4`; red with
     `ExceptionData` owning uncharged copies of its strings.
-15. `adversary_4.rs:641` fails when the loop ends early by another limit: with
+17. `adversary_4.rs:641` fails when the loop ends early by another limit: with
     `small.engine.steps_per_entry` lowered so that the script ends `Limit(StepsPerScript)`, the
     test passes at `a14e3b0` and fails on the changed tree, which shows the `Ran` conjunct.
-16. `depth.rs` asserts that the `definition_visits` of `Model::new` over 16,000 interfaces is
+18. `depth.rs` asserts that the `definition_visits` of `Model::new` over 16,000 interfaces is
     at most 3 times that over 8,000; red with the counted scan in `definition_of`.
-17. `script_hook.rs:1740` asserts `Some(Limit::Steps)` and `max_steps < steps < max_steps + 4 *
+19. `script_hook.rs:1740` asserts `Some(Limit::Steps)` and `max_steps < steps < max_steps + 4 *
     max_nodes` from `Limits::default()`; red on the lower side with the entries read again
     charging no step (`tree_builder.rs:1199`), shown once in one pool job.
-18. `script_hook.rs:1740` is red on the upper side with `spent` (`tree_builder.rs:1035`) and
+20. `script_hook.rs:1740` is red on the upper side with `spent` (`tree_builder.rs:1035`) and
     the check at `:687` both compared with `2 * max_steps`, shown once; and green with either
     one alone, which the report states from one run each.
-19. Each red of items 12 to 18 (the defects the items name) is shown once before the change is
+21. Each red of items 14 to 20 (the defects the items name) is shown once before the change is
     kept, and the report names the output of each.
-20. Record, not a check: the test step of `surf-script`, `surf-webidl` and `surf-html`, run
+22. Record, not a check: the test step of `surf-script`, `surf-webidl` and `surf-html`, run
     alone (`slot cargo nextest run -p surf-script -p surf-webidl -p surf-html --locked`) and
     again while another build runs in the pool; the report lists both outcomes and the load
     average read beside each, and claims no particular load.
-21. No test over 60 s and the test step within 120 s; a test over 5 s is named with its time
+23. No test over 60 s and the test step within 120 s; a test over 5 s is named with its time
     (the three script tests, the new `depth` test and the `script_hook` test by their printed
     times).
-22. No pool job over 10 minutes unless it names its time with `slot --timeout` (at most 30
+24. No pool job over 10 minutes unless it names its time with `slot --timeout` (at most 30
     minutes), and none started again unchanged after `timed_out`.
-23. Every command that compiles or tests carries `slot` (`cargo` and `go` through the shim).
-24. No command of the story or of its report carries `--local`, `--here`, `SLOT_NO_REMOTE` or
+25. Every command that compiles or tests carries `slot` (`cargo` and `go` through the shim).
+26. No command of the story or of its report carries `--local`, `--here`, `SLOT_NO_REMOTE` or
     `SLOT_SHIM_OFF`: `git grep -n -E -e '--local|--here|SLOT_NO_REMOTE|SLOT_SHIM_OFF' --
     taskfiles/test-clocks.yml taskfiles/test-clocks-check.sh` prints nothing, and the list of
     commands in the report holds none of the four.
-25. No Python in anything that stays; the check is POSIX sh and POSIX awk.
-26. A script of the story that measures or waits (the two loaded runs of item 20, a timing of
+27. No Python in anything that stays; the check is POSIX sh and POSIX awk.
+28. A script of the story that measures or waits (the two loaded runs of item 22, a timing of
     the check) starts without `slot`; the run time of `task test-clocks-check` is printed in
     the report, and a step over 5 s is named.
-27. No test of the story makes a model call or a network request, and a limit on a wait in a
+29. No test of the story makes a model call or a network request, and a limit on a wait in a
     test the story writes is at least 10 times the event alone.
 
 ## Out of scope
@@ -549,17 +709,27 @@ Read with `git grep -l -F <path> -- .engineering/planning/story` for each scope 
   `story:agent-tasks-left-process-wait`, `story:conformance-lock-and-lints`,
   `story:scripts-dom-attributes`, `story:scripts-dom-mutation`, `story:scripts-dom-reading`,
   `story:scripts-dom-selectors`, `story:scripts-parse-run`, `story:session-argument-checks`,
-  `story:swell-0-9-0`, `story:test-step-holds-with-tls`, `story:tls-tests-as-tables`; none
-  edits the lines this story edits (`:1054`, `:1965-1967` and the `check` paragraph).
+  `story:swell-0-9-0`, `story:test-step-holds-with-tls`, `story:tls-tests-as-tables`. Read
+  with `git grep -n -E 'AGENTS|taskfiles/\*|:126-145' -- <story>` over each: none edits
+  `:1054`, `:1965-1967`, the `check` paragraph or the entries of the tasks (`:1826-1847`).
+  One edits the list `taskfiles/<name>.yml` that this story adds a clause to (`:137-170`):
+  `story:test-step-holds-with-tls` (its statement on `taskfiles/*`, at `:126-145` of its own
+  base). No edge: the clauses are different lines of one list, and the story that merges
+  second takes the other's lines in its merge of `main`. No other of the eleven names that
+  list or an entry of a task.
 - `story:time-bounds-in-tests` (draft) has a `depends_on` edge to this story (made at plan
   commit `8c56b6c`), takes over the ledger, `taskfiles/test-clocks-ledger.txt`, and needs the
   scanner's output (the lines the scan prints against its list of 12 assertions in 7 files).
   Its text is not changed here.
 - A story that removes a bound from a file the ledger lists lowers that file's ledger line in
   its own change, since the check fails on a file with fewer statements than its line.
-  `story:agent-tasks-left-process-wait` changes `bounded.rs` (`running` and `child_left`,
-  `:41-64 @ a14e3b0`), but the one ledger statement of that file, the assertion at
-  `bounded.rs:97` (`took < Duration::from_secs(4)`), is outside those lines and stays. No
-  ledger line changes, and no edge.
+  `story:agent-tasks-left-process-wait` changes `crates/agent-tasks/tests/bounded.rs`
+  (`running` and `child_left`, `:41-64 @ a14e3b0`), but the one ledger statement of that file,
+  the assertion at `:97` (`took < Duration::from_secs(4)`), is outside those lines and stays.
+  No ledger line changes, and no edge.
+- `story:html-parser-hook-cost` (draft) edits `crates/html/src/tree_builder.rs` and `tree.rs`,
+  the code the window of decision 5 reads. Its summary says it removes what can be removed
+  without changing a step count or a limit; the window test is the guard of that promise.
+  No edge.
 - `crates/webidl/src/lib.rs`, `crates/script/tests/adversary_4.rs`, `crates/webidl/tests/depth.rs`
   and the new `taskfiles/` files are named by no other story.
