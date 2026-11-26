@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-reading
 kind: story
-status: active
+status: implemented
 title: The reading members (99 rows) and one wrapper per node
 summary: Node, Element and Document's 73 reading members, 21 of the interfaces they return and the five of Window and Document.title (S6, decided a on 2026-11-24, and Window.event) read a parsed tree as the standards say, with one wrapper per node for the document's life, memory bounded by the engine's budget, sibling reads by position hints, the snapshot and global-this deviations, the four [SameObject] collections held by the generator and Wrap (one object per node and member, refreshed only when the tree's write counter moved), the document's address as a surf_url::Url in a public DocumentInfo, compatMode from the quirks mode the parser writes into the tree where the initial insertion mode decides it (so a script in the parse reads it) and baseURI as the HTML document base URL, the case names asserted equal to the slice's rows.
 relations:
@@ -90,10 +90,11 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 47
+revision: 49
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:34Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -1106,3 +1107,95 @@ scope and regenerate the file; its present scope lists neither.
 ## Why `epic:scripts-in-a-page`
 
 The first members with behaviour, the reading the epic's two examples rest on.
+
+## As built
+
+The unit is on `main` at `53ab365` (the merge of `impl/scripts-dom-reading` at `73126a0`).
+It changes 43 files, 13,610 lines added and 274 removed: the reading members of the DOM for
+page scripts, the wrapper table, the generator's `[SameObject]` support, and their tests.
+
+- What differs from the story. Every decision not named here was built as written.
+  - 1d: `Runner` has no `document()`; the helper reads
+    `runner.agent_and_realm().0.host().document().and_then(|d| d.limit())`.
+  - 4c: a second read of a kept collection with no write adds 7 steps, as a second `nodeType`
+    read does (10 steps for one, 17 for two), and visits no node; it does not add one.
+  - 8a with 8c is one test, `wrapper_charge_and_reuse`; 8e with 8f is one test,
+    `steps_in_proportion`, in absolute steps (`contains` measured 999 beyond one child).
+  - 8h was not shown at the first tip: the pinned engine does not apply `string_length` to a
+    String a host member answers, so the case ran with 16,777,217 units. Fix round 1
+    (`0420e36`) put the check in the glue and it now shows (1.572 s). The case at the limit
+    builds its text with `Tree::create_text_node` and `append_child`; parsing took 4.9 s alone.
+  - Decision 4 gave 256 bytes a wrapper and 262,144 wrappers to fill the budget; measured, it
+    is 423 bytes and 158,649. `docs/design/scripts.md:329-330` holds the measured numbers.
+  - 16a: two runs of the tests of the crates took 179.4 s and 151.1 s at host load 79 to 110;
+    the same step took 5.674 s on the build host.
+  - 13d: the 232 tests of the `crates/script` entry of `AGENTS.md` come from
+    `cargo nextest list` per module; the gate log holds one total.
+  - 14: the gate block of `README.md` and `how-it-is-built.md` is the log of the run on
+    `5664184` (test step 17.0 s); the run on the tip has the same 2,003 tests and a 35.9 s step.
+  - Beyond the story's list: `adversary_dom_reading_5.rs` and `_6.rs`, and the `AGENTS.md`
+    entries of `crates/html` (253 tests) and `crates/webidl` (131 tests).
+  - `ownerDocument` of a node in a fragment-parse tree rooted at a fragment answers `null`.
+  - The last merge of `main` (`73126a0`) touches `crates/surfd/tests/adversary_2.rs` only.
+- The reviews. Per pass: commit covered, musts and shoulds, cases added; the round after fixed:
+  - 1, `ace7176`: 4, 9, 21. A refill all or nothing, the class walk's charge, a `data:` base,
+    two hints a parent, `substringData` in code units, an unheld `[SameObject]`.
+  - 2, `fc55e35`: 2, 4, 16. A refill cut by the memory limit (later scripts end `not run:
+    memory`), the attribute scan's charge, every unheld `[SameObject]` refused.
+  - 3, `8086a30`: 1, 9, 12. A step a class token and per four attributes, 8 steps a collection
+    node, String copies at 16 bytes a step; it added the `dom_reading_cost` sweep.
+  - 4, `db0e535`: 4, 5, 14. `title` charged before its collapse, one price for a String of 16
+    bytes a step; the reads moved into `reads.rs`.
+  - 5, `14f8a2a`: 1, 8, 10. A compare charged on both nodes, `substringData` charged by bytes,
+    a String argument charged before its copy.
+  - 6, `50a4239`: 0, 7, 12. The final round changed no `src/` file: it merged the cases and
+    `main` and set the counts of `AGENTS.md`; `31a6979` set the public numbers.
+- Numbers on the tip `73126a0`, from the gate run (`task check-runner`, exit 0 in 133 s):
+  - 2,003 tests: 2,000 passed, 0 failed, 3 ignored. Test step 35.9 s of 120 s; four steps
+    78.1 s; load 55.74 at the start, 61.67 at the end.
+  - The selection holds 100 rows with the slice `reading`: 99 members and `NodeList iterable`.
+  - Tests per crate: `surf-script` 232, `surf-html` 253, `surf-webidl` 131. The reviews wrote
+    85 cases; the gate's count rose from 1,845 to 2,003.
+  - Over 5 s in the gate: `a_memory_end_at_every_point_of_a_shrinking_refill` 5.088 s (this
+    unit) and `adversary_5::the_code_getter_in_a_loop...` 5.332 s (on `main`); none over 60 s.
+  - Over 5 s in the final round's run (613 tests, 9.288 s): that refill test 6.835 s,
+    `a_wanted_set_of_many_tokens_against_classes_of_many_tokens` 5.485 s,
+    `a_sibling_walk_is_linear` 5.328 s, `a_backward_sibling_walk_is_linear` 5.197 s,
+    `hostile_shapes_of_a_kept_collection` 5.011 s.
+- Left as it is, each seen by a review (lines at `50a4239` unless a tip is named):
+  - `data_copies` is a public thread-local counter in the product, read by tests only
+    (`crates/script/src/dom/mod.rs:48`).
+  - `Copies::copy` writes UTF-8 beside the charged UTF-16 copy, at most 2.5 times unpaid
+    (`crates/webidl/src/prelude.rs:562`); two heap allocations per String argument are not
+    measured against `memory_bytes` (`:928`); its doc says "the one copy" and `prefix_units`
+    copies too (`:546`, `:403`).
+  - `refresh_collection` clones the old list before its charge
+    (`crates/script/src/bindings.rs:1446`); no page reaches it, the `mutation` slice is empty.
+  - `isEqualNode` charges a step an attribute where the ruling said one per four
+    (`crates/script/src/dom/reads.rs:970`): an over-charge.
+  - The charge-before-copy order of a String argument is held by a source test only
+    (`bindings.rs:630`); `webidl-check` sees it by digest.
+  - The guard against a copied child list misses `.into()` and a push loop
+    (`crates/script/tests/dom_reading_cost.rs:618`); `reads.rs:705` rests on that guard alone.
+  - No test cuts in the first step of a refill or by wall clock inside one (`bindings.rs:1469`
+    at `8086a30`).
+  - Three readers on one parent stay quadratic: 500 children cost 180,250 steps.
+  - `HTMLCollection` has no named properties: `collection["id"]` is `undefined`.
+  - `strings_value` charges no step an element (`prelude.rs:1441-1453` at `db0e535`).
+  - Two tests on `main` run at 5.6 to 7.6 times their time alone: `adversary_5::the_code_getter
+    _in_a_loop...` (20 s) and `script_hook::a_hook_that_keeps_every_element_open_ends_at_the_
+    step_limit` (10 s).
+  - `cargo fmt --all -- --check` fails on 445 blocks in 41 files, none of them the unit's.
+  - Six time-to-step quotients of review 6 were not measured: host load was 57 to 58.
+- A later story takes up:
+  - `story:scripts-dom-mutation`: the clone before the charge in `refresh_collection`, two
+    `git grep` gates against a copied child list, and the `Document.title` setter on `find`.
+  - `story:scripts-dom-attributes`: `getAttributeNames` through `strings_value`; it and
+    `story:scripts-dom-selectors` use `charge`, `ATTRIBUTES_A_STEP`, `attribute_count`,
+    `scan_for`, `positions` and `value_at` of `reads.rs`, whose names stay.
+  - `story:scripts-dom-sibling-positions`: positions in the tree, so readers are linear.
+  - `story:scripts-dom-collection-names`: the named properties of `HTMLCollection`.
+  - `story:scripts-parse-run`: the page's `DocumentInfo`, and the step limit measured again
+    (59 whole-page `textContent` reads fit in one script's 10,000,000 steps).
+  - `story:scripts-utf16-length`: named by round 5 for the argument's charge.
+  - `story:tests-without-wall-time-bounds`: the two timed tests on `main` named above.
