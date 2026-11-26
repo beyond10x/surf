@@ -12,6 +12,7 @@ mod adversary_tree;
 mod adversary_tree_state;
 mod adversary_tree_state_2;
 mod adversary_tree_writes;
+mod adversary_tree_writes_2;
 mod common;
 mod encoding;
 mod limits;
