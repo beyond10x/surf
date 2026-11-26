@@ -49,18 +49,19 @@ tasks:
       - sh taskfiles/release-static.sh '{{.DIR}}' {{if .IMAGE}}--image '{{.IMAGE}}'{{end}}
 
   release-static-test:
-    desc: Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant twelve defects in copies of it.
+    desc: Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant fourteen defects in copies of it.
     summary: |
-      Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant twelve defects in copies of it.
+      Give taskfiles/release-static.sh both sides, on made ELF files and a stand-in docker, and plant fourteen defects in copies of it.
 
       Runs taskfiles/release-static-test.sh. It writes five small ELF files with printf under
       .out/release-static-test/ (static, static-pie, an INTERP header, a NEEDED entry, both),
-      stops when readelf does not read one of them as named, and runs 16 cases on directories
+      stops when readelf does not read one of them as named, and runs 18 cases on directories
       named surf-0.0.0-x86_64-unknown-linux-musl, each holding its exit status, a text of the
       output and, where an image is given, the arguments a stand-in docker recorded. It builds
-      nothing and starts no container. Then it makes twelve copies of the script with sed, one
-      planted defect each, and fails when an edit finds no line or a copy leaves a case it names
-      decided as expected.
+      nothing and starts no container. Then it makes fourteen copies of the script with sed, one
+      planted defect each, runs on each copy the cases the defect names and case 1, and fails
+      when an edit finds no line, a copy leaves a case it names decided as expected, or a copy
+      decides case 1 otherwise.
 
       SCRIPT names the script under test (default taskfiles/release-static.sh), so that a planted
       defect can be run in a copy; with SCRIPT given the planted defects are not made. It prints

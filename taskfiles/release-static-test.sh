@@ -26,9 +26,10 @@
 #    does not hold where the case says so) and, where an image is given, whether the stand-in
 #    docker was called and the arguments it was called with. The stand-in records its arguments
 #    and prints the first line and exits with the status the case sets.
-# 4. Planted defects, when no <script> is given: twelve copies of taskfiles/release-static.sh,
-#    each made with sed from one rule's line; an edit that changes nothing fails the test. The
-#    table runs on each copy, and each case the defect names must be decided otherwise.
+# 4. Planted defects, when no <script> is given: fourteen copies of taskfiles/release-static.sh,
+#    each made with sed from one rule's line; an edit that changes nothing fails the test. Each
+#    copy runs the cases its defect names, which must be decided otherwise, and case 1, which
+#    must be decided as expected (a copy that does not run at all fails every case).
 #
 # <script> names the script under test (default taskfiles/release-static.sh), so that a copy
 # can run through the table; with one given, the planted defects are not made. It prints one
@@ -309,30 +310,26 @@ static_line() {
   printf '%s' "release-static: $dir holds 4 static binaries: surf surf-agent surfd surf-session"
 }
 
-# table <script> <log dir> <verbose>: runs the 16 cases on <script>; red_cases lists the cases
-# decided otherwise.
-table() {
-  under_test=$1
-  logs=$2
-  verbose=$3
-  cases=0
-  red_cases=
-  mkdir -p "$logs" || exit 1
-
+# The cases, one function each; table runs them.
+case_1() {
   case_start 1 'four static files'
   fill static static static static
   run "$dir"
   expect_status 0
   expect_line "$(static_line)"
   case_end
+}
 
+case_2() {
   case_start 2 'four static-pie files'
   fill static-pie static-pie static-pie static-pie
   run "$dir"
   expect_status 0
   expect_line "$(static_line)"
   case_end
+}
 
+case_3() {
   case_start 3 'surf-session is interp'
   fill static static static interp
   run "$dir"
@@ -340,7 +337,9 @@ table() {
   expect_line "release-static: $dir/surf-session: INTERP header (dynamically linked)"
   expect_no_text 'static binaries'
   case_end
+}
 
+case_4() {
   case_start 4 'surfd is needed'
   fill static static needed static
   run "$dir"
@@ -348,21 +347,27 @@ table() {
   expect_line "release-static: $dir/surfd: NEEDED entry (dynamically linked)"
   expect_no_text 'static binaries'
   case_end
+}
 
+case_5() {
   case_start 5 'surf-agent is a text file'
   fill static text static static
   run "$dir"
   expect_status 1
   expect_line "release-static: $dir/surf-agent: not an ELF file readelf can read"
   case_end
+}
 
+case_6() {
   case_start 6 'no surf in the directory'
   fill - static static static
   run "$dir"
   expect_status 1
   expect_line "release-static: $dir/surf: not an ELF file readelf can read"
   case_end
+}
 
+case_7() {
   case_start 7 'surf and surfd are both dynamic'
   fill interp static needed static
   run "$dir"
@@ -370,14 +375,18 @@ table() {
   expect_line "release-static: $dir/surf: INTERP header (dynamically linked)"
   expect_line "release-static: $dir/surfd: NEEDED entry (dynamically linked)"
   case_end
+}
 
+case_8() {
   case_start 8 'an image given as a tag only'
   fill static static static static
   run "$dir" --image alpine:3.24.4
   expect_status 2
   expect_not_called
   case_end
+}
 
+case_9() {
   case_start 9 'an image by digest, the stand-in prints the version of the directory'
   fill static static static static
   run "$dir" --image "$image"
@@ -386,7 +395,9 @@ table() {
   expect_line "release-static: surf-agent help --for-agent ran in $image: surf-agent 0.0.0"
   expect_args "$dir"
   case_end
+}
 
+case_10() {
   case_start 10 'an image by digest, the stand-in prints another version'
   fill static static static static
   first='surf-agent 0.0.1: a definition for agents'
@@ -395,7 +406,9 @@ table() {
   expect_no_text 'ran in'
   expect_args "$dir"
   case_end
+}
 
+case_11() {
   case_start 11 'an image by digest, the stand-in prints the right line and exits 125'
   fill static static static static
   standin_status=125
@@ -404,7 +417,9 @@ table() {
   expect_no_text 'ran in'
   expect_args "$dir"
   case_end
+}
 
+case_12() {
   case_start 12 'DOCKER names no program'
   fill static static static static
   docker=$out/no-such-docker
@@ -413,7 +428,9 @@ table() {
   expect_text "$docker"
   expect_no_text 'ran in'
   case_end
+}
 
+case_13() {
   case_start 13 'surf-session is interp and an image is given'
   fill static static static interp
   run "$dir" --image "$image"
@@ -421,14 +438,18 @@ table() {
   expect_line "release-static: $dir/surf-session: INTERP header (dynamically linked)"
   expect_not_called
   case_end
+}
 
+case_14() {
   case_start 14 'an unknown option'
   fill static static static static
   run "$dir" --unknown
   expect_status 2
   expect_no_text 'static binaries'
   case_end
+}
 
+case_15() {
   case_start 15 'a relative directory and an image by digest'
   fill static static static static
   run "${dir#"$root"/}" --image "$image"
@@ -436,7 +457,9 @@ table() {
   expect_line "$(static_line)"
   expect_args "$dir"
   case_end
+}
 
+case_16() {
   case_start 16 'surf is both'
   fill both static static static
   run "$dir"
@@ -444,9 +467,11 @@ table() {
   expect_line "release-static: $dir/surf: INTERP header (dynamically linked)"
   expect_no_text 'NEEDED'
   case_end
+}
 
-  # The workflow passes --image "$STATIC_IMAGE"; an empty value is no image named by digest,
-  # and the check must not end green without the container.
+# The workflow passes --image "$STATIC_IMAGE"; an empty value is no image named by digest,
+# and the check must not end green without the container.
+case_17() {
   case_start 17 'an empty image value'
   fill static static static static
   run "$dir" --image ''
@@ -454,9 +479,11 @@ table() {
   expect_not_called
   expect_no_text 'static binaries'
   case_end
+}
 
-  # docker writes "Unable to find image" and the lines of the pull on stderr when the image is
-  # not on the runner yet; the first line of stdout is still the definition's.
+# docker writes "Unable to find image" and the lines of the pull on stderr when the image is
+# not on the runner yet; the first line of stdout is still the definition's.
+case_18() {
   case_start 18 'the stand-in writes a line on stderr before the definition'
   fill static static static static
   standin_err="Unable to find image '$image' locally"
@@ -467,7 +494,24 @@ table() {
   case_end
 }
 
-table "$script" "$out/table" yes
+# table <script> <log dir> <verbose> <cases>: runs the cases named on <script>; cases counts
+# them, red_cases lists those decided otherwise. runs counts every run of a script.
+all_cases='1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'
+runs=0
+table() {
+  under_test=$1
+  logs=$2
+  verbose=$3
+  cases=0
+  red_cases=
+  mkdir -p "$logs" || exit 1
+  for k in $4; do
+    "case_$k"
+    runs=$((runs + 1))
+  done
+}
+
+table "$script" "$out/table" yes "$all_cases"
 table_cases=$cases
 if [ -n "$red_cases" ]; then
   set -- $red_cases
@@ -476,7 +520,8 @@ if [ -n "$red_cases" ]; then
 fi
 
 # 4. Planted defects. defect <label> <sed program> <cases>: a copy of the script edited by the
-# program; each of <cases> must be decided otherwise on the copy.
+# program; the copy runs <cases> and case 1 only, each of <cases> must be decided otherwise
+# and case 1 as expected.
 defects=0
 wrong=0
 defect() {
@@ -489,7 +534,7 @@ defect() {
     wrong=$((wrong + 1))
     return
   fi
-  table "$copy" "$out/defect$defects" no
+  table "$copy" "$out/defect$defects" no "1 $3"
   green=
   for c in $3; do
     case " $red_cases " in
@@ -522,7 +567,7 @@ if [ "$given" -eq 0 ]; then
   defect 'the loop stops at the first bad binary' 's/|| bad=1$/|| { bad=1; break; }/' '7'
   defect 'digest form not required' '/|| is_digest_ref/d' '8'
   defect 'container run before the static check' \
-    's/^bad=0$/[ -z "$image" ] || run_container || exit 1; bad=0/' '13'
+    's/^bad=0$/[ "$image_given" = no ] || run_container || exit 1; bad=0/' '13'
   defect 'status of docker not read' '/exited \$status, not 0"; return 1/d' '11'
   defect 'version not compared' '/^  \[ "\$first" = /d' '10'
   defect 'an absent docker skips the container' \
@@ -530,10 +575,15 @@ if [ "$given" -eq 0 ]; then
   defect 'an unknown option accepted' 's/^    \*) usage "unknown option: \$1" ;;$/    *) shift ;;/' '14'
   defect '--network none left out' '/^  out=/s/ --network none//' '9'
   defect '<dir> not resolved before the mount' 's/^dir=\$(CDPATH=.*$/dir=$arg_dir/' '15'
+  defect 'an empty image value taken as no image' \
+    's/^\[ "\$image_given" = no \] || is_digest_ref/[ -z "$image" ] || is_digest_ref/' '17'
+  defect 'the stderr of docker read with its stdout' \
+    '/^  out=/s/ --for-agent) || status=/ --for-agent 2>\&1) || status=/' '18'
   if [ "$wrong" -ne 0 ]; then
     printf '%s\n' "release-static-test: $wrong of $defects planted defect(s) not caught as named"
     exit 1
   fi
-  printf '%s\n' "release-static-test: $defects planted defect(s), each caught by the cases it names"
+  caught='each caught by the cases it names'
+  printf '%s\n' "release-static-test: $defects planted defect(s), $caught; $runs script runs in all"
 fi
 printf '%s\n' "release-static-test: $table_cases case(s), each decided as expected by $script"

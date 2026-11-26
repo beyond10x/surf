@@ -1875,10 +1875,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   and an ELF form `readelf` reads, then, with `IMAGE`, `surf-agent help --for-agent` in that
   image with `docker` (`DOCKER` names another program). Exit 0, 1, or 2 for a usage error.
 - `task release-static-test`: that script on five ELF files written with `printf` under
-  `.out/release-static-test/` and a stand-in `docker`, sixteen cases, each compared on its exit
-  status, a text of the output and, for the container cases, the stand-in's recorded
-  arguments; then twelve planted defects, copies of the script made with `sed`, each failing
-  the cases it names. It builds nothing and starts no container. `SCRIPT=<path>` runs a copy
+  `.out/release-static-test/` and a stand-in `docker`, eighteen cases, each compared on its
+  exit status, a text of the output and, for the container cases, the stand-in's recorded
+  arguments; then fourteen planted defects, copies of the script made with `sed`, each run on
+  the cases it names, which must fail, and on case 1, which must pass. It builds nothing and
+  starts no container. `SCRIPT=<path>` runs a copy
   of the script.
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh

@@ -26,8 +26,9 @@
 #    docker) must exit 0 and print first `surf-agent <version>: a definition for agents`, the
 #    <version> of the directory's name `surf-<version>-<arch>-unknown-linux-<abi>`; it prints
 #      release-static: surf-agent help --for-agent ran in <image>: surf-agent <version>
-#    The image is named by digest: an image that does not end in @sha256: and 64 hex digits is a
-#    usage error, refused before docker starts. Alpine has musl, so the container alone does not
+#    The image is named by digest: an image that does not end in @sha256: and 64 hex digits, an
+#    empty value included, is a usage error, refused before docker starts; --image given never
+#    skips the container. Alpine has musl, so the container alone does not
 #    prove a binary static (one linked dynamically against musl runs there); the readelf check
 #    and the container together are the check. docker absent or failing fails the check.
 #
@@ -59,17 +60,19 @@ is_digest_ref() {
 arg_dir=$1
 shift
 image=
+image_given=no
 while [ "$#" -gt 0 ]; do
   case $1 in
     --image)
       [ "$#" -ge 2 ] || usage '--image needs a value'
       image=$2
+      image_given=yes
       shift 2
       ;;
     *) usage "unknown option: $1" ;;
   esac
 done
-[ -z "$image" ] || is_digest_ref "$image" || usage "$image is not named by digest (<image>@sha256:<64 hex digits>)"
+[ "$image_given" = no ] || is_digest_ref "$image" || usage "--image '$image' is not named by digest (<image>@sha256:<64 hex digits>)"
 [ -d "$arg_dir" ] || usage "$arg_dir is not a directory"
 dir=$(CDPATH='' cd -- "$arg_dir" && pwd -P) || exit 1
 command -v readelf > /dev/null 2>&1 || {
@@ -109,5 +112,5 @@ for name in $names; do
 done
 [ "$bad" -eq 0 ] || exit 1
 printf 'release-static: %s holds 4 static binaries: %s\n' "$dir" "$names"
-[ -z "$image" ] || run_container || exit 1
+[ "$image_given" = no ] || run_container || exit 1
 exit 0
