@@ -8,9 +8,10 @@ description: Where surf stands, in the numbers its gate prints.
 surf is young, and not a browser for daily use. It loads one address from the command line and
 prints what happened, and on Linux `surf-agent` drives a session. It loads `http:`
 addresses, and `https:` ones since release `0.7.0`; since release `0.8.0` an agent session
-keeps cookies, and since release `0.9.0` `surfd` starts each session with an empty
-environment and names the signal a session died by. It has no window, no rendering and no
-JavaScript yet.
+keeps cookies; since release `0.9.0` `surfd` starts each session with an empty environment
+and names the signal a session died by, and since release `0.10.0` a session it starts through
+`setpriv` and `prlimit` has a core file size limit of 1 byte. It has no window, no rendering
+and no JavaScript yet.
 
 ## Numbers
 
@@ -24,13 +25,23 @@ its tip `5dcedfb` on 2026-11-25), and with the HTML parser's script hook
 (`story:html-script-hook`, its tests counted by the gate run on its tip `58d720b` on
 2026-11-25), and with the DOM's read members in the script runner of `surf-script`, which no
 command runs yet (`story:scripts-dom-reading`, its tests counted by the gate run on its tip
-`5664184` on 2026-11-26):
+`5664184` on 2026-11-26), and with the agent tasks' wait for the processes a model left
+(`story:agent-tasks-left-process-wait`, which changes tests only, its tests counted by the gate
+run on its tip `e61d766` on 2026-11-26), and with the core limit of 1 byte for a session
+process (`story:session-core-limit-one`) and the gate step that refuses a new bound on elapsed
+time in a test (`story:tests-without-wall-time-bounds`, its tests counted by the gate run on
+`52ebbd7`, the tip of this story with the two before it merged into it, on 2026-11-26), and
+with the script engine's pin moved from swell `0.8.0` to `0.10.0` (`story:swell-0-9-0`, its
+tests counted by the gate run on its tip `6b4593f`, with `main` merged into it, on
+2026-11-26), and with the DOM's nine selector members in the script runner of `surf-script`,
+which no command runs yet (`story:scripts-dom-selectors`; the table's test counts are those of
+the gate run on its tip `b5c2fc6`, with `main` merged into it, on 2026-11-26):
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 221 of 221 pass, against the interpreter and against the Rust code |
-| tests | 2,552 passed and 3 ignored: 2,000 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
+| tests | 2,665 passed and 2 ignored: 2,113 passed and the 2 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 72 passed, in Chromium's headless shell |
@@ -40,7 +51,7 @@ command runs yet (`story:scripts-dom-reading`, its tests counted by the gate run
 | third-party crates in what ships | 0 up to release `0.6.0`; since release `0.7.0`, ring 0.17.14 and the four crates it needs, for the cryptographic primitives of TLS, through `surf-tls` alone |
 | unsafe code | forbidden in every hand-written crate; three test files hold a counting allocator |
 | standard sections marked complete | 0 |
-| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2, release `0.6.0` the live view's control states, release `0.7.0` TLS 1.3 and `https:`, release `0.8.0` the cookie jar and `surf-agent help --for-agent` and release `0.9.0` the hardened start of a session process ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2, release `0.6.0` the live view's control states, release `0.7.0` TLS 1.3 and `https:`, release `0.8.0` the cookie jar and `surf-agent help --for-agent`, release `0.9.0` the hardened start of a session process and release `0.10.0` the core limit of a session process ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

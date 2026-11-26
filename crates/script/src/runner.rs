@@ -18,13 +18,16 @@ use swell::{
 
 use crate::bindings::{self, Dom, DomState, Slices};
 
-/// The host errors that are no fault of the engine (swell's `HostError` at `0.8.0` but
-/// `Faulted`): a stale or foreign handle, a value of the wrong kind, the module errors and an
-/// evaluation while another runs. Each is a defect of surf's own calls that a page cannot
-/// cause. It is read as `HostError::Faulted` is: a parse or a run ends `faulted`, a read of
-/// the site or the steps answers nothing, and a read of a thrown value answers kind `value`
-/// with no message. Every variant is named, so a
-/// variant a later tag adds stops the build where surf decides its word.
+/// The host errors that are no fault of the engine (swell's `HostError` at `0.10.0` but
+/// `Faulted`, seven variants): a stale or foreign handle, a value of the wrong kind, the module
+/// errors, an evaluation while another runs, and `MemoryBudget`. Each is a defect of surf's own
+/// calls that a page cannot cause. It is read as `HostError::Faulted` is: a parse or a run ends
+/// `faulted`, a read of the site or the steps answers nothing, and a read of a thrown value
+/// answers kind `value` with no message. `MemoryBudget` is among them because at `0.10.0` only
+/// `queue_microtask` answers it (`crates/swell/src/host/jobs.rs:207 @ 0.10.0`), and surf calls
+/// no `queue_microtask`; it leaves this macro with surf's first call of `queue_microtask`, where
+/// surf decides its reading at the call. Every variant is named, so a variant a later tag adds
+/// stops the build where surf decides its word.
 macro_rules! surf_defect {
     () => {
         HostError::StaleHandle
@@ -33,6 +36,7 @@ macro_rules! surf_defect {
             | HostError::ModuleStatus { .. }
             | HostError::ModuleTerminated
             | HostError::EvaluationInProgress
+            | HostError::MemoryBudget
     };
 }
 
@@ -48,7 +52,7 @@ pub const SESSION_ENGINE_LIMITS: Limits = Limits {
 };
 
 /// The stack margin for surf's own frames per re-entry (Q5): as much again as swell's own room
-/// per re-entry, `STACK_BYTES_PER_REENTRY` (`crates/swell/src/host/limits.rs:46 @ 0.8.0`).
+/// per re-entry, `STACK_BYTES_PER_REENTRY` (`crates/swell/src/host/limits.rs:46 @ 0.10.0`).
 const STACK_MARGIN_PER_REENTRY: usize = 14_336;
 
 /// The stack margin for the frames below the first entry (Q5): 1 MiB.
@@ -71,8 +75,9 @@ pub const TEST_CLOCK_STEP: i128 = 1_000_000;
 pub struct RunnerLimits {
     /// The agent's seven limits.
     pub engine: Limits,
-    /// Steps of all the runner's scripts together, summed from `last_entry_steps()`. Held and
-    /// counted here ([`Runner::steps`]); the caller enforces it (`story:scripts-parse-run`).
+    /// Steps of all the runner's scripts and their checkpoints together, summed from
+    /// `last_entry_steps()`. Held and counted here ([`Runner::steps`]); the caller enforces it
+    /// (`story:scripts-parse-run`).
     pub steps_per_runner: u64,
     /// Scripts one runner runs. Held and counted here ([`Runner::scripts`]); the caller
     /// enforces it (`story:scripts-parse-run`).
@@ -82,8 +87,8 @@ pub struct RunnerLimits {
     pub source_bytes: usize,
     /// The wall clock from the first script's start, through the agent's interrupt handle; a
     /// script started after it ran out is `not run: wall-clock`. The first script's start is
-    /// the clock's start, so a bound of 0 ends the first script `limit: wall-clock`, or lets a
-    /// short one end `ran` before the interrupt is set.
+    /// the clock's start, so a bound of 0 ends the first script `limit: wall-clock`: a clock
+    /// that ran out when a script ends is that script's end ([`Runner::evaluate`]).
     pub wall_clock: Duration,
 }
 
@@ -211,9 +216,12 @@ impl ScriptHost {
 }
 
 impl Host for ScriptHost {
-    // No engine path makes a job or a load request before swell's slices 10 and 11
-    // (`crates/swell/src/host/hooks.rs:7-9 @ 0.8.0`): promises and modules are refused at the
-    // tag. A job or a request handed to the host is dropped.
+    // Generic, timeout and cleanup jobs are pending at swell's tag: HOST-85 and HOST-86
+    // `pending slice 14`, HOST-87 `pending slice 16`
+    // (`conformance/host/requirements.txt:85-87 @ 0.10.0`), and modules are refused. A job or a
+    // load request handed to the host is dropped. Promise jobs are not handed here: swell
+    // queues them on the agent, and the runner runs them in the checkpoint after each script
+    // (`Runner::evaluate`).
     fn host_enqueue_generic_job(_cx: &mut HookCx<'_, Self>, _job: Job) {}
 
     fn host_enqueue_timeout_job(_cx: &mut HookCx<'_, Self>, _job: Job, _milliseconds: f64) {}
@@ -232,8 +240,9 @@ impl Host for ScriptHost {
     // are allowed (Q4), the time zone is "UTC" with the offset 0 (Q6).
 }
 
-/// The kind of what a script threw (Q7): one of swell's seven `ErrorKind` variants, or `Value`
-/// for a thrown value that is no error object.
+/// The kind of what a script threw (Q7): one of swell's eight `ErrorKind` variants at `0.10.0`,
+/// `AggregateError` among them, or `Value` for a thrown value that is no error object. A kind
+/// swell adds later is read as `Error` until surf names it ([`error_kind`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ScriptErrorKind {
     Error,
@@ -243,6 +252,7 @@ pub enum ScriptErrorKind {
     SyntaxError,
     TypeError,
     UriError,
+    AggregateError,
     Value,
 }
 
@@ -257,6 +267,7 @@ impl ScriptErrorKind {
             Self::SyntaxError => "SyntaxError",
             Self::TypeError => "TypeError",
             Self::UriError => "URIError",
+            Self::AggregateError => "AggregateError",
             Self::Value => "value",
         }
     }
@@ -338,8 +349,9 @@ pub struct ScriptError {
     /// The own `message`, decoded from UTF-16 with unpaired surrogates replaced and cut to its
     /// first [`MESSAGE_CHARS`] characters; for a `DOMException`, `<name>: <message>` from its
     /// data, cut the same; `None` for a value that is no error object or an error without a
-    /// String `message`, and for a `DOMException` whose read an interrupt set after the throw
-    /// or the memory budget ended.
+    /// String `message`, and for a `DOMException` whose read the memory budget ended. A read
+    /// that an interrupt ends makes no record: the script ends `limit: wall-clock`
+    /// ([`Runner::evaluate`]).
     pub message: Option<String>,
     /// `None` when swell names no site: a throw raised outside any ECMAScript frame.
     pub site: Option<Site>,
@@ -556,6 +568,9 @@ impl Drop for WallClock {
     }
 }
 
+/// The answer of a read of a thrown value that the run's end ended: an interrupt took it.
+struct RunEnded;
+
 /// One agent with one realm, on the thread [`run`] made, and the totals of its scripts.
 pub struct Runner {
     // Dropped in this order: the clock's thread ends first, the agent last.
@@ -621,45 +636,60 @@ impl Runner {
         })
     }
 
-    /// Parses `source` as a classic script in the runner's realm and runs it to its end.
+    /// Parses `source` as a classic script in the runner's realm, runs it to its end and then
+    /// performs HTML's microtask checkpoint ("clean up after running script").
+    ///
+    /// An interrupt that is set when a script ends is the script's end. When the run answered,
+    /// whatever it answered, and before a thrown value is read and before the checkpoint, the
+    /// runner asks whether the wall clock ran out or the interrupt is set
+    /// ([`Runner::run_ended`]); if so, the script ends `limit: wall-clock`, or with the limit the
+    /// bindings recorded ([`Runner::document_end`]), no text of a thrown value is read, no
+    /// checkpoint runs and the interrupt is withdrawn. An interrupt that ends the read of a
+    /// thrown value all the same (set after the question, taken by the read's first engine
+    /// call) ends the script the same way, not with a record without a message. After a
+    /// checkpoint that emptied the queue the runner asks again: a script whose run and jobs
+    /// ended well while the clock ran out or the interrupt was set before the runner returned
+    /// ends `limit: wall-clock` too.
+    ///
+    /// Two of these checks are a second line: at swell `0.10.0` they never decide an end
+    /// alone. The question before the read of a thrown value ([`Runner::thrown`]): without it
+    /// the read's first engine call or the question before the checkpoint gives the same end;
+    /// it keeps the rule that no text is read after an interrupt. The flag half of the question
+    /// before the checkpoint: the checkpoint's start takes a set flag and ends at the wall
+    /// clock the same way. Both decide if a later tag changes where the engine reads the flag.
+    ///
+    /// The checkpoint follows a script that ended `ran`, `threw` or `refused`; after a limit or
+    /// `faulted` there is none. It is one entry of swell's with a step budget of its own,
+    /// `steps_per_entry` (HOST-193), and its end is the script's end: a limit or a fault of the
+    /// checkpoint replaces the script's own end by the rule of [`Runner::document_end`], and a
+    /// checkpoint that emptied the queue leaves it. After any end `limit: <word>`, of the script
+    /// or of its checkpoint, the microtask queue is cleared, so that jobs a script queued before
+    /// its limit do not spend the next script's budget. A job's throw and a rejection no
+    /// handler took are not recorded: the script ends as it ended.
     ///
     /// After `faulted`, each later script ends `not run: faulted`; after the first
-    /// `limit: memory` the runner calls `collect()` once, and after a second each later script
-    /// ends `not run: memory`; a script started after the wall clock ran out ends `not run:
-    /// wall-clock` (Q4). A kept collection is refilled all or nothing for a step the object
-    /// refuses; an end of the run inside a refill ends the document's scripts: after a
-    /// `limit: memory` that cut a refill (`DomState::cut_refill`), each later script ends
-    /// `not run: memory`, as after a second. A script not run is not counted. The steps a
-    /// script that ran spent are added to [`Runner::steps`] and the script to
-    /// [`Runner::scripts`].
+    /// `limit: memory` the runner clears the queue and then calls `collect()` once, and after a
+    /// second each later script ends `not run: memory`; a script started after the wall clock
+    /// ran out ends `not run: wall-clock` (Q4). A kept collection is refilled all or nothing for
+    /// a step the object refuses; an end of the run inside a refill ends the document's scripts:
+    /// after a `limit: memory`, of the script or of its checkpoint, that cut a refill
+    /// (`DomState::cut_refill`), each later script ends `not run: memory`, as after a second. A
+    /// script not run is not counted. The steps a script that ran spent and the steps of its
+    /// checkpoint are added to [`Runner::steps`] and the script to [`Runner::scripts`]; the
+    /// checkpoint is no script of its own.
+    ///
+    /// No script inherits an interrupt: after every end, whatever its word (a limit, `faulted`,
+    /// `not run`, a parse error), the runner withdraws a set interrupt here, in this one place,
+    /// before it returns; [`Runner::script_end`] has every way out of a script, and none of them
+    /// returns around the withdrawal. The end word stays what swell or the bindings answered. A
+    /// clock that ran out is known by the clock itself, not by the flag, so the next script is
+    /// `not run: wall-clock` all the same.
     pub fn evaluate(&mut self, source: &str) -> ScriptEnd {
-        let faulted = match self.agent.state() {
-            AgentState::Faulted => true,
-            AgentState::Alive => false,
-        };
-        if self.faulted || faulted {
-            self.faulted = true;
-            return ScriptEnd::NotRun(Reason::Faulted);
+        let end = self.script_end(source);
+        if let ScriptEnd::Limit(_) = end {
+            self.clear_microtasks();
         }
-        if self.memory_ends >= 2 {
-            return ScriptEnd::NotRun(Reason::Memory);
-        }
-        if self.clock.ran_out() {
-            return ScriptEnd::NotRun(Reason::WallClock);
-        }
-        self.clock.before_script(self.limits.wall_clock);
-        self.scripts = self.scripts.saturating_add(1);
-        let end = self.run_script(source);
-        let end = self.document_end(end);
-        let steps = match self.thrown_steps.take() {
-            Some(steps) => Ok(steps),
-            None => self.agent.last_entry_steps(),
-        };
-        match steps {
-            Ok(steps) => self.steps = self.steps.saturating_add(steps),
-            // A faulted agent answers no count; the script's end says `faulted`.
-            Err(HostError::Faulted | surf_defect!()) => {}
-        }
+        self.agent.interrupt_handle().clear();
         match end {
             ScriptEnd::Limit(Reason::Memory) => {
                 self.memory_ends += 1;
@@ -682,15 +712,52 @@ impl Runner {
         end
     }
 
+    /// The end of one script as [`Runner::evaluate`] reads it, before the clear of the queue,
+    /// the withdrawal of the interrupt and the collection.
+    fn script_end(&mut self, source: &str) -> ScriptEnd {
+        let faulted = match self.agent.state() {
+            AgentState::Faulted => true,
+            AgentState::Alive => false,
+        };
+        if self.faulted || faulted {
+            self.faulted = true;
+            return ScriptEnd::NotRun(Reason::Faulted);
+        }
+        if self.memory_ends >= 2 {
+            return ScriptEnd::NotRun(Reason::Memory);
+        }
+        if self.clock.ran_out() {
+            return ScriptEnd::NotRun(Reason::WallClock);
+        }
+        self.clock.before_script(self.limits.wall_clock);
+        self.scripts = self.scripts.saturating_add(1);
+        let end = self.run_script(source);
+        // The clock half decides here; the flag half is a second line at swell 0.10.0, where
+        // the checkpoint's start takes a set flag and ends at the wall clock the same way.
+        let end = self.at_run_end(end);
+        let end = self.document_end(end);
+        // The script's steps are read before the checkpoint, which begins an entry of its own
+        // and so changes what `last_entry_steps()` and `last_entry_error_site()` answer.
+        let steps = match self.thrown_steps.take() {
+            Some(steps) => Ok(steps),
+            None => self.agent.last_entry_steps(),
+        };
+        self.add_steps(steps);
+        match end {
+            ScriptEnd::Ran | ScriptEnd::Threw(_) | ScriptEnd::Refused(_) => self.checkpoint(end),
+            ScriptEnd::Limit(_) | ScriptEnd::Faulted | ScriptEnd::NotRun(_) => end,
+        }
+    }
+
     /// Decision 10 of `story:webidl-bindings`, as ruled in its fix round 1: when the bindings
     /// recorded a limit during the entry (`bindings::end_with_limit`), that limit is the
     /// script's end, in the words of Q4's column `outcome when reached`, whatever swell
     /// answered: `Terminated(Interrupted)` (the answer `end_with_limit` makes), a throw, a
     /// normal end, or `StepBudget`. Two ends keep their own word: `limit: memory`, whose
     /// collection and count the runner needs (Q4's row "after `Terminated(MemoryBudget)`"), and
-    /// `faulted`, after which the agent answers nothing. The record is cleared and the
-    /// interrupt withdrawn after every script that recorded one, so the next script inherits
-    /// neither.
+    /// `faulted`, after which the agent answers nothing. The record is cleared after every
+    /// script that recorded one, and the interrupt is withdrawn after every script
+    /// ([`Runner::evaluate`]), so the next script inherits neither.
     fn document_end(&mut self, end: ScriptEnd) -> ScriptEnd {
         let Some(dom) = self.agent.host_mut().dom.as_deref_mut() else {
             return end;
@@ -698,7 +765,6 @@ impl Runner {
         let Some(limit) = dom.state.take_limit() else {
             return end;
         };
-        self.agent.interrupt_handle().clear();
         match end {
             ScriptEnd::Limit(Reason::Memory) | ScriptEnd::Faulted => return end,
             ScriptEnd::Ran
@@ -720,6 +786,87 @@ impl Runner {
         }
     }
 
+    /// Whether the run's end has come: the wall clock ran out, or the interrupt is set and not
+    /// yet used. `is_set` reads the flag without taking it
+    /// (`crates/swell/src/host/interrupt.rs:28-31 @ 0.10.0`); what takes it is the start of an
+    /// outermost entry, a charge of steps and the interpreter's own checks, each of which clears
+    /// it and ends the run in `Terminated(Interrupted)` (`host/agent.rs:965-993 @ 0.10.0`,
+    /// `interp/budget.rs:34-41 @ 0.10.0`).
+    fn run_ended(&self) -> bool {
+        self.clock.ran_out() || self.agent.interrupt_handle().is_set()
+    }
+
+    /// The end of a script whose run's end came: `limit: wall-clock`. The interrupt is
+    /// withdrawn by [`Runner::evaluate`] before it returns, as after every script.
+    fn run_end(&self) -> ScriptEnd {
+        ScriptEnd::Limit(Reason::WallClock)
+    }
+
+    /// `end`, or the run's end when it came ([`Runner::run_ended`]) and `end` is `ran`, `threw`
+    /// or `refused`: a limit, a fault and a script not run keep their word.
+    fn at_run_end(&mut self, end: ScriptEnd) -> ScriptEnd {
+        match end {
+            ScriptEnd::Ran | ScriptEnd::Threw(_) | ScriptEnd::Refused(_) if self.run_ended() => {
+                self.run_end()
+            }
+            ScriptEnd::Ran
+            | ScriptEnd::Threw(_)
+            | ScriptEnd::Refused(_)
+            | ScriptEnd::Limit(_)
+            | ScriptEnd::Faulted
+            | ScriptEnd::NotRun(_) => end,
+        }
+    }
+
+    /// Adds the steps of an entry to [`Runner::steps`].
+    fn add_steps(&mut self, steps: Result<u64, HostError>) {
+        match steps {
+            Ok(steps) => self.steps = self.steps.saturating_add(steps),
+            // A faulted agent answers no count; the script's end says `faulted`.
+            Err(HostError::Faulted | surf_defect!()) => {}
+        }
+    }
+
+    /// HTML's microtask checkpoint after a script that ended `end` (`ran`, `threw` or
+    /// `refused`), and the script's end after it. Its steps, which `last_entry_steps()` reads
+    /// for the whole checkpoint also after a termination (HOST-197), are added to the total.
+    /// `Normal` leaves `end`, unless the wall clock ran out or the interrupt is set when it
+    /// answered, and the end is then the run's ([`Runner::at_run_end`]). The checkpoint reads
+    /// the flag at its start and before it takes each job off (`host/agent.rs:747`, `:760`,
+    /// `:965-973`, `host/jobs.rs:295-298 @ 0.10.0`); after a job's function answered it reads
+    /// it when that function is a script function, and not when it is a host function
+    /// (`ops/promise.rs:436-500`, `host/jobs.rs:387-411 @ 0.10.0`). So a last job whose
+    /// function is a host function, or the wall clock's thread after the last read, leaves the
+    /// flag set when the checkpoint answers `Normal`. A termination is read as a script's is ([`terminated`]); the
+    /// answer is then passed through [`Runner::document_end`], so a DOM limit a job recorded
+    /// ends the script with that limit's word. The checkpoint never answers `Throw` (a throw
+    /// there faults the agent, `crates/swell/src/host/agent.rs:765-769 @ 0.10.0`), and on a
+    /// faulted agent it answers `Err(HostError::Faulted)` (`agent.rs:752 @ 0.10.0`): both are
+    /// read as `faulted`.
+    fn checkpoint(&mut self, end: ScriptEnd) -> ScriptEnd {
+        let end = match self.agent.perform_microtask_checkpoint() {
+            Ok(Outcome::Normal(_)) => self.at_run_end(end),
+            Ok(Outcome::Terminated(termination)) => terminated(termination),
+            Ok(Outcome::Throw(_)) => ScriptEnd::Faulted,
+            Err(HostError::Faulted | surf_defect!()) => ScriptEnd::Faulted,
+        };
+        let steps = self.agent.last_entry_steps();
+        self.add_steps(steps);
+        self.document_end(end)
+    }
+
+    /// Drops every job left in the microtask queue unrun, after a script or its checkpoint
+    /// ended at a limit (HOST-200). HTML and swell's note keep the queue after a script
+    /// stopped; surf clears it, so that a page that floods the queue cannot spend the next
+    /// scripts' budgets.
+    fn clear_microtasks(&mut self) {
+        match self.agent.clear_microtasks() {
+            Ok(_) => {}
+            // A faulted agent runs no job again.
+            Err(HostError::Faulted | surf_defect!()) => {}
+        }
+    }
+
     /// The parse and the run of one script, and its end.
     fn run_script(&mut self, source: &str) -> ScriptEnd {
         let refusals = self.agent.refusals();
@@ -733,34 +880,50 @@ impl Runner {
         match parsed {
             Parsed::Parsed(script) => match self.agent.evaluate_script(&script) {
                 Ok(Outcome::Normal(_)) => ScriptEnd::Ran,
-                Ok(Outcome::Throw(thrown)) => ScriptEnd::Threw(self.error(&thrown)),
+                Ok(Outcome::Throw(thrown)) => self.thrown(&thrown, ScriptEnd::Threw),
                 Ok(Outcome::Terminated(termination)) => terminated(termination),
                 Err(HostError::Faulted | surf_defect!()) => ScriptEnd::Faulted,
             },
             // The site is the first error's, and the error is the first of the list (Q16).
             Parsed::Errors(errors) => {
-                let error = match errors.first() {
-                    Some(first) => self.error(first),
-                    None => ScriptError {
+                let end = if self.agent.refusals() > refusals {
+                    ScriptEnd::Refused
+                } else {
+                    ScriptEnd::Threw
+                };
+                match errors.first() {
+                    Some(first) => self.thrown(first, end),
+                    None => end(ScriptError {
                         kind: ScriptErrorKind::SyntaxError,
                         message: None,
                         site: self.site(),
-                    },
-                };
-                if self.agent.refusals() > refusals {
-                    ScriptEnd::Refused(error)
-                } else {
-                    ScriptEnd::Threw(error)
+                    }),
                 }
             }
             Parsed::Terminated(termination) => terminated(termination),
         }
     }
 
+    /// The end of a script whose run answered the thrown value or parse error `value`: `end`
+    /// with its record, or the run's end ([`Runner::run_end`]) when it came before the read or
+    /// ended the read, in which case no record is made.
+    fn thrown(&mut self, value: &Root, end: fn(ScriptError) -> ScriptEnd) -> ScriptEnd {
+        // A second line at swell 0.10.0: without it the read's first engine call or the
+        // question before the checkpoint gives the same end. It keeps the rule that no text is
+        // read after an interrupt, and decides if a later tag reads the flag elsewhere.
+        if self.run_ended() {
+            return self.run_end();
+        }
+        match self.error(value) {
+            Ok(error) => end(error),
+            Err(RunEnded) => self.run_end(),
+        }
+    }
+
     /// What a thrown value or a parse error holds, read without running code (Q16). In a
     /// document's runner a `DOMException`'s message is `<name>: <message>` from the exception's
-    /// own data ([`Runner::exception_text`]).
-    fn error(&mut self, value: &Root) -> ScriptError {
+    /// own data ([`Runner::exception_text`]); `Err(RunEnded)` when an interrupt ended that read.
+    fn error(&mut self, value: &Root) -> Result<ScriptError, RunEnded> {
         let (kind, message) = match self.agent.error_summary(value) {
             Ok(Some(summary)) => (
                 error_kind(summary.kind),
@@ -781,7 +944,7 @@ impl Runner {
                 if let Ok(steps) = self.agent.last_entry_steps() {
                     self.thrown_steps = Some(steps);
                 }
-                self.exception_text(value).or(message)
+                self.exception_text(value)?.or(message)
             }
             ScriptErrorKind::EvalError
             | ScriptErrorKind::RangeError
@@ -789,32 +952,47 @@ impl Runner {
             | ScriptErrorKind::SyntaxError
             | ScriptErrorKind::TypeError
             | ScriptErrorKind::UriError
+            | ScriptErrorKind::AggregateError
             | ScriptErrorKind::Value => message,
         };
-        ScriptError {
+        Ok(ScriptError {
             kind,
             message,
             site,
-        }
+        })
     }
 
     /// The `<name>: <message>` of a `DOMException` a script threw and did not catch, cut to
     /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`; no
     /// longer prefix is copied), read from its data in a `with_cx` that runs no code
-    /// (`bindings::exception_text`); `None` for a runner without a document and for any other
-    /// value, and when the read ends early: the memory budget spent by the read, or an
-    /// interrupt set after the throw, which the read's first engine call takes. The record is
-    /// then an `Error` without a message.
-    fn exception_text(&mut self, value: &Root) -> Option<String> {
-        self.agent.host().dom.as_ref()?;
-        let text = self
-            .agent
-            .with_cx(&self.realm, |cx| {
-                let value = cx.get(value).ok()?;
-                bindings::exception_text(cx, value, MESSAGE_CHARS)
-            })
-            .ok()??;
-        Some(text.chars().take(MESSAGE_CHARS).collect())
+    /// (`bindings::exception_text`). `Ok(None)` when the value has no text: a runner without a
+    /// document, any other value, and a read the memory budget ended (the record is then an
+    /// `Error` without a message). `Err(RunEnded)` when the read was ended by the run's end:
+    /// an interrupt set after [`Runner::run_ended`] answered, which the read's first engine
+    /// call takes. `bindings::exception_text` answers `None` for both; a termination of a call
+    /// is sticky until the `with_cx` returns (`crates/swell/src/host/mod.rs:171-172 @ 0.10.0`),
+    /// so one more engine call, a ToNumber of `undefined`, answers it.
+    fn exception_text(&mut self, value: &Root) -> Result<Option<String>, RunEnded> {
+        if self.agent.host().dom.is_none() {
+            return Ok(None);
+        }
+        let read = self.agent.with_cx(&self.realm, |cx| {
+            let Ok(value) = cx.get(value) else {
+                return Ok(None);
+            };
+            if let Some(text) = bindings::exception_text(cx, value, MESSAGE_CHARS) {
+                return Ok(Some(text));
+            }
+            match cx.to_number(Value::Undefined) {
+                Ok(Err(Abrupt::Terminated(Termination::Interrupted))) => Err(RunEnded),
+                Ok(Ok(_) | Err(Abrupt::Throw(_) | Abrupt::Terminated(_)))
+                | Err(HostError::Faulted | surf_defect!()) => Ok(None),
+            }
+        });
+        match read {
+            Ok(text) => Ok(text?.map(|text| text.chars().take(MESSAGE_CHARS).collect())),
+            Err(HostError::Faulted | surf_defect!()) => Ok(None),
+        }
     }
 
     /// Where the error the last entry answered arose.
@@ -843,7 +1021,8 @@ impl Runner {
         }
     }
 
-    /// The steps of the runner's scripts, summed from `last_entry_steps()` after each.
+    /// The steps of the runner's scripts and their checkpoints, summed from
+    /// `last_entry_steps()` after each.
     pub fn steps(&self) -> u64 {
         self.steps
     }
@@ -919,8 +1098,9 @@ fn terminated(termination: Termination) -> ScriptEnd {
     }
 }
 
-/// The kind of a swell error (Q7). Every variant is named: a kind a later tag of swell adds
-/// (HOST-201 announces `AggregateError`) stops the build here, where surf decides its word.
+/// The kind of a swell error (Q7): one arm per kind swell names at `0.10.0`, and one wildcard
+/// arm, because `ErrorKind` is `#[non_exhaustive]` and a `match` outside swell needs one. A
+/// kind a later tag adds does not stop the build: it reads `Error` until surf names it.
 fn error_kind(kind: ErrorKind) -> ScriptErrorKind {
     match kind {
         ErrorKind::Error => ScriptErrorKind::Error,
@@ -930,6 +1110,14 @@ fn error_kind(kind: ErrorKind) -> ScriptErrorKind {
         ErrorKind::SyntaxError => ScriptErrorKind::SyntaxError,
         ErrorKind::TypeError => ScriptErrorKind::TypeError,
         ErrorKind::UriError => ScriptErrorKind::UriError,
+        ErrorKind::AggregateError => ScriptErrorKind::AggregateError,
+        // Swallows every kind swell adds after `AggregateError`; there is none at `0.10.0`
+        // (`crates/swell/src/host/mod.rs:39-55 @ 0.10.0`). The test
+        // `engine::every_error_constructor_keeps_its_word` notices such a kind: it throws
+        // `new <name>([])` for every global constructor whose name ends in `Error` and fails
+        // when one reads another word. What it cannot notice: a kind with no global
+        // constructor whose name ends in `Error` reaches this arm unnoticed.
+        _ => ScriptErrorKind::Error,
     }
 }
 

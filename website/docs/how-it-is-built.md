@@ -44,16 +44,16 @@ surf v1 — 9 file(s), 57 scenario(s), valid
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
-Summary [   4.295s] 63 tests run: 63 passed, 0 skipped
+conform-rust: the narrowed suites of 31 planted defects written to conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d
+Summary [   4.734s] 63 tests run: 63 passed, 0 skipped
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
-conformance step: 7.0 s of its budget of 120 s
+conformance step: 6.2 s of its budget of 120 s
 the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 244 test files, one test binary each
+test-layout: 26 test directories, 252 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
@@ -66,26 +66,29 @@ webidl-check: self-test: a copy of bindings.rs with one byte after the header ch
 webidl-check: self-test: a copy of bindings.rs with a //! line of the header rewritten fails naming it
 webidl-check: self-test: a copy of bindings.rs with an inner attribute inserted before the digest line fails naming it
 doc-tests-check: no doc test outside crates/ports
-    Finished `dev` profile [unoptimized] target(s) in 0.04s
-2003 tests: 2000 passed, 0 failed, 3 ignored (cargo-nextest 2001, doc tests 2)
-test step: 17.0 s of its budget of 120 s
+test-clocks-check: no elapsed-time bound outside taskfiles/test-clocks-ledger.txt
+    Finished `dev` profile [unoptimized] target(s) in 0.02s
+2115 tests: 2113 passed, 0 failed, 2 ignored (cargo-nextest 2113, doc tests 2)
+test step: 20.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
-tls test step: 3.3 s of its budget of 120 s
+tls test step: 3.2 s of its budget of 120 s
 agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [  10.434s] 51 tests run: 51 passed, 155 skipped
+sh-echo: Summary [  10.414s] 55 tests run: 55 passed, 155 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  72 passed (27.6s)
-page step: 28.4 s of its budget of 120 s
+  72 passed (12.0s)
+page step: 12.5 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
-tls-x509-conformance: 2 s
+tls-x509-conformance: 1 s
 forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
 planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
 test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
+release-static-test: 18 case(s), each decided as expected by taskfiles/release-static.sh
 sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
 doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
-four steps: 55.7 s (test step 17.0 s, tls test step 3.3 s, conformance step 7.0 s, page step 28.4 s)
+test-clocks-check-test: all cases decided as written
+four steps: 42.0 s (test step 20.1 s, tls test step 3.2 s, conformance step 6.2 s, page step 12.5 s)
 ```
 
 It validates the specification, runs the 221 scenarios against the interpreter built into `ess`
@@ -99,18 +102,39 @@ cargo-nextest; a test still running after 60 seconds is ended and fails, each of
 steps (the conformance step, the test step, the TLS test step and the page step) fails when it
 takes over 120 seconds, and the last line adds the four up. The block leaves out the ten slowest
 tests each step also prints, the agent tasks' rows after their counts, npm's and Playwright's
-own lines and the rows of the two conformance counts. It is the gate run of 2026-11-26 on
-`5664184`, the tip of `story:scripts-dom-reading`, that `task check-runner` ended in 111 s,
-export included, at a load of 48.07 at its start and 59.05 at its end; every line and every time
-of the block is that run's (2003 tests, 3 of them ignored, and 244 test files, where
-`story:html-script-hook`'s tip `58d720b` had 1845 and 230; its conformance step found the
-narrowed suites current, where the run on `58d720b` wrote them anew). Before it the block was
-the gate run of 2026-11-25 on `58d720b`, which ended in 231 s at a load of 33.20 at its start
-and 57.83 at its end, and before that the run of 2026-11-24 on `91f7ff1`, the Web IDL reader's
-branch, with the lines of the stories merged after it counted on their tips. The page tests'
-line of the run on `5664184`, `72 passed (27.6s)`, has its slowest test (`adversary: an action
-streamed while the detail loads after a reset is not lost`) at 3.299 s and `an entry over 1
-MiB` at 1.289 s;
+own lines, the rows of the two conformance counts, the rows of `release-static-test` before its
+last line (the files it makes and its 14 planted defects) and the rows of
+`test-clocks-check-test` before its last line (the awks it names and its cases). It is the gate
+run of 2026-11-26 on `b5c2fc6`, the tip of `story:scripts-dom-selectors`, which gives the
+script runner of `surf-script` the DOM's nine selector members over a subset of Selectors
+Level 4, with `main` merged into it, that `task check-runner` ended in 151 s, export included,
+at a load of 1.83 at its start and 3.64 at its end; every line and every time of the block is
+that run's (2115 tests, 2 of them ignored, and 252 test files, where the run on `6b4593f` had
+2050 and 249; its conformance step wrote the narrowed suites, as the runs on `6b4593f` and
+`58d720b` did, where the runs on `52ebbd7`, `e61d766` and `5664184` found them current).
+Before it the block was the gate run of 2026-11-26 on `6b4593f`, the tip of
+`story:swell-0-9-0`, which moves the script engine's pin from swell `0.8.0` to `0.10.0`, with
+`main` merged into it, which ended in 281 s at a load of 60.72 at its start and 57.88 at its
+end, before that the gate run of 2026-11-26 on `52ebbd7`, the tip of
+`story:tests-without-wall-time-bounds` with `story:agent-tasks-left-process-wait` and
+`story:session-core-limit-one` merged into it, which ended in 176 s at a load of 57.02 at its
+start and 81.27 at its end, before that the gate run of 2026-11-26 on `e61d766`, which ended in
+153 s at a load of 54.73 at its start and 58.33 at its
+end, before that the gate run of 2026-11-26 on `5664184`, which ended in 111 s at a load of
+48.07 at its start and 59.05 at its end, before that the gate run of 2026-11-25 on `58d720b`,
+which ended in 231 s at a load of 33.20 at its start and 57.83 at its end, and before that the
+run of 2026-11-24 on `91f7ff1`, the Web IDL reader's branch, with the lines of the stories
+merged after it counted on their tips. The page tests' line of the run on `b5c2fc6`, `72 passed
+(12.0s)`, has its slowest test (`adversary: an action streamed while the detail loads after a
+reset is not lost`) at 1.142 s and `an entry over 1 MiB` at 0.639 s; the run on `6b4593f` had
+`72 passed (20.8s)`, the same slowest test at 1.422 s and `an entry over 1 MiB` at 1.216 s; the
+run on `52ebbd7` had
+`72 passed (35.8s)`, its slowest test (`an entry over 1 MiB`) at 2.473 s; the run on `e61d766` had `72
+passed (24.0s)`, its slowest test (`adversary: with Latest off the playhead stays after its
+action is dropped by the bound`) at 1.504 s and `an entry over 1 MiB` at 1.465 s; the run on
+`5664184`
+had `72 passed (27.6s)`, its slowest test (`adversary: an action streamed while the detail
+loads after a reset is not lost`) at 3.299 s and `an entry over 1 MiB` at 1.289 s;
 the run on `58d720b` had `72 passed (32.7s)`, its slowest test (`reset after a long absence`)
 at 3.034 s and `an entry over 1 MiB` at 2.992 s; the block's line before that, `72 passed
 (18.3s)`, had its slowest test (`an entry over 1 MiB`) at 2.350 s; the run of 2026-11-24 on

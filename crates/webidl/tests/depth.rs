@@ -1,10 +1,10 @@
 //! The bound on nested types: a named type alone is 1 deep, `sequence<DOMString>` and
 //! `(A or B)` 2 deep; past 32 levels a type is refused, never read by deeper recursion. And the
-//! time of a model of many definitions.
+//! definitions a model of many definitions looks up.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use surf_webidl::{Model, read};
+use surf_webidl::{Model, definition_visits, read};
 
 const FILE: &str = "test.idl";
 
@@ -48,27 +48,42 @@ fn types_33_deep_are_refused() {
     assert_eq!(refused(&unions(33)), REFUSED);
 }
 
-/// `Model::new` finds each name through one map built once, not by a scan of every definition
-/// per statement: 16,000 interfaces, each with one `includes` of one mixin, read and modelled
-/// within 2 s.
-#[test]
-fn a_model_of_16000_interfaces_is_built_within_2_s() {
+/// The definitions `Model::new` looks up for `interfaces` interfaces, each with one `includes`
+/// of one mixin: the difference of [`definition_visits`] around it (the read of the text is
+/// outside it), with the time it took, printed.
+fn visits_of_a_model(interfaces: usize) -> usize {
     let mut text = String::new();
-    for i in 0..16_000 {
+    for i in 0..interfaces {
         text.push_str(&format!("interface A{i} {{}};\nA{i} includes M;\n"));
     }
     text.push_str("interface mixin M {\n  undefined f();\n};\n");
-    let start = Instant::now();
     let definitions = read(&text, FILE).unwrap_or_else(|error| panic!("{error}"));
-    let read_time = start.elapsed();
+    let start = Instant::now();
+    let before = definition_visits();
     let model = Model::new(definitions).unwrap_or_else(|error| panic!("{error}"));
-    let total = start.elapsed();
+    let visits = definition_visits() - before;
     println!(
-        "16000 interfaces: read {read_time:?}, model {:?}, together {total:?}",
-        total - read_time
+        "{interfaces} interfaces: {visits} definitions visited, model {:?}",
+        start.elapsed()
     );
-    assert_eq!(model.counts("A15999").from_mixins, 1);
-    assert!(total < Duration::from_secs(2), "{total:?}");
+    let last = format!("A{}", interfaces - 1);
+    assert_eq!(model.counts(&last).from_mixins, 1);
+    visits
+}
+
+/// `Model::new` finds each name through one map built once, not by a scan of every definition
+/// per statement: the definitions it looks up grow with the statements. Twice the interfaces,
+/// each with one `includes` of one mixin, visit at most 3 times the definitions; a scan per
+/// statement would visit 4 times as many. A lookup that does not go through the counted
+/// accessor is not seen.
+#[test]
+fn the_definitions_a_model_visits_double_when_its_interfaces_double() {
+    let (half, whole) = (visits_of_a_model(8_000), visits_of_a_model(16_000));
+    assert!(half > 0, "no definition visited at 8000 interfaces");
+    assert!(
+        whole <= 3 * half,
+        "{half} definitions visited at 8000 interfaces, {whole} at 16000"
+    );
 }
 
 #[test]

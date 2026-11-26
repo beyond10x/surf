@@ -167,20 +167,21 @@ fn a_record_read_after_the_memory_limit_is_whole() {
     assert_eq!(record(again), Ok(Some("x".repeat(1024))));
 }
 
-/// Item 2 of the fourth pass, a read that fails. The slice that throws sets the agent's
-/// interrupt, as a watchdog may between the throw and the record: the script ends `threw`, and
-/// the first engine call of the read (`string_length`'s `to_object`) begins an entry, which
-/// the set flag ends. The record is an `Error` without a message (the prelude answers `None`,
-/// and the summary has no own `message` of a `DOMException`), never a partial text and never a
-/// fault; the read took the flag, and the next script runs and its record is whole.
+/// Item 2 of the fourth pass, as swell `0.10.0` reads it. The slice sets the agent's interrupt
+/// and then throws a `DOMException`. Since swell `0.9.1` the engine reads the flag after a host
+/// function that answered by a throw too (HOST-216): the run ends in `Terminated(Interrupted)`,
+/// so the script ends `limit: wall-clock` and no record of the throw is read; swell clears the
+/// flag when it reads it. The next script runs and its record is whole.
 #[test]
-fn a_record_read_that_an_interrupt_ends_gives_no_text() {
-    let (first, next) = with(limits(16 << 20, 1 << 20), |runner| {
+fn interrupt_set_before_a_throw_ends_at_wall_clock_and_the_next_record_is_whole() {
+    let (first, flag, next) = with(limits(16 << 20, 1 << 20), |runner| {
         let first = evaluate(runner, r#"document.getElementById("interrupt");"#);
+        let flag = runner.agent_and_realm().0.interrupt_handle().is_set();
         let next = evaluate(runner, r#"throw new DOMException("m", "N");"#);
-        (first, next)
+        (first, flag, next)
     });
-    assert_eq!(record(first), Ok(None));
+    assert_eq!(first, ScriptEnd::Limit(Reason::WallClock), "{first}");
+    assert!(!flag, "the interrupt flag after the script");
     assert_eq!(record(next), Ok(Some("N: m".to_string())));
 }
 

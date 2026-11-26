@@ -349,15 +349,15 @@ fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
 
 /// What a walk reads of each node it visits, and so what it charges for it beside its one step.
 #[derive(Clone, Copy)]
-enum Reads {
+pub(super) enum Reads<'a> {
     /// The node's kind and names only: one step a node.
     Names,
     /// Also the attribute of a name, found by name and its value not read: one step per 4
     /// attributes of the element, from the list's length, before the one pass that finds it.
-    Name(&'static str),
+    Name(&'a str),
     /// As `Name`, and the value of the attribute found is read or compared: one step per 16
     /// bytes of it, before it is read.
-    Value(&'static str),
+    Value(&'a str),
     /// As `Value` for `class`, and one step per class token of the value, before the first
     /// token is looked up; the pass that counts the tokens is paid by the bytes' charge.
     Classes,
@@ -382,7 +382,11 @@ pub(super) fn attribute_count(tree: &Tree, node: NodeId) -> usize {
 
 /// The positions in `node`'s attribute list of the attributes `names` in no namespace, found in
 /// one pass over the list.
-fn positions<const N: usize>(tree: &Tree, node: NodeId, names: [&str; N]) -> [Option<usize>; N] {
+pub(super) fn positions<const N: usize>(
+    tree: &Tree,
+    node: NodeId,
+    names: [&str; N],
+) -> [Option<usize>; N] {
     let mut found = [None; N];
     if let NodeData::Element { attributes, .. } = tree.data(node) {
         for (at, attribute) in attributes.iter().enumerate() {
@@ -416,7 +420,11 @@ fn value_at(tree: &Tree, node: NodeId, at: usize) -> &str {
 
 /// Charges the scan of `node`'s attributes for `name`, finds it in one pass, and charges what
 /// `reads` reads of its value: the position found.
-fn scan_for(cx: &mut DomCx<'_, '_>, node: NodeId, reads: Reads) -> DomResult<Option<usize>> {
+pub(super) fn scan_for(
+    cx: &mut DomCx<'_, '_>,
+    node: NodeId,
+    reads: Reads,
+) -> DomResult<Option<usize>> {
     let (name, value, tokens) = match reads {
         Reads::Names => return Ok(None),
         Reads::Name(name) => (name, false, false),

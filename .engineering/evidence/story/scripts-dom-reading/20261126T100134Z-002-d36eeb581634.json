@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:34Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-reading",
+  "kind": "story",
+  "revision": 48,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "six passes of the adversary review on the unit by reviewers who did not write it, 2026-11-25 and 2026-11-26",
+    "reference": "pass 1 on ace7176: 4 musts, 9 shoulds, 21 cases; pass 2 on fc55e35: 2, 4, 16; pass 3 on 8086a30: 1, 9, 12; pass 4 on db0e535: 4, 5, 14; pass 5 on 14f8a2a: 1, 8, 10; pass 6 on 50a4239: 0 musts, 7 shoulds, 12 cases; each must fixed by the round after its pass"
+  }
+}

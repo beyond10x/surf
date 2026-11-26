@@ -107,9 +107,9 @@ Element removeAttributeNode throws reason: attribute nodes
 Element attachShadow throws reason: shadow trees
 Element shadowRoot reading
 Element customElementRegistry throws reason: custom elements
-Element closest selectors
-Element matches selectors
-Element webkitMatchesSelector selectors
+Element closest selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
+Element matches selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
+Element webkitMatchesSelector selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
 Element getElementsByTagName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
 Element getElementsByTagNameNS reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
 Element getElementsByClassName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
@@ -123,8 +123,8 @@ Element prepend mutation
 Element append mutation
 Element replaceChildren mutation
 Element moveBefore mutation
-Element querySelector selectors
-Element querySelectorAll selectors
+Element querySelector selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
+Element querySelectorAll selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
 Element previousElementSibling reading
 Element nextElementSibling reading
 Element before mutation
@@ -172,8 +172,8 @@ Document prepend mutation
 Document append mutation
 Document replaceChildren mutation
 Document moveBefore mutation
-Document querySelector selectors
-Document querySelectorAll selectors
+Document querySelector selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
+Document querySelectorAll selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
 Document createExpression throws reason: XPath
 Document createNSResolver throws reason: XPath
 Document evaluate throws reason: XPath
@@ -228,8 +228,8 @@ DocumentFragment prepend mutation
 DocumentFragment append mutation
 DocumentFragment replaceChildren mutation
 DocumentFragment moveBefore mutation
-DocumentFragment querySelector selectors
-DocumentFragment querySelectorAll selectors
+DocumentFragment querySelector selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
+DocumentFragment querySelectorAll selectors deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector
 
 NodeList item reading
 NodeList length reading

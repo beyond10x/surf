@@ -7,6 +7,44 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-26
+
+### Changed
+
+- `surfd` starts each session process it starts through `setpriv` and `prlimit` with a core
+  file size limit of 1 byte (`prlimit --core=1:1`) in place of 0, and with 0 (`--core=0:0`)
+  where its own hard core limit is 0, which `prlimit` cannot raise, or where
+  `/proc/self/limits` cannot be read or has no line `surfd` can read. A session started
+  through them still writes no core file, and one that ends by a signal that dumps core is
+  seen without the wait for the host's core handler, and its status carries no dump; where
+  the limit is 0 the wait stays. A session started without them keeps `surfd`'s own core
+  limit, as in release `0.9.0`. On a Linux host whose core pattern is a pipe, the kernel does
+  not start the handler when a session under the limit of 1 ends by a signal that dumps core:
+  the host's crash list (`coredumpctl` under systemd) has no entry for it, and the kernel
+  writes at most one log line for it, `RLIMIT_CORE is set to 1, aborting core`. Shown on one
+  host: 15 of 15 such ends listed under a limit of 0, 0 of 15 under a limit of 1, and the log
+  line for 10 of those 15.
+- The HTML parser's depth limit, 512 as before, bounds the depth of the document tree in every
+  parse: an element that would be deeper is not made, and a move of misnested formatting tags
+  (the adoption agency algorithm) or a copy into a `selectedcontent` element that would put a
+  node deeper is not made. Release `0.9.0` bounded the number of elements on the stack of open
+  elements instead. A page whose tree grew deeper than 512 while that stack stayed within it,
+  through such moves or copies, now stops at the limit; a page whose stack held more elements
+  than its tree is deep, as with elements a `table` moves out of itself, now parses further
+  before the limit stops it. Where the limit stops a parse, `surf <url>` prints
+  `note limit <document-id> Depth` and the rows of what was parsed before it, and a session's
+  `DocumentParsed` entry has `stopped_by` `Depth`.
+- The HTML parser counts more of its work toward its step limit, 2^27 (134,217,728) as before:
+  also each entry of the stack of open elements that a removal or an insertion moves, each
+  scope boundary it visits, each entry the `frameset` rule pops, and the walks that read a
+  node's depth. It reads the limit before each entry of a scan of the stack or of the list of
+  active formatting elements and before each write to the tree, where release `0.9.0` read it
+  after each token and ran the token that passed it to its end. A parse that passes the limit
+  stops inside that token, keeps the tree built before it and names `Steps`, also where the
+  rest of the token would have met another limit; a page that came close to the limit in
+  release `0.9.0` can now reach it. `surf <url>` prints `note limit <document-id> Steps`, and a
+  session's `DocumentParsed` entry has `stopped_by` `Steps`.
+
 ## [0.9.0] - 2026-11-25
 
 ### Added

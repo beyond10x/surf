@@ -24,7 +24,7 @@ that.
    the crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
    checksum. The binaries built from `main` use it, and so do those of every release since `0.7.0`.
    And one crate of the organization, the script engine swell, by a git dependency on a
-   release tag (`0.8.0`), used by `surf-script` alone; no binary uses `surf-script` yet.
+   release tag (`0.10.0`), used by `surf-script` alone; no binary uses `surf-script` yet.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
    counting allocators that measure what a fetch holds, what a parse allocates and what the
    TLS code allocates.

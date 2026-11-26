@@ -146,8 +146,10 @@ above, and the list of standards itself was written from memory.
   the task `view-stream-check`, `taskfiles/view-test.yml` the tasks `view-test` and
   `view-test-setup` (over `taskfiles/view-test-setup.sh`), and
   `taskfiles/release.yml` the task `release-smoke`
-  (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
-  release workflow calls that script with `sh`. `taskfiles/check-runner.yml` holds the task
+  (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`, and
+  the tasks `release-static` and `release-static-test` over `taskfiles/release-static.sh`
+  (`DIR=<unpacked archive>`, optional `IMAGE`) and `taskfiles/release-static-test.sh`; the
+  release workflow calls both release scripts with `sh`. `taskfiles/check-runner.yml` holds the task
   `check-runner`, which runs `taskfiles/check-runner.sh`; `taskfiles/forge-watch.yml` the tasks
   `forge-watch` and `forge-watch-test` over `taskfiles/forge-watch.sh` and the recorded runs
   under `taskfiles/forge-watch-test/` (`runs-61fb7a9.json` and `runs-e47b1d1.json` as the forge
@@ -159,6 +161,8 @@ above, and the list of standards itself was written from memory.
   `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
   `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`; `taskfiles/doc-tests.yml` the tasks
   `doc-tests-check` and `doc-tests-check-test` over `taskfiles/doc-tests-check.sh`;
+  `taskfiles/test-clocks.yml` the tasks `test-clocks-check` and `test-clocks-check-test`
+  over `taskfiles/test-clocks-check.sh` and the ledger `taskfiles/test-clocks-ledger.txt`;
   `taskfiles/tls-anchors.yml` the tasks `anchors-refresh` (fetches curl's `cacert.pem` and
   its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
   differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
@@ -363,19 +367,24 @@ above, and the list of standards itself was written from memory.
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
-    swell 0.8.0 agent under surf's limits, and a document's scripts over the generated DOM
-    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`) and
-    whose slice `attributes` reads and writes an element's attributes
-    (`story:scripts-dom-attributes`: its members in `src/dom/attributes.rs`, every read of the
-    tree and its charge in `src/dom/attribute_reads.rs`, every write, its validation and its
-    charges in `src/dom/attribute_writes.rs`); no crate depends on it. Depends on swell,
-    `surf-html`, `surf-secret` and `surf-url`. 232
-    tests in one test binary: `engine` 18 (3 of them ignored until swell reaches HOST-125,
-    HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,
-    `adversary_5` 7, `adversary_6` 5, `bindings` 18, `dom_reading` 48, `dom_reading_cost` 19,
+    swell 0.10.0 agent under surf's limits, and a document's scripts over the generated DOM
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`), whose
+    slice `selectors` answers the selector members over a subset of Selectors Level 4
+    (`story:scripts-dom-selectors`) and whose slice `attributes` reads and writes an element's
+    attributes (`story:scripts-dom-attributes`: its members in `src/dom/attributes.rs`, every
+    read of the tree and its charge in `src/dom/attribute_reads.rs`, every write, its
+    validation and its charges in `src/dom/attribute_writes.rs`); no crate depends on it.
+    Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 409 tests in one test binary:
+    `engine` 29 (2 of them ignored until swell reaches HOST-26 and HOST-127), `adversary` 10,
+    `adversary_2` 1, `adversary_3` 19, `adversary_4` 10, `adversary_5` 7, `adversary_6` 5,
+    `adversary_checkpoint` 10, `adversary_checkpoint_2` 5, `bindings` 22, `dom_reading` 48,
+    `dom_reading_cost` 19,
     `adversary_dom_reading` 17, `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11,
-    `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10 and `adversary_dom_reading_6` 12;
-    the modules `dom_attributes`, `dom_mutation`, `dom_selectors` and `parse_run` hold none yet.
+    `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10, `adversary_dom_reading_6` 12,
+    `dom_selectors` 42, `adversary_dom_selectors` 9, `adversary_dom_selectors_2` 8,
+    `adversary_dom_selectors_3` 6, `dom_attributes` 53, `dom_attributes_cost` 7,
+    `adversary_dom_attributes` 10, `adversary_dom_attributes_2` 6 and `run_end` 6; the modules
+    `dom_mutation` and `parse_run` hold none yet.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -605,7 +614,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.9.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.10.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Since
     `story:agent-skill-definition` `surf-agent help --for-agent`, those words and nothing else,
     prints a definition for agents and asks no session for anything (`src/help.rs`,
@@ -651,9 +660,10 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 89 tests (4 unit tests of `src/view.rs`,
-    `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link` 3, `built` 14,
-    `hardening` 17, `in_process` 14, `log` 6, `view` 10) run a stand-in session
+    from the directory of its own executable. Its 98 tests (4 unit tests of `src/view.rs`, 2 of
+    `src/daemon.rs`, `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_core`
+    4, `adversary_link` 3, `built` 14, `first_line` 1, `hardening` 19, `in_process` 14, `log` 6,
+    `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -875,9 +885,11 @@ above, and the list of standards itself was written from memory.
     task's error), then the `raise:` lines; `task agent-tasks-report` prints it.
     `tasks::a_call_that_never_answers_ends_at_its_bound` starts no TLS server and writes `task
     https skipped`; the model lane (`taskfiles/agent-tasks-model.sh`) writes `task https
-    skipped: server https`. 48 tests (`adversary` 4, `adversary2` 10, `archive_task` 1,
-    `bounded` 4, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
-    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). Depends on `surf-answer` and
+    skipped: server https`. 52 tests (`adversary` 4, `adversary2` 13, `archive_task` 1,
+    `bounded` 5, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
+    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). The tests of the model driver
+    (`adversary2`, `bounded`) decide that a model's processes ended by a wait, `ended_within`
+    with `END_BOUND`, never by one read. Depends on `surf-answer` and
     `surf-test-process`; its tests also
     on `surf-tls`, `surf-tls-test-server` and `surf-tls-test-certs`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
@@ -1066,7 +1078,7 @@ above, and the list of standards itself was written from memory.
     `adversary_same_object_3` 1, `depth` 4, `extraction` 6, `reader` 36, `refusals` 26,
     `same_object` 2, `selection` 14, `source` 2, `vendored` 1; the model of both pages is built
     once per run, in `vendored`;
-    `depth` also holds a model of 16,000 interfaces under 2 s).
+    `depth` also holds that the definitions a model visits double when its interfaces double).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
     at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
@@ -1485,7 +1497,13 @@ is on that old history too, and stays local.
   `/proc/self` and need `XDG_RUNTIME_DIR`. The packages `surf-cli`, `surf-agent`, `surfd` and
   `surf-session` carry the release version; the tag is checked against `surf-cli`. The smoke
   test is `taskfiles/release-smoke.sh` (task `release-smoke`, `DIR=<unpacked archive>`): the
-  release workflow calls it with `sh`, and it runs unchanged on a workstation.
+  release workflow calls it with `sh`, and it runs unchanged on a workstation. The static check
+  is `taskfiles/release-static.sh` (task `release-static`, `DIR=<unpacked archive>`, optional
+  `IMAGE`): after the smoke test and before the upload, the job `package` runs it on each
+  unpacked Linux archive with `--image "$STATIC_IMAGE"`, an Alpine image named by digest in the
+  workflow's `env:`; it fails a binary with an `INTERP` row (`readelf -lW`), a `(NEEDED)` entry
+  (`readelf -d`) or no readable ELF form, then runs `surf-agent help --for-agent` in that
+  image without network (story:release-linux-static-check).
   `docs/releasing.md` is the procedure. Since `story:tls-release`: every shipped binary is
   built with ring through `surf-tls`, and `NOTICE` names ring, the four crates it needs and the
   root list; the job `package` installs `musl-tools` on the two Linux runners, because ring
@@ -1558,9 +1576,11 @@ the others were written to a scratch directory and not compiled:
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
   round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
   panel, release `0.7.0` TLS 1.3 and `https:`, release `0.8.0` the cookie jar and
-  `surf-agent help --for-agent`, and release `0.9.0` the hardened start of a session process
+  `surf-agent help --for-agent`, release `0.9.0` the hardened start of a session process
   (`story:session-process-hardening`: an empty environment, no new privileges, the `note
-  ended` line) (the releases are listed at
+  ended` line), and release `0.10.0` the core limit of a session process
+  (`story:session-core-limit-one`: 1 byte through `setpriv` and `prlimit`) (the releases are
+  listed at
   https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". Round 3 of `docs/plan/agent-waves.md`
@@ -1571,7 +1591,7 @@ the others were written to a scratch directory and not compiled:
   and 4 are in release `0.8.0` (TLS, round 2, `story:agent-cookie-jar`, implemented), and so
   is item 6's `surf-agent help --for-agent` (`story:agent-skill-definition`, still active in
   the planning store). Open for the next steps: pages that build their content by script
-  (`epic:scripts-in-a-page`, draft) and round 3 (`epic:e2e-scenario-runner`, active), which
+  (`epic:scripts-in-a-page`, active) and round 3 (`epic:e2e-scenario-runner`, active), which
   items 2 and 4 no longer hold back.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
@@ -1626,7 +1646,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `test`, with a budget of 120 s of its own: no budget holds the two steps' times together.
   Since
   `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
-  `build`, and runs `doc-tests-check-test` after `sh-echo-test`. Since
+  `build`, and runs `doc-tests-check-test` after `sh-echo-test`.
+  Since `story:tests-without-wall-time-bounds` it runs `test-clocks-check` after
+  `doc-tests-check` and `test-clocks-check-test` after `doc-tests-check-test`.
+  Since `story:release-linux-static-check` it runs `release-static-test` after
+  `test-layout-test`, before `sh-echo-test`. Since
   `story:page-test-step-within-budget` it ends with `step-budgets` (`taskfiles/step-budgets.sh`),
   which reads the seconds the four timed steps wrote, `.out/test-step.seconds` (`test`),
   `.out/tls-test-step.seconds` (`test-tls`), `.out/conform-step.seconds` (`conform-rust`) and
@@ -1860,9 +1884,46 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
+- `task test-clocks-check`: `sh taskfiles/test-clocks-check.sh .`. A test proves a cost by
+  a count and bounds a time only by a wait with a limit (`task test`), so this reads the
+  tracked `*.rs` files under a `tests/` directory of `crates/`, `generated/` and
+  `conformance/` (`git ls-files`: an untracked file is not read), blanks comments, strings
+  and character literals, and fails, naming `<file>:<line>`, on an `assert!` that holds an
+  upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` and its `saturating_`
+  and `checked_` forms, or a name bound from one by `let`, `if let`, a `for` pattern, `=`,
+  `+=` or a `match` arm, in the forms the header of the script lists), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left
+  (`deadline.saturating_duration_since(Instant::now()) > Duration::ZERO`), and on an `if`,
+  `while`, `else` or match guard on such a value whose block fails the test. The header of the
+  script lists the forms it reads and the ones it does not see. The ledger
+  `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, one file per line, sorted by path)
+  lists the files that still hold such statements: a line out of order fails, a file with
+  more fails, a file with fewer fails and names the count to write, so the ledger only
+  shrinks. A line for a file the check did not read
+  (untracked, renamed, deleted or outside those directories) fails and says to delete the
+  line. `AWK=<command>` names the awk (POSIX awk only), `--ledger <file>` and `--count` are
+  options, a root that is not the top of a git work tree exits 2. Else it prints
+  `test-clocks-check: no elapsed-time bound outside taskfiles/test-clocks-ledger.txt`. It
+  calls no cargo.
+- `task test-clocks-check-test`: that script on small trees under
+  `.out/test-clocks-check-test/`, one case per name (refused, passed, exit 2, ledger), each
+  compared on its exit status and the lines printed, under each of `awk`, `mawk`, `gawk`,
+  `gawk --posix` and `busybox awk` that exists on the machine. `SCRIPT=<path>` runs a copy
+  of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`), from a checkout of the commit
   built: step 2 reads `crates/tls/src/anchors/SOURCE`.
+- `task release-static DIR=<unpacked archive>`, optional `IMAGE=<image>@sha256:<digest>`:
+  `taskfiles/release-static.sh` on an unpacked Linux archive, as the release workflow runs it:
+  `surf`, `surf-agent`, `surfd` and `surf-session` with no `INTERP` row, no `(NEEDED)` entry
+  and an ELF form `readelf` reads, then, with `IMAGE`, `surf-agent help --for-agent` in that
+  image with `docker` (`DOCKER` names another program). Exit 0, 1, or 2 for a usage error.
+- `task release-static-test`: that script on five ELF files written with `printf` under
+  `.out/release-static-test/` and a stand-in `docker`, eighteen cases, each compared on its
+  exit status, a text of the output and, for the container cases, the stand-in's recorded
+  arguments; then fourteen planted defects, copies of the script made with `sed`, each run on
+  the cases it names, which must fail, and on case 1, which must pass. It builds nothing and
+  starts no container. `SCRIPT=<path>` runs a copy
+  of the script.
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
   taskfiles/conform-noticed.sh check`: the sha256 of the sources of
@@ -1913,7 +1974,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   build turns it off; the lock is read only in the form cargo writes. Else it prints
   `Cargo.lock: <n> package(s), <m> from outside this repository, each on the allow-list`:
   58 and 25 today (`story:scripts-engine-dependency`; 51 and 19 before it). The list holds
-  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.8.0
+  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.10.0
   (`docs/design/scripts.md`, Q13 and Q15), one line `<name> <version> <source> <checksum>`
   each, sorted. It does not read `conformance/Cargo.lock`. A path dependency outside the
   repository has no `source` line and is not caught. The tests of
@@ -1979,7 +2040,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   ignored), and `test step: <s> s of its budget of 120 s`. Raising either bound is not a fix: a
   test over the budget is. A test bounds a time only by a wait for the event with a limit at
   least 10 times the time it takes alone, and proves a cost by a count (such as
-  `surf_page::attribute_visits()`), not by a wall time.
+  `surf_page::attribute_visits()`), not by a wall time. `task test-clocks-check` (a step of
+  `check`) refuses the assertion of an upper bound on an elapsed time, in the forms the header
+  of `taskfiles/test-clocks-check.sh` lists as refused, that its ledger does not list; the
+  same header names the forms it does not see.
 - `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
   ones `task test` leaves out, under the same `.config/nextest.toml` and environment
   (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. Of the other packages

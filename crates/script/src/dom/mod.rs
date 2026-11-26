@@ -10,12 +10,14 @@ mod attributes;
 mod mutation;
 mod reading;
 mod reads;
+mod selector_reads;
 mod selectors;
 mod wrapper;
 
 pub use attributes::SurfAttributes;
 pub use mutation::SurfMutation;
 pub use reading::SurfReading;
+pub use selector_reads::Frames;
 pub use selectors::SurfSelectors;
 pub use wrapper::SurfWrap;
 
