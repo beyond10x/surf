@@ -204,17 +204,20 @@ impl TreeBuilder {
                 {
                     self.tree.insert_new(document, doctype, None, &self.steps);
                 }
-                self.quirks_mode = doctype_quirks_mode(
+                let mode = doctype_quirks_mode(
                     name.as_deref(),
                     public_id.as_deref(),
                     system_id.as_deref(),
                     *force_quirks,
                 );
+                self.quirks_mode = mode;
+                self.tree.set_quirks_mode(mode);
                 self.mode = Mode::BeforeHtml;
                 Flow::Done
             }
             _ => {
                 self.quirks_mode = QuirksMode::Quirks;
+                self.tree.set_quirks_mode(QuirksMode::Quirks);
                 self.mode = Mode::BeforeHtml;
                 Flow::Reprocess
             }

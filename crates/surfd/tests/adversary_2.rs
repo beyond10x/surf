@@ -127,47 +127,107 @@ fn a_ready_timeout_of_a_live_session_carries_no_note() {
     assert_eq!(answer.text, "", "{answer:?}");
 }
 
-/// The session process aborts at once; a child it started writes a first line that is not
-/// `ready` 0.3 s later. The session died by a signal `surfd` did not send before its first byte
-/// (`docs/agent-answer.md`, "from the session's start on"): the answer names it, and not
-/// `bound cpu` (`SIGABRT`).
+/// The session shell ends itself by `SIGUSR1` at once; a child it started writes a first line
+/// that is not `ready` once the session shell has ended. The session died by a signal `surfd`
+/// did not send before its first byte (`docs/agent-answer.md`, "from the session's start on"):
+/// the answer names it, and not `bound cpu`.
+///
+/// The signal is one that dumps no core: after a signal that dumps core the shell is waitable
+/// only once the host's core handler has taken the dump, which can take seconds under load.
+///
+/// The order is made by an event, not a clock: the child reads `/proc/<pid>/stat` of the shell
+/// (`$$`) every 10 ms until the state after the last `)` is `Z` (ended, its status not yet
+/// collected) or the file is gone, and only then writes. A read that fails is taken as the
+/// shell's end. A closed pipe is no such event: the kernel closes a process's descriptors
+/// before the process is waitable. After 300 turns the child gives up: it makes the file
+/// `gave-up` and exits without a line, an end whose answer is the one asserted here, so the
+/// case fails on that file. The ready timeout of 30 s lets the 300 turns end first; a green run
+/// answers long before it.
 #[test]
 fn another_first_line_after_the_session_died_by_its_own_signal_names_it() {
     let dir = TestDir::new();
+    let gave_up = dir.path.join("gave-up");
     let mut config = config(&dir);
+    config.session_ready_timeout = Duration::from_secs(30);
     config.session_program = script(
         &dir,
         "session",
-        "( /usr/bin/sleep 0.3; printf 'x\\n' ) &\nkill -s ABRT $$\n",
+        &format!(
+            "(\n\
+             i=0\n\
+             while [ \"$i\" -lt 300 ]; do\n\
+             read -r stat < /proc/$$/stat || break\n\
+             case ${{stat##*')'}} in ' Z '*) break ;; esac\n\
+             /usr/bin/sleep 0.01\n\
+             i=$((i + 1))\n\
+             done\n\
+             if [ \"$i\" -ge 300 ]; then : > {gave_up}; exit 0; fi\n\
+             printf 'x\\n'\n\
+             ) &\n\
+             kill -s USR1 $$\n",
+            gave_up = quoted(&gave_up),
+        ),
     );
     let _daemon = start(config);
     let answer = call(&dir, &open_request(true));
     assert_eq!(answer.status, 3, "{answer:?}");
     assert_eq!(answer.reason.as_deref(), Some(BEFORE_READY), "{answer:?}");
-    assert_eq!(answer.text, died_with(&answer, "note ended: signal SIGABRT"));
+    assert_eq!(
+        answer.text,
+        died_with(&answer, "note ended: signal SIGUSR1")
+    );
+    assert!(
+        !gave_up.exists(),
+        "the child's loop of 300 turns gave up before the session shell was waitable: {answer:?}"
+    );
 }
 
-/// The session process aborts at once; a child it started holds its standard output 1 s, past
-/// the ready timeout of 0.3 s and within the kill grace. The answer names `SIGABRT`.
+/// The session shell ends itself by `SIGUSR1` at once; a child it started holds its standard
+/// output until `surfd` has collected the shell at the ready timeout of 2 s. The answer names
+/// `SIGUSR1`.
+///
+/// The signal is one that dumps no core: after a signal that dumps core the shell is waitable
+/// only once the host's core handler has taken the dump, which can take seconds under load.
+///
+/// One order is a clock: the shell must have ended before the ready timeout, which starts
+/// inside `open` right after the spawn and which a test cannot hold back; the margin is the
+/// timeout of 2 s for a shell that ends in milliseconds. The other order is an event: the child
+/// must hold the output past the ready timeout (a child that lets go earlier takes the path of
+/// a session that wrote nothing) and let go within `abandon`'s wait. At the timeout `abandon`
+/// collects the ended shell, and from then on `/proc/<pid>/stat` of the shell (`$$`) is gone.
+/// The child tests for that file every 10 ms and exits once it is gone; after 1,000 turns it
+/// gives up and exits, after `abandon`'s wait, and the answer is red. The second margin: the
+/// child must see the file gone and exit within the kill grace of 2 s, against a turn of 10 ms
+/// and the start of one `sleep`. The case lasts about 2 s.
 #[test]
 fn a_ready_timeout_after_the_session_died_by_its_own_signal_names_it() {
     let dir = TestDir::new();
     let mut config = config(&dir);
-    config.session_ready_timeout = Duration::from_millis(300);
+    config.session_ready_timeout = Duration::from_secs(2);
     config.session_program = script(
         &dir,
         "session",
-        "( /usr/bin/sleep 1 ) &\nkill -s ABRT $$\n",
+        "(\n\
+         i=0\n\
+         while [ -e /proc/$$/stat ] && [ \"$i\" -lt 1000 ]; do\n\
+         /usr/bin/sleep 0.01\n\
+         i=$((i + 1))\n\
+         done\n\
+         ) &\n\
+         kill -s USR1 $$\n",
     );
     let _daemon = start(config);
     let answer = call(&dir, &open_request(false));
     assert_eq!(answer.status, 3, "{answer:?}");
     assert_eq!(
         answer.reason.as_deref(),
-        Some("the session did not report ready within 0.3 seconds"),
+        Some("the session did not report ready within 2 seconds"),
         "{answer:?}"
     );
-    assert_eq!(answer.text, died_with(&answer, "note ended: signal SIGABRT"));
+    assert_eq!(
+        answer.text,
+        died_with(&answer, "note ended: signal SIGUSR1")
+    );
 }
 
 // --- not_started: a session that closes its standard output and stays ---------------------------
@@ -243,7 +303,10 @@ const KILL_GRACE_OF_SURFD: Duration = surfd::KILL_GRACE;
 fn sigxcpu_without_a_cpu_bound_of_surfd_reads_no_bound_also_with_scripts() {
     let dir = TestDir::new();
     let mut config = config(&dir);
-    config.script_session_bounds = vec!["--nofile=64:64".to_string(), "--core=0:0".to_string()];
+    config.script_session_bounds = vec![
+        "--nofile=64:64".to_string(),
+        config.session_bounds[0].clone(),
+    ];
     let daemon = start(config);
     let answer = call(&dir, &open_request(true));
     assert_eq!(answer.status, 0, "{answer:?}");
@@ -285,12 +348,23 @@ fn sigxfsz_reads_no_bound() {
 /// `surfd` started without `setpriv` (a path naming no file): a session without scripts runs
 /// without either program and so without a CPU bound; ended by `SIGXCPU` it reads no `bound`.
 /// No case before this one had a session without the programs end by a signal, so none read
-/// `cpu_bound` of `open_session` for it (`is_some_and` there turned to `is_none_or`).
+/// `cpu_bound` of `open_session` for it (`is_some_and` there turned to `is_none_or`). The
+/// session program is a sh script that sets the core argument `Config::new` chose on itself with
+/// `prlimit --pid` and execs the stand-in: that limit is the test's own, not one of `surfd`.
 #[test]
 fn sigxcpu_to_a_session_started_without_the_programs_reads_no_bound() {
     let dir = TestDir::new();
     let mut config = config(&dir);
     config.setpriv = dir.path.join("no-setpriv");
+    config.session_program = script(
+        &dir,
+        "session",
+        &format!(
+            "/usr/bin/prlimit {} --pid $$\nexec {} \"$@\"\n",
+            config.session_bounds[0],
+            quoted(&stand_in_program())
+        ),
+    );
     let daemon = start(config);
     let session = open(&dir);
     send(dir.pid_of(&session.id), "XCPU");

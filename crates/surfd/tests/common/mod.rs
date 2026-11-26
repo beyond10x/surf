@@ -36,6 +36,32 @@ pub const SESSION_SOCKET_ADDS: usize = 55;
 /// in the tests").
 pub const ALLOWED: Duration = Duration::from_secs(5);
 
+/// The core argument of `prlimit` for a core limit of 0, the one place the tests write it.
+pub const CORE_ARGUMENT_ZERO: &str = "--core=0:0";
+
+/// What a session `surfd` starts from this test process reads in its `Max core file size` line,
+/// soft and hard, and the core argument of its bounds, by the hard core limit of this process
+/// (`/proc/self/limits`, read here without `surfd`'s code): `1 1` and `--core=1:1` where that
+/// limit is `unlimited` or at least 1, `0 0` and [`CORE_ARGUMENT_ZERO`] where it is 0. Panics
+/// when the line cannot be read.
+pub fn expected_core() -> ((String, String), &'static str) {
+    const NAME: &str = "Max core file size";
+    let limits = fs::read_to_string("/proc/self/limits").expect("the limits of the test process");
+    let line = limits
+        .lines()
+        .find(|line| line.starts_with(NAME) && line[NAME.len()..].starts_with("  "))
+        .unwrap_or_else(|| panic!("no {NAME} in {limits}"));
+    let hard = line[NAME.len()..]
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_else(|| panic!("no hard value in {line}"));
+    if hard == "0" {
+        (("0".to_string(), "0".to_string()), CORE_ARGUMENT_ZERO)
+    } else {
+        (("1".to_string(), "1".to_string()), "--core=1:1")
+    }
+}
+
 /// A directory of one case, removed when it is dropped, after every process of the case is
 /// stopped: `r`, the `XDG_RUNTIME_DIR` of the case, and `c`, the stand-in's directory.
 ///

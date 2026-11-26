@@ -365,9 +365,15 @@ above, and the list of standards itself was written from memory.
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
-    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
-    swell and `surf-secret`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
-    reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
+    swell 0.8.0 agent under surf's limits, and a document's scripts over the generated DOM
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`); no
+    crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 232
+    tests in one test binary: `engine` 18 (3 of them ignored until swell reaches HOST-125,
+    HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,
+    `adversary_5` 7, `adversary_6` 5, `bindings` 18, `dom_reading` 48, `dom_reading_cost` 19,
+    `adversary_dom_reading` 17, `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11,
+    `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10 and `adversary_dom_reading_6` 12;
+    the modules `dom_attributes`, `dom_mutation`, `dom_selectors` and `parse_run` hold none yet.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -643,9 +649,10 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 89 tests (4 unit tests of `src/view.rs`,
-    `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link` 3, `built` 14,
-    `hardening` 17, `in_process` 14, `log` 6, `view` 10) run a stand-in session
+    from the directory of its own executable. Its 98 tests (4 unit tests of `src/view.rs`, 2 of
+    `src/daemon.rs`, `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_core`
+    4, `adversary_link` 3, `built` 14, `first_line` 1, `hardening` 19, `in_process` 14, `log` 6,
+    `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -867,9 +874,11 @@ above, and the list of standards itself was written from memory.
     task's error), then the `raise:` lines; `task agent-tasks-report` prints it.
     `tasks::a_call_that_never_answers_ends_at_its_bound` starts no TLS server and writes `task
     https skipped`; the model lane (`taskfiles/agent-tasks-model.sh`) writes `task https
-    skipped: server https`. 48 tests (`adversary` 4, `adversary2` 10, `archive_task` 1,
-    `bounded` 4, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
-    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). Depends on `surf-answer` and
+    skipped: server https`. 52 tests (`adversary` 4, `adversary2` 13, `archive_task` 1,
+    `bounded` 5, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
+    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). The tests of the model driver
+    (`adversary2`, `bounded`) decide that a model's processes ended by a wait, `ended_within`
+    with `END_BOUND`, never by one read. Depends on `surf-answer` and
     `surf-test-process`; its tests also
     on `surf-tls`, `surf-tls-test-server` and `surf-tls-test-certs`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
@@ -921,11 +930,13 @@ above, and the list of standards itself was written from memory.
     one token before the step check, end tags in the public `tokenizer::tokenize`, and the
     decoded text of `parse_document_bytes` (up to 3 bytes per input byte). Since
     `story:html-document-port` (round 1) `surf` depends on `surf-html` and parses every
-    committed HTML body with it. 123 tests: 18 unit
-    tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`,
-    8 in `tests/tree_formatting.rs`, 11 in `tests/tree_costs.rs`, 16 in
-    `tests/adversary_tree.rs`, 37 in `tests/limits.rs` and 11 in
-    `tests/adversary_limits.rs`. The last two share `tests/common/mod.rs`, a counting allocator
+    committed HTML body with it. 253 tests: 19 unit tests and 234 in one test binary:
+    `encoding` 13, `not_yet_parsed` 1, `tree_body` 8, `tree_formatting` 8, `tree_costs` 11,
+    `tree_state` 3, `adversary_tree` 16, `adversary_tree_state` 3, `adversary_tree_state_2` 2,
+    `limits` 37, `adversary_limits` 11, `script_hook` 62, `adversary_script_hook` 23,
+    `adversary_script_hook_2` 13, `adversary_script_hook_3` 9, `adversary_script_hook_4` 4,
+    `adversary_script_hook_5` 2 and `adversary_script_hook_6` 8. `limits` and
+    `adversary_limits` share `tests/common/mod.rs`, a counting allocator
     per thread, and assert the limit that stopped a parse, its steps and the bytes it allocated,
     no wall time. A test of a limit sets a small limit, the default values are asserted as
     numbers, and no test builds input of a default size (`story:limit-tests-at-small-limits`).
@@ -1051,8 +1062,11 @@ above, and the list of standards itself was written from memory.
     refused. `Model::counts`, `Model::members`,
     `Model::extended_attribute_counts` and `Model::unresolved` read it (for the two pages,
     `tests/unresolved.txt` lists the names no definition defines). Depends on `surf-html`
-    only. 80 tests in one test binary (`adversary` 11, `depth` 4, `reader` 36, `refusals` 26,
-    `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`;
+    only. 131 tests in one test binary (`adversary` 11, `adversary_2` 4, `adversary_3` 10,
+    `adversary_4` 8, `adversary_5` 4, `adversary_same_object` 1, `adversary_same_object_2` 1,
+    `adversary_same_object_3` 1, `depth` 4, `extraction` 6, `reader` 36, `refusals` 26,
+    `same_object` 2, `selection` 14, `source` 2, `vendored` 1; the model of both pages is built
+    once per run, in `vendored`;
     `depth` also holds that the definitions a model visits double when its interfaces double).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`

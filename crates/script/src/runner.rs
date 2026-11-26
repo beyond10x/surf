@@ -155,6 +155,8 @@ pub struct ScriptHost {
     /// The DOM bindings of a document's runner ([`run_document`]); `None` for a runner
     /// without a document.
     pub(crate) dom: Option<Box<Dom>>,
+    /// The agent's `string_length`, which the bindings apply to a String a member answers.
+    string_length: u64,
 }
 
 enum Clock {
@@ -163,15 +165,26 @@ enum Clock {
 }
 
 impl ScriptHost {
-    /// The host of `mode`.
-    pub fn new(mode: Mode) -> Self {
+    /// The host of `mode` for an agent made with `string_length`. swell applies that limit to
+    /// a String its own operations create; the bindings apply it to a String a member answers,
+    /// before `Cx::new_string`.
+    pub fn new(mode: Mode, string_length: u64) -> Self {
         let clock = match mode {
             Mode::Session => Clock::System,
             Mode::Test => Clock::Test {
                 next: TEST_CLOCK_START,
             },
         };
-        Self { clock, dom: None }
+        Self {
+            clock,
+            dom: None,
+            string_length,
+        }
+    }
+
+    /// The agent's `string_length`, in UTF-16 code units.
+    pub fn string_length(&self) -> u64 {
+        self.string_length
     }
 
     /// The document of a runner with the DOM bindings, `None` for one without.
@@ -569,8 +582,8 @@ impl Runner {
         document: Option<Document>,
     ) -> Result<Self, RunnerError> {
         let seeds = mode.seeds().map_err(RunnerError::Seeds)?;
-        let mut agent =
-            Agent::new(ScriptHost::new(mode), limits.engine, seeds).map_err(RunnerError::Agent)?;
+        let host = ScriptHost::new(mode, limits.engine.string_length);
+        let mut agent = Agent::new(host, limits.engine, seeds).map_err(RunnerError::Agent)?;
         let mut window = |cx: &mut HookCx<'_, ScriptHost>, realm: RealmRef| {
             let global = cx
                 .new_host_object(bindings::window_spec(realm))
@@ -613,8 +626,12 @@ impl Runner {
     /// After `faulted`, each later script ends `not run: faulted`; after the first
     /// `limit: memory` the runner calls `collect()` once, and after a second each later script
     /// ends `not run: memory`; a script started after the wall clock ran out ends `not run:
-    /// wall-clock` (Q4). A script not run is not counted. The steps a script that ran spent are
-    /// added to [`Runner::steps`] and the script to [`Runner::scripts`].
+    /// wall-clock` (Q4). A kept collection is refilled all or nothing for a step the object
+    /// refuses; an end of the run inside a refill ends the document's scripts: after a
+    /// `limit: memory` that cut a refill (`DomState::cut_refill`), each later script ends
+    /// `not run: memory`, as after a second. A script not run is not counted. The steps a
+    /// script that ran spent are added to [`Runner::steps`] and the script to
+    /// [`Runner::scripts`].
     pub fn evaluate(&mut self, source: &str) -> ScriptEnd {
         let faulted = match self.agent.state() {
             AgentState::Faulted => true,
@@ -648,6 +665,15 @@ impl Runner {
                 self.memory_ends += 1;
                 if self.memory_ends == 1 {
                     self.collect();
+                }
+                // A refill of a kept collection the limit cut: no later script reads it.
+                let host = self.agent.host();
+                if host
+                    .dom
+                    .as_deref()
+                    .is_some_and(|dom| dom.state.cut_refill())
+                {
+                    self.memory_ends = self.memory_ends.max(2);
                 }
             }
             ScriptEnd::Faulted => self.faulted = true,

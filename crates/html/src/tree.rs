@@ -33,10 +33,19 @@
 //! Offsets and counts of character data are in UTF-16 code units, as the DOM's; an offset that
 //! falls between the two units of a surrogate pair answers [`WriteError::IndexSize`], since a
 //! Rust string holds no lone surrogate (a deviation: the DOM splits the pair).
+//!
+//! Since `story:scripts-dom-reading` the tree keeps the document's mode
+//! ([`Tree::quirks_mode`]), which the parser writes where the initial insertion mode decides it,
+//! so a script that runs during the parse reads it; and a count of the writes to its child lists
+//! ([`Tree::writes`]), raised by every write of the parser and of the public surface that
+//! changes a node's children or parent, so that a reader of a child list can tell whether one
+//! changed since it last looked. The count is not part of what a tree holds: two trees compare
+//! equal whatever it is.
 
 use std::cell::Cell;
 
 use crate::limits::{ATTRIBUTE_BYTES, Limit, Limits};
+use crate::tree_builder::QuirksMode;
 
 /// Why a write of the public surface of [`Tree`] was not made. The tree is as it was before
 /// the call.
@@ -252,7 +261,9 @@ pub struct Tree {
     stopped_by: Option<Limit>,
     steps: usize,
     limits: Limits,
+    quirks_mode: QuirksMode,
     moved: Moved,
+    writes: Writes,
 }
 
 /// Whether a write of the public surface moved or removed an element since the parser last
@@ -263,6 +274,18 @@ pub struct Tree {
 struct Moved(bool);
 
 impl PartialEq for Moved {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// The count of the writes to the tree's child lists ([`Tree::writes`]). It tells a reader that
+/// a child list changed, and is not part of what a tree holds: two trees compare equal whatever
+/// it is.
+#[derive(Clone, Copy, Debug, Default, Eq)]
+struct Writes(u64);
+
+impl PartialEq for Writes {
     fn eq(&self, _: &Self) -> bool {
         true
     }
@@ -286,10 +309,39 @@ impl Tree {
             stopped_by: None,
             steps: 0,
             limits,
+            quirks_mode: QuirksMode::NoQuirks,
             moved: Moved(false),
+            writes: Writes(0),
         };
         tree.create(data, 0);
         tree
+    }
+
+    /// Raises the count of writes ([`Tree::writes`]).
+    fn wrote(&mut self) {
+        self.writes.0 = self.writes.0.wrapping_add(1);
+    }
+
+    /// The count of the tree's writes to its child lists: raised by every write, of the parser
+    /// or of the public surface, that changes a node's children or its parent, and by nothing
+    /// else (not by a node added to the arena, a change of a node's data or of its attributes,
+    /// an insert that moves no node: an empty fragment, or a node already where it would go).
+    /// A reader that read a child list when the count was `n` and finds it `n` again knows that
+    /// no child list changed. Two trees compare equal whatever their counts are.
+    pub fn writes(&self) -> u64 {
+        self.writes.0
+    }
+
+    /// The document's mode (DOM, "mode"): "no-quirks" for a tree that no initial insertion mode
+    /// decided, a fragment's included, until the parser writes the mode the DOCTYPE, or its
+    /// absence, decides.
+    pub fn quirks_mode(&self) -> QuirksMode {
+        self.quirks_mode
+    }
+
+    /// Writes the document's mode: the parser's initial insertion mode, where it decides it.
+    pub(crate) fn set_quirks_mode(&mut self, mode: QuirksMode) {
+        self.quirks_mode = mode;
     }
 
     /// Adds a node with no parent to the arena.
@@ -410,6 +462,7 @@ impl Tree {
     ) {
         debug_assert!(self.nodes[node.0].parent.is_none());
         let at = self.insertion_index(parent, reference, steps);
+        self.wrote();
         self.nodes[parent.0].children.insert(at, node);
         self.nodes[node.0].parent = Some(parent);
     }
@@ -470,6 +523,7 @@ impl Tree {
     /// the parent the scan visits is a step.
     pub(crate) fn remove(&mut self, node: NodeId, steps: &Cell<usize>) {
         if let Some(parent) = self.nodes[node.0].parent.take() {
+            self.wrote();
             let children = &mut self.nodes[parent.0].children;
             if let Some(at) = children.iter().rposition(|&c| {
                 visit(steps);
@@ -483,6 +537,9 @@ impl Tree {
     /// Removes every child of `node` (the DOM's "replace all" with null). The children stay in
     /// the arena. Each child removed is a step.
     pub(crate) fn remove_children(&mut self, node: NodeId, steps: &Cell<usize>) {
+        if !self.nodes[node.0].children.is_empty() {
+            self.wrote();
+        }
         for child in std::mem::take(&mut self.nodes[node.0].children) {
             visit(steps);
             self.nodes[child.0].parent = None;
@@ -493,6 +550,9 @@ impl Tree {
     /// adoption agency algorithm's "take all of the child nodes of furthestBlock and append them
     /// to newElement"). `to` is not `from` and not under it. Each child moved is a step.
     pub(crate) fn move_children(&mut self, from: NodeId, to: NodeId, steps: &Cell<usize>) {
+        if !self.nodes[from.0].children.is_empty() {
+            self.wrote();
+        }
         let children = std::mem::take(&mut self.nodes[from.0].children);
         for &child in &children {
             visit(steps);
@@ -941,6 +1001,11 @@ impl Tree {
                 vec![node]
             }
         };
+        // The count moves when a node moves: not for a fragment without children.
+        if nodes.is_empty() {
+            return;
+        }
+        self.wrote();
         let at = match child {
             Some(c) => self
                 .index_in_parent(c)
@@ -1177,6 +1242,7 @@ impl Tree {
                 other => self.create(other, 0),
             };
             if let Some(parent) = parent {
+                self.wrote();
                 self.nodes[copy.0].parent = Some(parent);
                 self.nodes[parent.0].children.push(copy);
             }

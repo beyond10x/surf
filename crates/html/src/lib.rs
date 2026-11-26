@@ -224,7 +224,7 @@ pub mod tree;
 pub mod tree_builder;
 
 pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree, WriteError};
-pub use tree_builder::{NOT_YET_PARSED, NotRun, ScriptHook};
+pub use tree_builder::{NOT_YET_PARSED, NotRun, QuirksMode, ScriptHook};
 
 /// How a document or a fragment is parsed.
 ///
