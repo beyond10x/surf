@@ -865,8 +865,8 @@ above, and the list of standards itself was written from memory.
     task's error), then the `raise:` lines; `task agent-tasks-report` prints it.
     `tasks::a_call_that_never_answers_ends_at_its_bound` starts no TLS server and writes `task
     https skipped`; the model lane (`taskfiles/agent-tasks-model.sh`) writes `task https
-    skipped: server https`. 50 tests (`adversary` 4, `adversary2` 12, `archive_task` 1,
-    `bounded` 4, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
+    skipped: server https`. 52 tests (`adversary` 4, `adversary2` 13, `archive_task` 1,
+    `bounded` 5, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
     `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). The tests of the model driver
     (`adversary2`, `bounded`) decide that a model's processes ended by a wait, `ended_within`
     with `END_BOUND`, never by one read. Depends on `surf-answer` and
