@@ -79,6 +79,10 @@ includes:
     taskfile: taskfiles/doc-tests.yml
     flatten: true
     optional: true
+  test-clocks:
+    taskfile: taskfiles/test-clocks.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 57
@@ -569,6 +573,7 @@ tasks:
       - task: tls-flights-check
       - task: webidl-check
       - task: doc-tests-check
+      - task: test-clocks-check
       - task: build
       - task: test
       - task: test-tls
@@ -583,6 +588,7 @@ tasks:
       - task: test-layout-test
       - task: sh-echo-test
       - task: doc-tests-check-test
+      - task: test-clocks-check-test
       - task: step-budgets
 
   step-budgets:
