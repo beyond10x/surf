@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:45:22Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-selectors",
+  "kind": "story",
+  "revision": 39,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "three passes of the adversary review on the unit by reviewers who did not write it, 2026-11-25 and 2026-11-26",
+    "reference": "pass 1 on 54a6540: 3 musts, 5 shoulds, 2 notes, fixed by one round; pass 2 on 1b0222e: 1 must, 3 shoulds, 3 notes, fixed by one round; pass 3 on 88c0675 (the url token): 2 musts, both statements no test held and held by its 6 cases since, no wrong answer, 3 notes"
+  }
+}

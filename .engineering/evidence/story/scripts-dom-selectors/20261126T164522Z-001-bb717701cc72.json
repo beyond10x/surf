@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:45:22Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-selectors",
+  "kind": "story",
+  "revision": 39,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 21b09df, which holds 21b09df (the merge of impl/scripts-dom-selectors at ecd06c9), 2026-11-26",
+    "reference": "check 45860762996, Documentation validation 45860762934, Shared source gates 45860763810 and Documentation site 45860870857: each completed success"
+  }
+}
