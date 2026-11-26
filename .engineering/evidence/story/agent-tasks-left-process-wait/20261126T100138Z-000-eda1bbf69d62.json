@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:38Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-left-process-wait",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate (task check-runner through the build pool) on 2137b17, whose tree is the tree of main at 947eb6c, 2026-11-26 09:40 CET",
+    "reference": "task check exit 0 in 147 s; 2,016 tests: 2,013 passed, 0 failed, 3 ignored; 552 TLS tests; 72 page tests; no raise line; site build exit 0"
+  }
+}

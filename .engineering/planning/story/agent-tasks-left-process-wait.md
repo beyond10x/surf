@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks-left-process-wait
 kind: story
-status: active
+status: implemented
 title: Decide that a model's processes ended by a wait, in the three tests that read /proc once
 summary: The two model tests read /proc once after a group SIGKILL and take a zombie for a left process (one red run in ten observed); the story makes them, and the same read in bounded.rs, wait with ended_within and shows the fix with two tests that make a zombie themselves.
 scope:
@@ -12,10 +12,11 @@ scope:
   path: crates/agent-tasks/tests/adversary2.rs
 - confidence: cited
   path: crates/agent-tasks/tests/bounded.rs
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-26T03:56:23Z", actor: "human:operator", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:39Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -271,3 +272,110 @@ Read with `git grep -l -F <path> -- .engineering/planning/story` for each scope 
 - `story:tests-without-wall-time-bounds` lists `adversary2.rs` in its ledger too
   (`adversary2.rs:120`); this story edits other lines of the file and does not change the
   count. No edge.
+
+## As built
+
+The unit is on `main` at `553b977` (the merge of `impl/agent-tasks-left-process-wait` at
+`dea1c18`). It changes 9 files, 207 lines added and 77 removed: the two test files of the
+model driver, the `crates/agent-tasks` entry of `AGENTS.md`, and the public test counts. No
+file under any `src/` and no file of `taskfiles/` changes.
+
+- What was built.
+  - `crates/agent-tasks/tests/adversary2.rs`: `sleeping(pids, bound)` keeps a process whose
+    `comm` is `sleep` and for which `ended_within(pid, bound)` is `Err`, then sends it SIGKILL;
+    the two model tests pass `END_BOUND`. `spawn_sleep` starts `/bin/sleep 30` with the three
+    streams null and returns it in `Spawned`, whose `Drop` calls `kill()` and `wait()`.
+  - `crates/agent-tasks/tests/bounded.rs`: `child_left` waits with
+    `ended_within(pid, END_BOUND)` and sends SIGKILL to what is still there; `running` is
+    removed. Imports: `END_BOUND` and `ended_within`.
+  - `AGENTS.md`, entry of `crates/agent-tasks`: 52 tests (`adversary2` 13, `bounded` 5) and one
+    sentence that the tests of the model driver decide by a wait, never by one read.
+  - Four cases, each shown red by one defect written back:
+    - `a_killed_process_nobody_has_collected_is_not_left` (`adversary2`): the test kills a
+      child it has not collected, waits until it is a zombie, checks that `comm` still answers
+      `sleep`, and `sleeping` must answer nothing. Red: `sleeping` as the one `comm` read
+      (answer `[194663]`).
+    - `a_process_that_still_runs_is_left_and_ended` (`adversary2`): a running `sleep` and a
+      bound of zero; `sleeping` must answer that pid alone and end it. Red: a `sleeping` that
+      keeps nothing (answer `[]`).
+    - `a_process_that_ends_during_the_wait_is_not_left` (`adversary2`): `/bin/sleep 0.5` still
+      runs at the first read and ends inside `END_BOUND`; `sleeping` must answer nothing. Red:
+      the bound cut to zero, or `sleeping` as one `comm` read.
+    - `a_child_that_ends_during_the_wait_is_not_left` (`bounded`): the same for `child_left`,
+      which must answer `None`. Red: the bound cut to zero.
+  - The model tests and the two `bounded` tests that end with "no process is left" go red with
+    `kill_group` signalling the leader only: 4 of 4, each with its own message.
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written.
+  - Decision 4 calls the two new tests the proof that `sleeping` decides by a wait. They are
+    not: with the wait cut to one read of the state both stayed green (one waits for the zombie
+    itself, the other passes a bound of zero). The review added the third and fourth case
+    above. The crate has 52 tests, not 50 (`adversary2` 13, `bounded` 5): the count line of
+    `AGENTS.md` says so, and the story's grep for 50 tests and `adversary2` 12 prints nothing
+    at the tip.
+  - `bounded.rs` gains a test; the Change line for it named `child_left` and `running` only.
+  - Acceptance 9: `Stdio::null()` counts 7 in `adversary2.rs` (story: 4) and 4 in `bounded.rs`
+    (1 before): each of the two review cases spawns its `sleep` in its own body with the three
+    streams null, and only `adversary2.rs` has the guard `Spawned`; `bounded.rs` kills and
+    waits in its case.
+  - The public numbers: `README.md`, three pages of `website/docs`, `docs/badges/make.sh` and
+    `docs/badges/tests.svg` change (`2552` to `2556` passed, the gate block); the story's
+    scope names `AGENTS.md` and the two test files.
+  - Acceptance 6: the 50-run job ran on the first commit, before the two review cases; the
+    filter `test(leaves_no_process)` matches three tests and neither review case, so it was
+    not run again.
+  - Acceptance 7, fourth test: its time check passed and it failed at the assertion after it,
+    the second of the two forms the story allows.
+  - The review cases first came as nested modules (`review_left_process.rs`, then `wait.rs`)
+    and are tests of `adversary2.rs` and `bounded.rs` at the end; no nested file is left.
+- The review (one pass on the first commit; verdict NEEDS-CHANGE, origin all introduced):
+  - 7 findings: 1 must (the two new tests could not tell the wait from one read of the
+    state), 1 should (no test held the wait in `child_left`), 5 notes: a pid whose `comm` is
+    not `sleep` is decided by one read of `comm` and nothing reaches it; the new waits are
+    clock bounds; a process read `R` right after `kill -9`; the counts of `AGENTS.md` become
+    52, 13 and 5 once the cases merge; the diff does every item of the story's Change and
+    nothing outside it. A run with `END_BOUND` set to zero left the four repaired tests green
+    and failed only the first new test, at its own precondition and racily.
+  - 2 cases written, before any run, both green at the tip and red under the mutants; each
+    mutant was made in the reviewer's tree and taken back.
+  - Acceptance 4 and 5 repeated on the commit: both red runs reproduced; the crate ran 52 of 52.
+  - Fix round 1 (merge of the two cases, then a commit): renamed the case files, set the counts
+    of `AGENTS.md` to 52, 13 and 5; both cut-bound mutants red on the tip.
+  - Fix round 2: moved the two cases into their parent files, deleted the nested files, changed
+    one doc comment to "no other test of this file" and one state name; `task test-layout`
+    exit 0; both cut-bound mutants red; the crate ran 52 of 52. The run of the first command
+    of the round (no `SURF_BIN_DIR`) failed 16 tests for the environment; the run with the
+    gate's environment (programs built, `SURF_BIN_DIR` set) passed.
+  - The merge of `main` (surfd cases, the DOM's reading members) changed no test file of the
+    unit; `AGENTS.md` took in the entries of `main`. The last commit set the public numbers.
+- Numbers:
+  - Tests of `surf-agent-tasks`: 48 before, 52 after (50 after the first commit).
+  - Workspace: 2,003 tests before (2,000 passed, 3 ignored), 2,007 after (2,004 passed,
+    3 ignored), from the gate logs of the DOM story's tip and of the merge's tree; the 4 are
+    the four cases.
+  - The 50-run job, as printed: `Summary [  57.506s] 50/50 stress run iterations: 50 passed`
+    (150 passes, slowest test 1.249 s); a check of 50 runs, not a proof.
+  - Time of the new cases in the last run: `a_killed_process_nobody_has_collected_is_not_left`
+    0.013 s, `a_process_that_still_runs_is_left_and_ended` 0.025 s,
+    `a_process_that_ends_during_the_wait_is_not_left` 0.532 s,
+    `a_child_that_ends_during_the_wait_is_not_left` 0.530 s; the crate ran in 11.163 s.
+  - Over 5 s: only the four tests of the leader-only defect run (5.0 to 8.2 s, the failing path
+    that waits `END_BOUND`) and `tasks::a_call_that_never_answers_ends_at_its_bound` (10.482 s,
+    not touched). None over 60 s.
+  - The crate ran in 12.586 s before the unit.
+- Left as it is:
+  - The two review cases stand on a `sleep` of 0.5 s: on a host where the first read comes more
+    than 0.5 s after the spawn, a one-read `sleeping` passes them too; the real code passes
+    there.
+  - The new waits are clock bounds (`ended_within` against `END_BOUND`, 5 s, polling every
+    10 ms) in `adversary2.rs` (`sleeping`, `:293`, `:321`) and `bounded.rs:52`; the older bounds
+    at `adversary2.rs:122`, `:140` and `bounded.rs:90` stay.
+  - A process read `R` in `/proc/<pid>/stat` right after `kill -9` returned: the race of one
+    read of the state, which the story refused, happens on the pool's hosts.
+  - `cargo fmt --all -- --check` fails on 445 blocks in 41 files (447 on the remote build),
+    none of the unit's; the remote `cargo fmt` ignored `rustfmt.toml` (edition 2024) and
+    ordered two `use` lines of `adversary2.rs` in the older style. `rustfmt --edition 2024
+    --config-path rustfmt.toml --check` on the two test files: exit 0.
+- A later story takes up: `story:time-bounds-in-tests` (the new clock bounds above, with the
+  ledger of `story:tests-without-wall-time-bounds`, which lists `adversary2.rs:120` and
+  `bounded.rs:97`).
