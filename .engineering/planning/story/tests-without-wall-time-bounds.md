@@ -15,6 +15,8 @@ scope:
 - confidence: cited
   path: crates/html/tests/script_hook.rs
 - confidence: cited
+  path: crates/script/src/bindings.rs
+- confidence: cited
   path: crates/script/tests/adversary_4.rs
 - confidence: cited
   path: crates/script/tests/adversary_5.rs
@@ -30,7 +32,7 @@ scope:
   path: taskfiles/test-clocks-ledger.txt
 - confidence: cited
   path: taskfiles/test-clocks.yml
-revision: 20
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 16}
 ---
@@ -181,7 +183,10 @@ does not see.
      `check_members` through `all_named`, do not scan. Red with the defect put back by hand:
      `definition_of` written as a loop over `0..self.definitions.len()` that fetches each
      definition through `definition_at` and compares its name, so each compared definition
-     counts; the ratio is near 4.
+     counts; the ratio is near 4. A scan per statement may run long at 16,000 interfaces in a
+     test build: if the 60 s kill ends the test before the ratio assert reads, the ratio is shown
+     with a lower `n` for that one run (the two counts at the lower `n`, printed), and the `n`
+     of the committed test, 8,000 and 16,000, does not change.
    - Does not see: `read` (the old test timed it too, `depth.rs:61-63`), `index`'s map,
      `parent_of` (`:482-491`) and `unresolved` (`:750-782`), which read `self.defined` directly,
      and a scan that does not pass the counter (`self.definitions.iter().find(..)` keeps the
@@ -221,12 +226,13 @@ does not see.
      end: every entry read again after a hook run is a step. Red with the defect put back by
      hand: the loop that reads the entries again after a hook run charges no step (the
      `self.visit()` of `settle_entries`, `tree_builder.rs:1199`, removed;
-     `each_entry_read_again_after_a_hook_run_is_a_step`, `:1722`, asserts that charge at once:
-     `four - two >= 200 * 200`). The parse then probably ends with `stopped_by() == None`, the
-     120,000 nodes of the 40,000 rounds (three per round: the `span`, the `script` and its
-     text) being under `max_nodes` (1,048,576), and `assert_eq!(stopped, Some(Limit::Steps))`
-     fails; if it does not end, the 60 s kill does, whichever comes first. This red is shown
-     once as a demonstration, in one pool job, and not run again unchanged.
+     `each_entry_read_again_after_a_hook_run_is_a_step`, its `fn` at `:1721`, asserts that
+     charge at once, `four - two >= 200 * 200` at `:1730`). The parse then probably ends
+     with `stopped_by() == None`, the 120,000 nodes of the 40,000 rounds (three per round: the
+     `span`, the `script` and its text) being under `max_nodes` (1,048,576), and
+     `assert_eq!(stopped, Some(Limit::Steps))` fails; if it does not end, the 60 s kill does,
+     whichever comes first. This red is shown once as a demonstration, in one pool job, and
+     not run again unchanged.
    - Upper side: no one-line defect turns it red, and a two-line one does. Each stop line alone
      leaves the other:
      - `spent` written `> 2 * self.limits.max_steps` (`:1035`) alone: the scans and writes no
@@ -276,7 +282,7 @@ does not see.
      --posix"`). `--ledger /dev/null` is an empty ledger. `--count` prints the ledger's lines
      (`<path> <count>`) for a tree.
    - The header of the script says that it uses POSIX awk only and forbids by name:
-     `nextfile` (POSIX since 2012 but not in every mawk), `length(array)`, `IGNORECASE`,
+     `nextfile` (not in every mawk), `length(array)`, `IGNORECASE`,
      `gensub`, `asort`, `asorti`, `strftime`, `\<` and `\>`, and a regular expression interval
      (`{n,m}`). Which runner sees which: `gawk --posix` ends on `gensub`, `asort` and
      `strftime` (the functions are undefined in it) and reads `\<` as a literal `<` (with a
@@ -317,7 +323,10 @@ does not see.
      `crates/answer/tests/forging.rs:20 @ a14e3b0` (nine literals: `'a'`, `'"'`, `'\\'`,
      `'\n'`, `'\r'`, `'\u{2028}'`, `'\u{202e}'`, `'é'`, `' '`), blanks every literal and
      leaves no `'` in the second line; the cases below hold the lifetime, the label and each
-     escape form.
+     escape form. The implementor reads first the literal rule of `code_of` in
+     `taskfiles/test-layout.sh` (`:137-143 @ a14e3b0`), which blanks a line by one pattern per
+     literal and reads `'a'` and `'\n'` but not `'\u{41}'`: this check is held to the rule
+     above, not to that one, and the two scripts share no code.
    - Refused: an upper bound on an elapsed value in a statement.
      - An `assert!`, `assert_eq!`, `assert_ne!` or `debug_assert!` (the `debug_assert_eq!` and
        `debug_assert_ne!` forms too) whose arguments, read to the closing parenthesis of the
@@ -347,7 +356,11 @@ does not see.
        through a name of round 1 (round 2) or through a name of round 2 (round 3), or in a
        tuple pattern whose element name holds `took`, `elapsed`, `seconds`, `secs`, `waited`,
        `duration` or `time` (`let (end, grown, seconds) = ...`, `adversary_4.rs:645`). A name
-       bound through a name of round 3 is not seen, the stated limit of the check.
+       bound through a name of round 3 is not seen, the stated limit of the check. A name
+       directly after `.` is a field or method of another value and is not the tracked name,
+       whatever the file binds: `counts.total > 0`
+       (`conformance/tests/two_of_each_entity.rs:411 @ a14e3b0`) holds no operand `total`
+       even in a file that binds `total` from an elapsed value.
      - A `let` is read from its keyword to the first `;` outside brackets (`()`, `[]` and `{}`,
        on the blanked text), over any number of lines: the four lines
        `let elapsed = accepted_at.try_recv().ok().map(|at| ended.saturating_duration_since(at));`
@@ -361,7 +374,8 @@ does not see.
        variable, a `let` from a constant) in an `assert!` of another `fn` of the same file. A
        probe over the 291 files of `a14e3b0` (an awk over `git show`; one round of names, the
        text not blanked, tuple patterns not read, so not the check) finds 34 files that bind
-       a name by `let` from `.elapsed()` or `duration_since(..)`: none binds the same name
+       a name by `let` from `.elapsed()` or `duration_since(..)` (a tuple `let` over more than
+       one line was not counted by it): none binds the same name
        elsewhere from a value that holds no elapsed value (but the `.expect(..)` of
        `fetch_bounds.rs:221`, the same value), and none uses the name as a parameter, closure
        parameter or loop variable, so the false refusals today are 0.
@@ -417,18 +431,25 @@ does not see.
    - Ledger: `taskfiles/test-clocks-ledger.txt` lists the files of the committed tree that
      hold statements the scan refuses and are not fixed by this story, one `<path> <count>`
      per line, sorted, no comment (the form of `taskfiles/lock-allow.txt`). A file with more
-     statements than its line (or with none and no line) fails, naming file and line of each
-     statement; a file with fewer fails too and names the count to write, so the ledger only
-     shrinks. `story:time-bounds-in-tests` empties it. The implementor writes the ledger from
+     statements than its line fails, naming file and line of each statement; a file with
+     refused statements and no line is that case, and a file with none needs no line. A file
+     with fewer fails too and names the count to write, so the ledger only shrinks. A line
+     whose file the scan did not read (not tracked, renamed, deleted, or outside the path
+     patterns) fails, naming the line and the remedy, `delete the line`.
+     `story:time-bounds-in-tests` empties it. The implementor writes the ledger from
      `--count` on the changed tree and reports both totals: the lines the scan prints on
      `a14e3b0` with an empty ledger and the sum of the committed ledger.
    - The cases of the check's own test, by name (no count is asserted beside the list). Each
      case is a small tree under `.out/test-clocks-check-test/case`, made the top of a git work
-     tree by `git init -q --template=` and `git add` (no commit, so no identity is needed).
-     Every `git` of the test runs with `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`
-     and with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` unset: no configuration of the
-     user or the system is read (no template directory, no global ignore file, no hook), and
-     everything git writes (`.git/` and its index) is inside the case tree. The case
+     tree by `git init -q --template=` and `git -c core.excludesFile=/dev/null add` (no commit,
+     so no identity is needed). Every `git` of the test runs with `GIT_CONFIG_NOSYSTEM=1` and
+     `GIT_CONFIG_GLOBAL=/dev/null` and with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`
+     unset: no configuration of the user or the system is read (no template directory, no
+     hook). The ignore file that git reads without any configuration
+     (`$XDG_CONFIG_HOME/git/ignore`) is switched off by `core.excludesFile` on each `git add`,
+     which is taken and not `git add -f`: `-f` would also add what a case's own `.gitignore`
+     hides, and no global ignore rule of the machine can then decide a case. Everything git
+     writes (`.git/` and its index) is inside the case tree. The case
      `plain_directory_exit_2` is the one tree that is not made a work tree: a directory under
      `.out/` inside this repository's own work tree. Refused:
      `elapsed_name_against_duration`, `elapsed_direct_in_assert`, `limit_above_name`,
@@ -440,7 +461,8 @@ does not see.
      `assert_over_two_lines_refused`, `let_over_two_lines_refused`,
      `quote_char_before_a_bound_refused`, `lifetime_before_a_bound_refused`,
      `label_before_a_bound_refused`, `unicode_escape_before_a_bound_refused`,
-     `two_unicode_escapes_before_a_bound_refused`, `non_ascii_literal_before_a_bound_refused`.
+     `two_unicode_escapes_before_a_bound_refused`, `non_ascii_literal_before_a_bound_refused`,
+     `three_byte_literal_before_a_bound_refused`, `untracked_file_added_refused`.
      Passed: `wait_loop_with_break`,
      `branch_that_breaks_on_a_name`, `branch_that_returns_a_value`, `lower_bound`,
      `lower_bound_with_the_limit_first`, `print_only`, `deadline_loop_on_now`,
@@ -448,10 +470,12 @@ does not see.
      `branch_that_sets_failed_and_breaks`, `assert_after_a_nested_block_passes`,
      `loop_head_under_the_limit_with_assert`, `raw_string_with_quote_and_clock`,
      `block_comment_with_a_bound`, `nested_block_comment_with_a_bound`,
-     `fourth_round_of_rebinding_not_seen`, `untracked_file_not_read`. Exit 2:
+     `fourth_round_of_rebinding_not_seen`, `field_of_another_value_not_refused`,
+     `untracked_file_not_read`. Exit 2:
      `plain_directory_exit_2`. Ledger: `count_equal_passes`, `count_above_refused`,
-     `count_below_refused`. The test task runs every case under each of `awk`, `mawk`,
-     `gawk`, `gawk --posix` and `busybox awk` that exists on the machine and prints which ran.
+     `count_below_refused`, `ledger_line_for_unread_file_refused`. The test task runs every
+     case under each of `awk`, `mawk`, `gawk`, `gawk --posix` and `busybox awk` that exists on
+     the machine and prints which ran.
    - What the new cases hold, each decided by hand against the rules above:
      - `let_over_two_lines_refused`: the shape of `fetch_bounds.rs:207-223`, a `let` of
        `elapsed` over four lines ending in `.saturating_duration_since(at));`, a rebinding
@@ -465,6 +489,16 @@ does not see.
        string at the `"`, which hides the assert. `two_unicode_escapes_before_a_bound_refused`:
        `let e = ['\u{2028}','\u{202e}','"'];` before the same assert, the same failure.
        `non_ascii_literal_before_a_bound_refused`: `let m = ['é','"'];` before it.
+       `three_byte_literal_before_a_bound_refused`: `let m = ['€','"'];` before it (U+20AC, the
+       three bytes e2 82 ac, the literal of 3 bytes that the rule reads).
+     - `field_of_another_value_not_refused`: `let total = s.elapsed(); println!("{total:?}");
+       assert!(counts.total < LIMIT);`; the name after `.` is not the tracked name, so the
+       assert holds no elapsed value and passes.
+     - `untracked_file_added_refused`: the tree of `untracked_file_not_read` whose only refused
+       statement is in `crates/x/tests/late.rs`, after `git add` of that file; exit 1, naming
+       `crates/x/tests/late.rs:<line>`.
+     - `ledger_line_for_unread_file_refused`: a ledger `crates/x/tests/gone.rs 1` and a tree
+       with no such tracked file; exit 1, naming the line and `delete the line`.
      - `label_before_a_bound_refused`: `'reading: loop { assert!(s.elapsed() < LIMIT); break
        'reading; }`; a reader that took any `'` to the next `'` for a literal would blank from
        `'reading` to the `'` of `break 'reading` and hide the assert. The case
@@ -491,6 +525,15 @@ does not see.
 - `crates/webidl/src/model.rs`: the counter `definition_visits`, the accessor `definition_at`
   and the calls that go through it; `crates/webidl/src/lib.rs`: its name in the
   `pub use model::{...}` list.
+- `crates/script/src/bindings.rs`: written again by the generator after the edit of
+  `crates/webidl/src`, with `slot cargo run -p surf-webidl --bin bindings` (the command that
+  `taskfiles/webidl.yml` and the file's header name). The header lists the sha256 of `lib.rs`
+  and `model.rs` (`bindings.rs:56-57 @ a14e3b0`) and of the whole file (`:72`), and the step
+  `webidl-check` of `check` compares them. Expected to differ: those three lines and no
+  other, because `definition_at` and the counter change no generated byte. The implementor
+  shows it with `git diff --stat` (one file, 3 insertions, 3 deletions) and `git diff -U0 --
+  crates/script/src/bindings.rs | grep -c -E '^[-+]//! '`, which prints 6. If another line
+  differs, that is a finding the report names before anything else.
 - `crates/webidl/tests/depth.rs`: the test at `:55` is replaced by the one of decision 7.
 - `crates/html/tests/script_hook.rs`: the test at `:1740` runs the parse in the test's own
   thread, with no spawn, no channel and no timeout, asserts the window of decision 5, and its
@@ -499,7 +542,8 @@ does not see.
   `taskfiles/test-clocks-ledger.txt`: new, decision 8. `Taskfile.yml`: the include and two steps.
 - `AGENTS.md`, in five places (line numbers at `a14e3b0`). The test counts of the entries stay
   (no test is added or removed: `depth` keeps 4, `crates/script` and `crates/html` keep their
-  counts). The lines written for the first four are these; 11 of them hold `test-clocks`.
+  counts). The lines written for the first four are these; they hold 15 occurrences of
+  `test-clocks`.
   - The list `taskfiles/<name>.yml` (`:137-170`): after the clause of `doc-tests.yml`
     (`:160-161`, ending ``over `taskfiles/doc-tests-check.sh`;``), the lines
 
@@ -546,7 +590,7 @@ does not see.
     no `test-clocks`.
 
 A file under `src/` changes (`crates/webidl/src/model.rs` and `lib.rs`), which the draft said
-no file would.
+no file would; the generated file that holds their digests changes with them.
 
 ## Acceptance
 
@@ -572,7 +616,8 @@ asserts. An item that is true on `main` and stays true is labelled a guard.
    untracked `crates/x/tests/late.rs`, and in another whose only one is in an untracked
    `crates/x/target/debug/tests/late.rs`, `sh taskfiles/test-clocks-check.sh --ledger /dev/null .`
    prints the line of item 3 and exits 0; after `git add` of the first file it exits 1 and
-   names it. The case `untracked_file_not_read` holds the two trees. Turns red by: the file
+   names it. The case `untracked_file_not_read` holds the two trees and the case
+   `untracked_file_added_refused` the first tree after `git add`. Turns red by: the file
    list taken from `find` instead of `git ls-files`.
 5. The root must be the top of a git work tree: `sh taskfiles/test-clocks-check.sh --ledger
    /dev/null <dir>`, for a directory `<dir>` with an untracked `crates/x/tests/t.rs` and no
@@ -597,16 +642,16 @@ asserts. An item that is true on `main` and stays true is labelled a guard.
    `git grep -n 'taskfiles/test-clocks.yml' -- Taskfile.yml` prints nothing at `a14e3b0` and
    one line, the include, on the changed tree. Turns red by: the second step left out (the
    count is 1).
-9. `AGENTS.md` names the check in the places of the Change. `git grep -c 'test-clocks' --
-   AGENTS.md` prints nothing, exit 1, at `a14e3b0` and `AGENTS.md:11` on the changed tree (the
-   11 lines of the text of the Change that hold the string), and each place is shown by one
-   `git grep -n -F` of one phrase, which prints nothing at `a14e3b0` and one line on the
-   changed tree: `'taskfiles/test-clocks.yml'` (the list `taskfiles/<name>.yml`),
-   ``'it runs `test-clocks-check` after'`` (the paragraph of `task check`),
-   ``'- `task test-clocks-check`: '`` and ``'- `task test-clocks-check-test`: '`` (the two
-   entries) and `'refuses the assertion of an upper bound'` (the entry of `task test`; the
+9. `AGENTS.md` names the check in the places of the Change. `git grep -o -F test-clocks --
+   AGENTS.md | wc -l` prints 0 at `a14e3b0` and 15 on the changed tree (the 15 occurrences in
+   the text of the Change; a line count would change with a rewrap, an occurrence count does
+   not), and each place is shown by one `git grep -n -F` of one phrase, which prints nothing
+   at `a14e3b0` and one line on the changed tree: `'taskfiles/test-clocks.yml'` (the list
+   `taskfiles/<name>.yml`), ``'it runs `test-clocks-check` after'`` (the paragraph of `task
+   check`), ``'- `task test-clocks-check`: '`` and ``'- `task test-clocks-check-test`: '`` (the
+   two entries) and `'refuses the assertion of an upper bound'` (the entry of `task test`; the
    place `:1054` is item 7). Turns red by: the entry of `task test` left as it is (its phrase
-   prints nothing and the count is 10).
+   prints nothing and the count is 14).
 10. `task test-clocks-check-test` decides each case of decision 8 as written: it prints one
     line `case <name>: ok` per case and ends with `test-clocks-check-test: all cases decided as
     written`, exit 0. Turns red by: `SCRIPT=<copy>` with the upper-bound pattern weakened to
@@ -624,23 +669,36 @@ asserts. An item that is true on `main` and stays true is labelled a guard.
     `asort`); and
     `sed '/^[[:space:]]*#/d' taskfiles/test-clocks-check.sh | grep -c -E -e
     'nextfile|IGNORECASE|gensub' -e 'asorti?|strftime|\\[<>]' -e
-    '\{[0-9]+,[0-9]*\}|length\(arr_[A-Za-z0-9_]*\)'` prints 0 (the `sed` drops the header and
-    every comment line, an indented one too; `${1}` of sh and `length(arr_lines[n])` of a
-    string do not match). Both commands were run on a sample script with those lines: the
-    first printed 1 for each of the ten names, the second 0; with a header that left out
-    `asort`, the first printed 0 for it, and with `a{1,2}` or `length(arr_x)` written in, the
-    second printed 1. Turns red by: a regular expression `/a{1,2}/` written into the script.
+    '[^$]\{([0-9]+(,[0-9]*)?|,[0-9]+)\}|length\(arr_[A-Za-z0-9_]*\)'` prints 0 (the `sed`
+    drops the header and every comment line, an indented one too; the interval pattern wants
+    a character other than `$` before the brace and digits inside it, so `${1}` and `${10}`
+    of sh, an action block `{ n++ }`, an empty block `{}` after a space or `)`, `a[1,2]` and
+    `length(arr_lines[n])` of a string do not match, and `a{3}`, `a{,3}`, `a{3,}` and
+    `a{1,2}` do). Both commands were run on a sample script with those lines: the first
+    printed 1 for each of the ten names, the second 0; with a header that left out `asort`,
+    the first printed 0 for it, and with `a{3}`, `a{,3}`, `a{3,}`, `a{1,2}` or `length(arr_x)`
+    written in, the second printed 1. An interval at the very start of a line is not found by
+    it; the forge run of item 13 is the catch for that form and for any other the pattern
+    misses. Turns red by: a regular expression `/a{1,2}/` written into the script.
 13. The forge's run of `task check` on the branch shows the step `test-clocks-check` and
     `test-clocks-check-test` green under the forge's `awk` (the report names the run).
 14. Guard: `adversary_5.rs:373` asserts `G.rounds` (`rounds[2] * 2 > rounds[1]`) and the three
     ends; true on `main` at `:393` and `:398`, and the change only removes the time assertion
     (item 6 shows the removal). Red with the guard of `dom_exception_code`
-    (`bindings.rs:1619-1621`) removed.
+    (`bindings.rs:1619-1621`) removed. That text is generated: `bindings.rs` holds it from the
+    constant `PRELUDE` of `crates/webidl/src/prelude.rs`, which `generate.rs` writes after the
+    header (`generate.rs:1753 @ a14e3b0`). The defect is made by hand in
+    `crates/script/src/bindings.rs` alone; the story asks for no regeneration with a defect
+    in it. While it is in place `slot task webidl-check` is red (item 30), so it is taken back
+    before any step of the gate runs: the regenerated file is `git add`ed first, and `git
+    diff --quiet -- crates/script/src/bindings.rs` exits 0 after the defect is taken back.
 15. `adversary_5.rs:231` asserts the steps of its three scripts at the ceilings; red with
     `k < 4000`, and with the code-side defect of decision 2 when its steps pass the margin (the
-    report gives the steps it adds either way).
+    report gives the steps it adds either way). The code-side defect (`dom_exception_message`,
+    `bindings.rs:1605-1608`) is made in `bindings.rs` alone and taken back as in item 14.
 16. `adversary_4.rs:641` asserts `Limit(Memory)` or `Ran` with `mib < 4`; red with
-    `ExceptionData` owning uncharged copies of its strings.
+    `ExceptionData` owning uncharged copies of its strings, made in `bindings.rs` alone (the
+    struct at `:315-318`, its construction at `:666`) and taken back as in item 14.
 17. `adversary_4.rs:641` fails when the loop ends early by another limit: with
     `small.engine.steps_per_entry` lowered so that the script ends `Limit(StepsPerScript)`, the
     test passes at `a14e3b0` and fails on the changed tree, which shows the `Ran` conjunct.
@@ -674,6 +732,20 @@ asserts. An item that is true on `main` and stays true is labelled a guard.
     the report, and a step over 5 s is named.
 29. No test of the story makes a model call or a network request, and a limit on a wait in a
     test the story writes is at least 10 times the event alone.
+30. The generated bindings follow the edit of `crates/webidl/src`. `slot task webidl-check`
+    (a step of `check`, `Taskfile.yml:570 @ a14e3b0`) exits non-zero after the edit of `src/`
+    alone, once shown with its message line `webidl-check: crates/script/src/bindings.rs is
+    older than the sources above; run cargo run -p surf-webidl --bin bindings`, and exits 0
+    after the file is written again by the command of the Change; the report shows `git diff
+    --stat` and the count of changed lines of that file (6), and names any other line that
+    differs before anything else.
+    `slot task webidl-slow` is the lane `slow`'s step, never a step of `check`: no workflow
+    runs the lane (`git grep -n -i slow a14e3b0 -- .github` prints nothing) and no list of paths
+    starts it (`taskfiles/webidl.yml`, the summary of `webidl-slow`; `AGENTS.md:1739`), so a
+    person runs it by hand (`AGENTS.md:1747`). It must be green for this change: it prints
+    `webidl-slow: crates/script/src/bindings.rs is what the generator writes, byte for byte`.
+    Turns red by: the file left as the generator wrote it before the edit (the first command
+    fails with the message above).
 
 ## Out of scope
 
@@ -696,12 +768,23 @@ Read with `git grep -l -F <path> -- .engineering/planning/story` for each scope 
 - `crates/webidl/src/model.rs` is also named by `story:scripts-dom-reading` (active), which
   cites `model.rs:88` (its line 345); this story edits `index`, `definition_of`, `all_named`
   and `check_inheritance` (`:391-421`, `:503`, `:674-680`). No edge.
+- `crates/script/src/bindings.rs`, generated, holds the sha256 of every file of
+  `crates/webidl/src` in its header, so a change of any of them writes it again. The command
+  above prints nine files: this story, `story:webidl-bindings` (implemented, history) and
+  seven that each say they write the file again: `story:scripts-dom-attributes`,
+  `story:scripts-dom-mutation`, `story:scripts-dom-selectors`, `story:scripts-parse-run` (all
+  proposed), `story:scripts-dom-reading`, `story:swell-0-9-0` (both active) and
+  `story:scripts-utf16-length` (draft). The rule for the file is not the one for text
+  lists: the story that merges second writes the file again by the generator after the merge
+  of `main`, and does not keep lines of the other's side (the digest lines differ on both).
+  No edge.
 - `crates/html/tests/script_hook.rs` is also named by `story:scripts-dom-attributes`
   (proposed), which adds tests of reads in the module where the write tests are (`:1157-1274`);
   this story edits `:1735-1753`. No edge. `story:html-script-hook` (implemented) is history.
 - `Taskfile.yml`: `story:agent-cookie-public-suffixes` (active) adds an include and a step to
   `check`, and this story adds an include and two steps, in the same two lists. No edge: the
-  story that merges second takes the other's lines in its merge of `main`.
+  story that merges second keeps both sides of those two lists in its merge of `main`; the
+  generated `bindings.rs` is not such a list (next bullet).
   `story:conformance-lock-and-lints` (draft) edits the lines of `lock-check`, five lines above
   `doc-tests-check` in `check`; `story:test-step-holds-with-tls` (active) edits the lines of
   the test steps. No edge.
@@ -727,9 +810,21 @@ Read with `git grep -l -F <path> -- .engineering/planning/story` for each scope 
   (`running` and `child_left`, `:41-64 @ a14e3b0`), but the one ledger statement of that file,
   the assertion at `:97` (`took < Duration::from_secs(4)`), is outside those lines and stays.
   No ledger line changes, and no edge.
+- `story:tls-tests-as-tables` (draft) claims whole directories (`crates/tls/tests/tls`,
+  `crates/tls-test-server/tests`, `crates/tls-test-certs/tests`,
+  `crates/tls-conformance/tests`) and turns groups of tests, some across files
+  (`x509_parse.rs` and `adversary_x509.rs` into one table test), into table tests: its scope
+  and its statement 2 were read. Files of those directories can be ledgered
+  (`crates/tls-test-server/tests/adversary_request_body.rs:119-122` is one statement of
+  decision 8). When that story renames or deletes a ledgered file, or moves a refused
+  statement to another file, it moves or deletes the ledger line in the same change: the check
+  fails on a line for a file it does not read. No edge.
 - `story:html-parser-hook-cost` (draft) edits `crates/html/src/tree_builder.rs` and `tree.rs`,
   the code the window of decision 5 reads. Its summary says it removes what can be removed
   without changing a step count or a limit; the window test is the guard of that promise.
   No edge.
-- `crates/webidl/src/lib.rs`, `crates/script/tests/adversary_4.rs`, `crates/webidl/tests/depth.rs`
-  and the new `taskfiles/` files are named by no other story.
+- `crates/webidl/src/lib.rs` (as a source; `git grep -l -F` over the story files prints this
+  story alone), `crates/script/tests/adversary_4.rs`, `crates/webidl/tests/depth.rs` and the
+  new `taskfiles/` files are named by no other story. What follows for `lib.rs` is not that
+  nobody else's change meets it: its digest line sits in `bindings.rs`, which the stories of
+  the bullet above write again.
