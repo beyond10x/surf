@@ -44,7 +44,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 47
+revision: 48
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -85,14 +85,13 @@ What the code holds for this slice:
   (`bindings.rs:624-632 @ 14f8a2a`: a lone surrogate written U+FFFD, and a charge of
   `units * 2 / 16` (`:630`), one step per 8 UTF-16 units, which is one step per 16 bytes of the
   units; a step per 64 bytes at `83e6b8a`).
-  The reading unit owns the order of that charge and the copy. At `14f8a2a` the charge follows
-  the copy, because the engine's host interface reads a String's length only by copying it
-  (`to_utf16`), and the copy is bounded by `string_length`. The unit's sixth fix round (ordered,
-  not built) puts the charge first: the glue reads `string_length` first (`prelude.rs:923-937 @
-  14f8a2a`, no copy), charges `2 x units / 16`, then copies. The amount is the same in both
-  orders, so the figures of this story hold in both. The glue then calls the slice
-  and gives the answer to `finish` (`bindings.rs:947-956`, `answered` `:958`): `DomEnd::Throw`
-  becomes a `DOMException`, `DomEnd::StringLength` a `RangeError`, `DomEnd::Limit` goes to
+  At `14f8a2a` the charge follows the copy; from `50a4239` (the reading unit's sixth fix round,
+  on its branch, not merged) it precedes it: the glue reads `string_length` first
+  (`prelude.rs:923-937 @ 14f8a2a`, which copies nothing), charges `2 x units / 16`, then copies
+  (`bindings.rs:623-635 @ 50a4239`). The amount is the same, so no figure depends on it. The
+  glue then calls the slice and gives the answer to `finish` (`bindings.rs:947-956`, `answered`
+  `:958`): `DomEnd::Throw` becomes a `DOMException`, `DomEnd::StringLength` a `RangeError`,
+  `DomEnd::Limit` goes to
   `end_with_limit` (`bindings.rs:512`), which records the limit and ends the script where it is,
   so no `catch` and no `finally` of the script runs. `Runner::document_end`
   (`crates/script/src/runner.rs:694`) turns the record into the end: `Limit::Attributes` is
@@ -482,9 +481,9 @@ sharing one case.
 7. What a call costs: one price for a byte, one for an attribute passed, each charged before the
    work it pays for, in addition to the glue's one step and to the glue's charge for each
    argument it copies and for each String it answers. The glue's charge for a String argument
-   is `units * 2 / 16`, one step per 8 UTF-16 units (`Copies::copy`, Context). The reading unit
-   owns its order against the copy: at `14f8a2a` the charge follows the copy, and the unit's
-   sixth fix round puts it first; the figures of this story hold in both orders. Every charge
+   is `units * 2 / 16`, one step per 8 UTF-16 units (`Copies::copy`, Context). At `14f8a2a` the
+   charge follows the copy; from `50a4239` (the reading unit's sixth fix round, on its branch,
+   not merged) it precedes it. The amount is the same, so no figure depends on it. Every charge
    of the slice comes before its pass. A lookup runs in this order: the glue's charge and copy
    of the argument, then the slice's charges, each before its pass. The rates are `S`, one step
    per 16 bytes (`STRING_BYTES_A_STEP`), and `A`, one step per 4 attributes passed in a scan by name
@@ -872,12 +871,13 @@ sharing one case.
   deviation of decision 9; the doc comment of the method carries the note (`bindings.rs:3200`).
 - The epic, `.engineering/planning/epic/scripts-in-a-page.md`: the bullet of this story in the
   section "Corrections of 2026-11-25" is in the plan store since plan commit `60a4317`. This
-  story edits no line of the epic and its scope list does not name the file; a first
-  correction of the bullet was made in plan commit `4c76597`, and the further one (the edits
-  the bullet leaves out, the handle's rule, the departure from `epic:880`) is a plan edit made
-  in the store, outside this story.
+  story edits no line of the epic and its scope list does not name the file; the corrections
+  of the bullet were made in plan commits `4c76597`, `9a88a16` (the edits the bullet leaves
+  out, the handle's rule, the departure from `epic:880`) and `dfec030` (the private position
+  functions, the one charge of `strings_value`), outside this story.
 - `crates/script/src/dom/attribute_reads.rs` (new): `reflected`, `any`, `names`, `get`,
-  `get_ns`, `has`, `has_ns`, `find`, `namespace_of` and the scan charge (decisions 2, 7).
+  `get_ns`, `has`, `has_ns`, `find`, `namespace_of`, the private `copy_value` and `Found`, and
+  the scan charge (decisions 2, 7).
 - `crates/script/src/dom/attribute_writes.rs` (new): `set_reflected`, `set`, `set_ns`, `remove`,
   `remove_ns`, `toggle`, the valid attribute local name and valid namespace prefix tests, the
   call of `Tree::namespace_error`, the bytes a write adds and removes, the charge and the
@@ -895,8 +895,9 @@ sharing one case.
 - `crates/script/tests/dom_attributes_cost.rs` (new) and one line, `mod dom_attributes_cost;`,
   after `mod dom_attributes;` in `crates/script/tests/main.rs`: the cost module of acceptance 11
   and the source test of acceptance 10. It is modelled on `dom_reading_cost.rs` (its `limits()`
-  of 50,000,000 steps and 256 MiB, `raised()`, `call`, `report`, `plain`); it defines its own
-  copies of those helpers.
+  of 50,000,000 steps, 256 MiB and a `wall_clock` of 50 s, `raised()`, `call`, `report`,
+  `plain`); it defines its own copies of those helpers and sets its own parse limits (the list
+  in acceptance 11).
 - `crates/script/tests/bindings.rs`: the test slice `TestMutation(Writes)` (`:150`) becomes
   `TestMutation(Writes, Record)`, so that its member can push onto the `Record` the test
   shares with `handed.taken()`; `test_document` (`:214-226 @ 83e6b8a`) builds it with the
@@ -1062,9 +1063,14 @@ sharing one case.
       exception: their last part is the glue's charge, and their weight is the upper bound
       below). A row names its page, a setup script, the call, and
       `parts`, the list of the charges the call makes in their order, each computed from the
-      prices of decision 7 (the arithmetic is in the row). The helper makes four runs of the
-      row, each on its own runner, in one `#[test]`. The rows that share a page build its string
-      once; each run parses its own tree from it, because a run that writes changes its tree:
+      prices of decision 7 (the arithmetic is in the row); a row whose page holds more than
+      1,024 attributes (the 4,096 of the names row, the 16,384 of the removal rows) parses it
+      with `max_attributes` of 16,384 and the other parse limits as the default. The helper
+      makes four runs of the
+      row, each on its own runner, in one `#[test]`: each row is its own `#[test]` that calls the
+      helper, so the 60 s bound applies to a row. A row builds its page string in its own test
+      (under nextest a value shared between tests is built once for each test); each run parses
+      its own tree from it, because a run that writes changes its tree:
       - S0 is `runner.steps()` after a run of the setup script alone, with `steps_per_entry`
         at the session's value (`runner.rs:41`); S1 is `runner.steps()` after a run with the
         call added, with the same value. The helper asserts that both runs ended `Ran`: a setup
@@ -1161,8 +1167,9 @@ sharing one case.
         ends at the same place as one that comes before it, so the order of the slice's charge
         and its copy is held by review too; acceptance 11d holds the one case that shows it (a
         value over `string_length`). The amounts are held by 5b.
-      - The glue's argument charge may come before or after its copy, the reading unit's order
-        (Context): the amount is the same, so no row ends at another place in either order.
+      - At `14f8a2a` the glue's argument charge follows the copy; from `50a4239` (the reading
+        unit's sixth fix round, on its branch, not merged) it precedes it. The amount is the
+        same, so no figure depends on it and no row ends at another place in either order.
       - The terms assume the reading unit's price commit (the 16-byte rate, and the glue's
         `units * 2 / 16`), merged first (acceptance 14). The case records S0, S1, C and M of each
         row in a comment. In the
@@ -1213,8 +1220,9 @@ sharing one case.
       throw of 1d and 1e leave `stored_live()` and `stored_charged()` where they were. 6g holds
       the removal of what the parser stored while `stored_live()` is above 0.
    b. Memory first, for every writer that adds bytes. One helper, `memory_first`, over rows, in
-      `dom_attributes`; each row runs a loop of writes until the script ends `limit: memory`.
-      A row names its page, its setup script, its write, and the bytes `b` one write adds (the
+      `dom_attributes`; each row runs a loop of writes until the script ends `limit: memory`,
+      and each row is its own `#[test]` that calls the helper, so the 60 s bound applies to a
+      row. A row names its page, its setup script, its write, and the bytes `b` one write adds (the
       attribute's `stored_bytes`: 80 for the record, the bytes of the prefix, the local name and
       the value). Rows r1 to r7 use the page `<body>` + 1,000 times `<i></i>` + `</body>` (r2:
       1,000 times `<i a="x"></i>`), parsed under the default `Limits`, so that each write goes to
@@ -1399,12 +1407,16 @@ sharing one case.
       either layer: the engine gives them only for a handle of another engine or a faulted
       agent, `DomState::stored` is a private field of the generated file, and no engine fails
       on demand. The source check stands in for them: `git grep -n -F 'DomEnd::Fault' --
-      crates/webidl/src/prelude.rs | grep -v -E '^[^:]*:[0-9]+:[[:space:]]*//'` prints exactly
+      crates/webidl/src/prelude.rs | grep -v -E '^[^:]*:[0-9]+:[[:space:]]*//'` prints each of
       three code lines (the doc comments that name the variant start with `//` and are
       filtered): `Err(_) => Err(DomEnd::Fault),` in the body of `charge_to` (the outer
       `Err(HostError)`), `Err(DomEnd::Throw(_)) => Err(DomEnd::Fault),` in `settle_stored` (the
       inner `Err` made `Fault`) and the arm `Err(DomEnd::Fault) => ..` of `answered`, which
-      answers `Abrupt::Terminated(Termination::EngineFault)`; and `git grep -n -F 'DomEnd::Fault'
+      answers `Abrupt::Terminated(Termination::EngineFault)`; and it prints no line outside
+      `charge_to`, `settle_stored` and `answered` (read at the line numbers it prints; a
+      correct `settle_stored` may name the variant a fourth time, to pass an outer `Fault`
+      through, or fold two of the lines into one arm; neither turns the check red); and
+      `git grep -n -F 'DomEnd::Fault'
       -- crates/script/src/dom | grep -v -E '^[^:]*:[0-9]+:[[:space:]]*//'` prints nothing (no
       slice makes it: only the glue ends a run). The
       case is red against an arm that answers `Err(throw(cx, ..))`, which the implementor shows
@@ -1426,22 +1438,40 @@ sharing one case.
       `Some(ns)` for `ns.url()` of each of the six and `None` for `""`, a near miss (a URL with
       one byte changed) and an unknown URL. The source test of the removals,
       `removals_copy_no_name`, reads `crates/html/src/tree.rs` with `include_str!` and strips
-      every line whose first non-blank characters are `//` before any search. It cuts the
+      every line comment and the rest of a line after `//` before any search (as acceptance 10
+      does). It cuts the
       text of a function from its opening line to the next line that starts a `fn` (after its
       blanks, `fn ` or `pub fn `): `fn position_of(` and `fn position_of_ns(` each to its own
       end, `pub fn remove_attribute(` (the parenthesis keeps the `_ns` twin out of it),
-      `pub fn remove_attribute_ns(` and `pub fn toggle_attribute(`. It asserts one forbidden
-      list, `attribute_name(`, `to_ascii_lowercase(`, `to_lowercase(`, `.to_owned(`,
-      `.to_string(`, `.clone(`, `String::`, `format!` and `.collect`, against the text of
-      `position_of`, of `position_of_ns`, of `remove_attribute`, of `remove_attribute_ns` and of
-      the removing arm of `toggle_attribute` (its text from the line that starts `Some(at) =>`
-      to the end of the function): so the position rule lowers the wanted name byte by byte
-      and copies nothing, and no removal copies the name. The lowering of one byte is a private
-      function of its own, `lower_byte(byte: u8) -> u8`, outside every cut, which `position_of`
-      calls for each wanted byte of an HTML element. In `toggle_attribute` the first
-      `attribute_name(` comes after the first `position_of(` (the name is lowered into a
-      `String` only in the arm that adds). The test is red when `remove_attribute` is given back
-      its call of `attribute_name` (the implementor shows it once and reports the output). The
+      `pub fn remove_attribute_ns(` and `pub fn toggle_attribute(`. The function
+      `toggle_attribute` keeps a `match` with two arms that each start a line, the adding arm
+      `None =>` and the removing arm `Some(at) =>`; an `if let` in place of the `match` is not
+      admitted. The test asserts both starts and fails with a message that names the one it
+      does not find. It cuts the removing arm by its braces, from the `{` that ends the line of
+      `Some(at) =>` to the `}` that closes it, counting the braces of the stripped text, not to
+      the end of the function (a line of `Some(at) =>` with no `{` fails with a message too).
+      It asserts one forbidden list, `attribute_name(`, `to_ascii_lowercase(`,
+      `to_lowercase(`, `make_ascii_lowercase(`, `.to_owned(`, `.to_string(`, `to_vec(`,
+      `.clone(`, `.into(`, `.into_owned(`, `.repeat(`, `String::`, `Vec::`, `Box::`, `Cow`,
+      `format!` and `.collect`, against the text of `position_of`, of `position_of_ns`, of
+      `remove_attribute`, of `remove_attribute_ns` and of the removing arm of
+      `toggle_attribute`: so the position rule lowers the wanted name byte by byte and copies
+      nothing, and no removal copies the name. A `git grep` of each of the eight added tokens
+      at `83e6b8a` over the code the cuts cover today (`qualified_name_is`, `tree.rs:696-706`,
+      the bodies of `remove_attribute` and `remove_attribute_ns`, `:1596-1621`, and the
+      removing arm, `:1651-1654`) finds none: correct code holds none of them, so no token
+      turns it red (`Vec::` is on 8 other lines of the file, none in those). The cuts call no
+      function of the file other than `lower_byte`, `element_attributes`, `drop_attribute`,
+      `position_of`, `position_of_ns` and `qualified_len` (which the length compare of
+      `position_of` may call): the test takes the names after `fn ` in the stripped file and
+      asserts that no call in the five texts has one of them but those; a call is a name
+      before `(` with no receiver, or the receiver `self.` or `Self::`, or `.qualified_len(`.
+      The lowering of one byte is a private function of its own, `lower_byte(byte: u8) -> u8`,
+      outside every cut, which `position_of` calls for each wanted byte of an HTML element. In
+      `toggle_attribute` the first `attribute_name(` of the function comes after the line that
+      starts `None =>`, the adding arm (the name is lowered into a `String` only there, and no
+      earlier line copies it). The test is red when `remove_attribute` is given back its call
+      of `attribute_name` (the implementor shows it once and reports the output). The
       case that `removeAttribute("ID")` on an HTML element still removes `id` is in
       acceptance 1.
    b. One matching rule: for a list of names (capitals, a prefixed name, a duplicate, an absent
@@ -1461,8 +1491,10 @@ sharing one case.
       triple makes (`prefix:local_name`, or the local name alone with no prefix) answers
       `WriteError::Namespace` exactly when `namespace_error` is true (for a namespace of the
       six). The function makes no pass over the name: the same test reads its text and asserts
-      that it holds none of `split`, `find(`, `chars()` and `bytes()`, so each compare is
-      against a constant of at most 36 bytes.
+      that it holds none of `split`, `find(`, `rfind(`, `chars()`, `char_indices(`, `bytes()`,
+      `contains(`, `matches(` and `trim`, so each compare is against a constant of at most 36
+      bytes. The four conditions the function replaces (`tree.rs:1569-1577 @ 83e6b8a`) hold
+      none of the nine tokens, so none turns correct code red.
    e. Each new public function's doc comment carries a line that starts with the token
       `Cost:`: `git grep -c -F 'Cost:' -- crates/html/src/tree.rs` prints nothing today (the
       token is free at `83e6b8a`, and `git grep -c` prints nothing for a file with no match) and
@@ -1516,23 +1548,29 @@ sharing one case.
     The source test `dom_attributes_cost::the_members_touch_the_tree_only_through_the_files`
     reads `attributes.rs`, `attribute_reads.rs` and `attribute_writes.rs` with `include_str!`
     (as `dom_reading_cost::the_members_read_the_tree_only_through_the_reads` does,
-    `dom_reading_cost.rs:594`), strips every line whose first non-blank characters are `//`
-    from each text before any search (a comment that names a forbidden string does not turn the
-    test red), and asserts: `attributes.rs` holds none of `tree()`,
+    `dom_reading_cost.rs:594`), strips from each text, before any search, a line comment and
+    the rest of a line after `//`, and a line left blank, as `code_lines` does
+    (`adversary_dom_reading_5.rs:308-316 @ 50a4239`; a comment that names a forbidden string
+    does not turn the test red), and asserts: `attributes.rs` holds none of `tree()`,
     `tree_mut()`, `charge(`, `charge_steps`, `charge_stored` and `settle_stored`;
     `attribute_reads.rs` holds none of `tree_mut()`, `charge_stored` and `settle_stored`;
     `attribute_writes.rs` holds no `tree()`, and it holds `charge_stored(`, `tree_mut()` and
     `settle_stored(` only inside the text of the function `charged_write` (the text outside
     that function holds none of the three), where `charge_stored(` is called once and
-    `settle_stored(` twice, once as `settle_stored(0, 0)`; and the text of `charged_write`
+    `settle_stored(` twice, once as `settle_stored(0, 0)`. Each settle is one statement
+    spelled `cx.settle_stored(..)?;`, and that spelling is the rule: the test finds each
+    statement from `cx.settle_stored(` to its `;` and asserts that it ends in `)?;`, so
+    `let put_back = cx.settle_stored(0, 0); put_back?;` is red. The text of `charged_write`
     after its call of `write(cx.tree_mut())` (the pattern is the whole call, never the bare
-    `write(`, which the signature of `charged_write` holds), with the two statements that call
-    `settle_stored(` cut out (each up to its `;`, so that the `?` that takes the settle's own
-    answer goes with it), holds no `?`, so that no refusal of the tree, of any kind, skips the
-    settle. The test is red when one of those strings is added to the file that must not hold
-    it, and when a `?` is put after the call of `write(cx.tree_mut())` (the implementor shows
-    each once and reports the output). The signature of the settle is held by the compile, since
-    the writers and the
+    `write(`, which the signature of `charged_write` holds; a `charged_write` that does not
+    hold the pattern once is red, with a message), with the two settle statements cut out
+    (each up to its `;`, so that the `?` that takes the settle's own answer goes with it),
+    holds none of `?`, `return`, `unwrap` and `expect(`, so that no refusal of the tree, of any
+    kind, skips the settle: after the tree call and before the settle nothing leaves the
+    function. The test is red when one of those strings is added to the file that must not
+    hold it, and when a `?`, a `return` or an `unwrap()` is put after the call of
+    `write(cx.tree_mut())` (the implementor shows each once and reports the output). The
+    signature of the settle is held by the compile, since the writers and the
     test slice of 6f take its answer with `?`, and by one source line: `git grep -n -F 'pub fn
     settle_stored(&mut self, added: usize, removed: usize) -> DomResult<()>' --
     crates/webidl/src/prelude.rs` prints one line.
@@ -1549,9 +1587,25 @@ sharing one case.
     in-process value is built once for each test under nextest, which runs each test in its own
     process, so the page string of 11a, 11b and 11c, which holds two elements (one of 4,096
     attributes with names of 1,000 bytes for 11a, one of 16,384 short names for 11b and 11c),
-    is built once for the three, each run parses its own tree from it, and one test holds
-    11d. Under raised parse limits (16,384 attributes, room for long values) and
-    `string_length` of 1 << 22:
+    is built once for the three, each run parses its own tree from it, and one test holds the
+    case 11d. The module sets the limits it raises in one place, its own `limits()` and
+    `raised()` (copied from `dom_reading_cost.rs:22-46 @ 50a4239`), and raises no other:
+    - parse limits: `max_attributes` 20,000 (the shapes hold 16,384, and 11e adds the 16,385th);
+      `max_input_bytes` 23,068,672 (22 MiB; the default is 16,777,216, `limits.rs:103`, and the
+      page of 11d holds 20,971,522 bytes of values); `max_stored_bytes` 268,435,456 (256 MiB, as
+      `dom_reading_cost.rs:44 @ 50a4239`; the page of 11d, the largest, stores about 21,000,000
+      bytes, under a tenth of it).
+    - engine and runner limits: `steps_per_entry` 50,000,000, `steps_per_runner`
+      1,000,000,000, `memory_bytes` 256 MiB, `string_length` 1 << 22, and `wall_clock` 50 s
+      (`dom_reading_cost.rs:36 @ 50a4239`; a session's is 5 s, `runner.rs:97 @ 83e6b8a`, and
+      the 50 s is ten times it and under the 60 s bound of one `#[test]`); the other fields as
+      in that file.
+    `Limits` has no check on a value: the tokenizer stops at `attributes.len() > max_attributes`
+    (`tokenizer/machine.rs:494 @ 83e6b8a`), the tree builder at `held + new.len() >
+    max_attributes` (`tree_builder.rs:1562`), `put_attribute` at `len >= max_attributes`
+    (`tree.rs:1516`), and `cut_str` takes `max_input_bytes` as it is, so no cap forbids 20,000
+    or 23,068,672 (`a14e3b0` has the same tests, `tree.rs:1450`). Under those
+    limits:
     a. `getAttribute` and `hasAttribute` of an absent name over an element of 4,096 attributes
        whose names are all 1,000 bytes long, the wanted name 1,000 bytes long and differing
        from every name only in its last four bytes (every compare reads the whole name; the
@@ -1579,7 +1633,9 @@ sharing one case.
        slice's alone. A slice that counted before it charged and threw would raise the steps by
        less than the first of these and fail, and one that charged the count in the first band
        only once fails the 524,288. The page holds the three values in one attribute each, in
-       one `#[test]`, under raised parse limits. No case holds a fourth value, one of
+       one `#[test]`, under the limits above: the page is 20,971,522 bytes of values and a few
+       hundred of markup, under the `max_input_bytes` of 23,068,672, so the parse cuts no
+       value. No case holds a fourth value, one of
        4,194,305 to 50,331,648 bytes whose units do not pass `string_length`, which a read
        then answers: it meets the glue's own count of the answer (`longer_than` in
        `string_value`) after the glue's charge of `text.len() / 16` at `14f8a2a`, and before it
@@ -1595,7 +1651,10 @@ sharing one case.
        + 65,535 (the tree's bytes) + 8,192 (the scans, `k` is 0) = 270,338. `toggleAttribute`
        that adds a name of 1 MiB and `setAttribute` with a name of 1 MiB and an empty value:
        floor 131,072 (the glue) + 65,536 (the validation) + 65,536 (the tree's bytes) + 8,192 =
-       270,336 each.
+       270,336 each. Each case adds the 16,385th attribute, under `max_attributes` of 20,000, and
+       ends `Ran`. The limit case of the attribute count (`limit: attributes` at the limit) is
+       not in this module: acceptance 2a holds it for the four writers that add, with
+       `max_attributes` at 3.
     f. `removeAttribute("n16383")` and `removeAttributeNS(null, "n16383")` of the last of 16,384
        attributes `n0` to `n16383`: `k` is 6,384 (the names of 6 bytes, `n10000` to `n16383`),
        so each scan charges 16,384 / 4 + 6,384 * 6 / 16 = 4,096 + 2,394 = 6,490, and the floor
@@ -1649,9 +1708,10 @@ sharing one case.
        entry) has a test count equal to the tests of `surf-script` in the log of the tip.
 14. The folder's bounds hold, and the order of the work. The reading unit's price commit (one
     step per 16 bytes in its own charges, and `units * 2 / 16` in `Copies::copy`,
-    `bindings.rs:630 @ 14f8a2a`) is merged first. The reading unit owns the order of the
-    glue's argument charge and the copy: at `14f8a2a` the charge follows the copy, its sixth
-    fix round puts it first, and the figures of 5b, 5c, 6 and 11 hold in both orders. The
+    `bindings.rs:630 @ 14f8a2a`) is merged first. At `14f8a2a` the glue's argument charge
+    follows the copy; from `50a4239` (the reading unit's sixth fix round, on its branch, not
+    merged) it precedes it. The amount is the same, so no figure of 5b, 5c, 6 and 11 depends
+    on it. The
     first command of the work is `git grep -n -F '/ 64' -- crates/script/src/bindings.rs
     crates/webidl/src/prelude.rs crates/script/src/dom/reads.rs`; it prints nothing, else the
     floors of 5b, 5c, 6 and 11 are not the story's and the work waits for that commit. It
@@ -1709,7 +1769,8 @@ runs a page's scripts (`story:scripts-parse-run`); a page in a session and the e
 link built by script (`story:scripts-document-port`); the argument price of decision 20 itself
 and the 16-byte rate of `Copies::copy` (the reading unit's price commit); the order of the
 glue's argument charge and its copy, which the reading unit owns (at `14f8a2a` the charge
-follows the copy; its sixth fix round puts it first; the figures of this story hold in both);
+follows the copy; from `50a4239`, its sixth fix round, on its branch, not merged, it precedes
+it; the amount is the same, so no figure depends on it);
 the order of the count of `longer_than` in `reads::copied` and `string_value` against their
 charge (the reading unit's, Context); the pin of a
 released tag of the engine, `story:swell-0-9-0`.
@@ -1881,10 +1942,10 @@ The files shared, one by one:
   the deviation of decision 9, after this story; `story:scripts-style-and-layout` names
   `classList` effects as style and does not touch this slice.
 - The epic: the bullet of this story has been in the store since plan commit `60a4317`, and a
-  first correction of it was made in plan commit `4c76597`. This story edits no line of the
-  epic. The bullet leaves out edits of this story and says the handle is one for each node's
-  bytes where decision 8 keeps one handle for the document; the plan edit that corrects both is
-  made in the store, outside this story.
+  corrections of it were made in plan commits `4c76597`, `9a88a16` and `dfec030`. This story
+  edits no line of the epic. The first two made the bullet name the edits it had left out and
+  the one handle for the document that decision 8 keeps (not one for each node's bytes); the
+  third made it name the private position functions and the one charge of `strings_value`.
 The last commit of the story rewrites the public-surface lines of acceptance 13 (the test
 counts in `README.md`, `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/*`); a
 commit before it leaves them.
