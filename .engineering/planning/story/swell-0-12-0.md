@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:swell-0-12-0
 kind: story
-status: draft
+status: proposed
 title: Pin swell at its tag 0.12.0, where an interrupt set by any host function ends the run
 summary: Moves surf's pin of the script engine swell from tag 0.10.0 to 0.12.0 (0.11.0 gives Date, Math and Number; 0.12.0 reads the interrupt flag after every host function, getters, setters, conversions, iterators and promise jobs included). No signature surf calls changes and surf has no cx.call; the change shows in tests and notes. One test is red on 0.10.0 and green on 0.12.0, one is rewritten, time_zone loses its ignore, and the notes of Q2, Q4, Q6, Q13 and Q18 are rewritten.
 relations:
@@ -67,7 +67,9 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 32
+revision: 33
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T07:14:04Z", actor: "human:operator", revision: 33}
 ---
 ## Context
 
