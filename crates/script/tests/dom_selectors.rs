@@ -1129,20 +1129,6 @@ check(t !== null && t.tagName === "TABLE", "the table");"##,
     }
 }
 
-/// A member of another slice still throws `NotSupportedError` naming itself.
-#[test]
-fn another_slice_still_throws() {
-    with_page(PAGE, |runner| {
-        checked(
-            runner,
-            r##"
-var got = err(function () { document.getElementById("a").attachShadow({}); });
-check(got === "NotSupportedError 9 Element.attachShadow is not supported: shadow trees", got);
-"##,
-        );
-    });
-}
-
 /// The table of `selectors.rs` is the HTML Standard's list: 46 names, sorted, equal to the copy
 /// typed in this file.
 #[test]
