@@ -4,11 +4,11 @@ id: story:surfd-died-session-order
 kind: story
 status: active
 title: Order the session's end and its child's line by an event in two surfd tests
-summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. In the first case the child waits until the shell is waitable; the second keeps two clocks with margins of 1 s and more. No product file changes.
+summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. Both cases end the shell by a signal that dumps no core; in the first the child waits until the shell is waitable, in the second the child holds the output until the shell is collected. No product file changes.
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-26T04:38:51Z", actor: "human:operator", revision: 10}
@@ -50,17 +50,18 @@ Why the shell is slow to end, found in the review of this story's first implemen
 `SIGABRT` is a signal whose default action dumps core, and on a host whose core pattern is a
 pipe the process is waitable only after the handler has taken the dump. Measured in a test
 job on the build host (core pattern a pipe, at most 16 dumps at once): a shell that ended
-itself by `SIGABRT` was waitable after 142 to 256 ms with nothing else running, and after up
+itself by `SIGABRT` was waitable after 142 to 256 ms with one shell at a time, and after up
 to 3.5 s with 24 such shells at once; by `SIGTERM` after 3 to 15 ms and at most 68 ms. Every
 test of any repository that dumps core on that host shares the handler. A first
 implementation that kept `SIGABRT` and waited for the shell's end with a limit of 300 turns
-failed in a gate run under load (the turns took 7.5 s and the shell was not waitable), beside
-seven other cases of `crates/surfd/tests` that end a process by such a signal.
+failed in a gate run under load (the case ended after 7.5 s at its assertion on `gave-up`),
+beside seven other cases of `crates/surfd/tests` that end a process by such a signal.
 
 What the two cases claim does not need that signal: a session that died by a signal `surfd`
 did not send is named by that signal, and is not read as `bound cpu`, which belongs to
-`SIGXCPU` alone (`daemon.rs:401-409`). `signal_name` (`:309-334`) names `SIGUSR1` like any
-other.
+`SIGXCPU` alone (`ended_note`, `daemon.rs:410-414`). `signal_name` (`:309-349`) names
+`SIGUSR1` like any other. That an aborted session names `SIGABRT` stays held by other cases
+(`hardening.rs:302-320`, `adversary.rs:219`).
 
 ## Decisions
 
@@ -99,6 +100,9 @@ other.
      output until that file is gone (`[ -e /proc/$$/stat ]` fails), in turns of 10 ms with a
      limit of 1,000 turns, and then exits. A child that gives up lets go after `abandon`'s
      wait has run out, and the case is red by its answer; no file is needed.
+   - A second margin, named in the doc comment too: the child must see the file gone and
+     exit within `abandon`'s wait of 2 s (`KILL_GRACE`, `:43`, `:1331`). One turn is 10 ms
+     and the start of one `sleep`, so the wait is over 10 times a turn.
    - `kill_grace` keeps its default. The case lasts about 2 s.
 4. No product file changes. If the implementor finds that `surfd` answers wrongly for an
    order the product must hold, that is a finding for a story of its own, with a failing
@@ -112,8 +116,9 @@ other.
   `gave-up`; the note both cases assert (`note ended: signal SIGUSR1`); the reason the second
   case asserts, which names the timeout (`within 0.3 seconds` at `:164-169` becomes `within 2
   seconds`); and the doc comments of both cases, which say how the order is made and why the
-  signal is one that dumps no core. No case is added or renamed, so no count of `AGENTS.md`
-  moves.
+  signal is one that dumps no core. The comments name the other kind as "a signal that dumps
+  core" and do not hold the letters `ABRT`, which acceptance 7 counts. No case is added or
+  renamed, so no count of `AGENTS.md` moves.
 
 ## Acceptance
 
@@ -141,12 +146,15 @@ other.
    line at `a14e3b0` (`:141`) and nothing after the change; `git grep -c 'from_millis(300)'
    -- crates/surfd/tests/adversary_2.rs` prints 2 at `a14e3b0` and 1 after (the number after
    the last colon; the case of the live session at `:118` keeps its timeout); `git grep -c
-   'ABRT' -- crates/surfd/tests/adversary_2.rs` prints 6 at `a14e3b0` and no line after; and
+   'ABRT' -- crates/surfd/tests/adversary_2.rs` prints 6 at `a14e3b0` and no line after (it
+   exits 1 then); and
    `git grep -c 'kill -s USR1' -- crates/surfd/tests/adversary_2.rs` prints 2 after.
 8. One pool job after `slot cargo build --workspace --all-targets --locked`, with
    `RUSTFLAGS="-D warnings"` and `SURF_BIN_DIR=<tree>/target/debug` as `task test` sets them:
-   `slot cargo nextest run -p surfd --locked` is all green; the two cases are named with their
-   times, the second about 2 s, neither over 5 s.
+   `slot cargo nextest run -p surfd --locked` shows the two cases green; they are named with
+   their times, the second about 2 s, neither over 5 s. A red among the seven cases the
+   Context names (they are out of scope) is reported with its line and is not counted
+   against this story; any other red is.
 9. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
    its time with `slot --timeout` (at most 30 minutes), none started again unchanged. Every
    command that compiles or tests carries `slot`; none carries `--local`, `--here`,
