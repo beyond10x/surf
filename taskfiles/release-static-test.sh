@@ -20,7 +20,7 @@
 #    warning or error, an INTERP row only for interp and both, a (NEEDED) entry only for needed
 #    and both, a dynamic section only for needed, static-pie and both. A made file that reads
 #    otherwise stops the test, so no case passes for the wrong reason.
-# 3. The table. 16 cases, each on a directory
+# 3. The table. 18 cases, each on a directory
 #    case<n>/surf-0.0.0-x86_64-unknown-linux-musl/ that holds made files under the four names
 #    of a Linux archive. Each case holds an exit status, the text the output holds (and one it
 #    does not hold where the case says so) and, where an image is given, whether the stand-in
@@ -219,6 +219,7 @@ printf '%s\n' 'release-static-test: the made files read as named: static, interp
 standin=$out/docker
 printf '%s\n' '#!/bin/sh' \
   'printf "%s\n" "$@" > "$STANDIN_RECORD"' \
+  '[ -z "$STANDIN_ERR" ] || printf "%s\n" "$STANDIN_ERR" >&2' \
   'printf "%s\n" "$STANDIN_FIRST" "end of the definition"' \
   'exit "$STANDIN_STATUS"' > "$standin" || exit 1
 chmod 755 "$standin" || exit 1
@@ -236,6 +237,7 @@ case_start() {
   docker=$standin
   first='surf-agent 0.0.0: a definition for agents'
   standin_status=0
+  standin_err=
   red=
   rm -f "$record"
 }
@@ -254,7 +256,7 @@ fill() {
 run() {
   status=0
   DOCKER=$docker STANDIN_FIRST=$first STANDIN_STATUS=$standin_status STANDIN_RECORD=$record \
-    sh "$under_test" "$@" > "$log" 2>&1 || status=$?
+    STANDIN_ERR=$standin_err sh "$under_test" "$@" > "$log" 2>&1 || status=$?
 }
 note() {
   red=yes
@@ -442,6 +444,27 @@ table() {
   expect_line "release-static: $dir/surf: INTERP header (dynamically linked)"
   expect_no_text 'NEEDED'
   case_end
+
+  # The workflow passes --image "$STATIC_IMAGE"; an empty value is no image named by digest,
+  # and the check must not end green without the container.
+  case_start 17 'an empty image value'
+  fill static static static static
+  run "$dir" --image ''
+  expect_status 2
+  expect_not_called
+  expect_no_text 'static binaries'
+  case_end
+
+  # docker writes "Unable to find image" and the lines of the pull on stderr when the image is
+  # not on the runner yet; the first line of stdout is still the definition's.
+  case_start 18 'the stand-in writes a line on stderr before the definition'
+  fill static static static static
+  standin_err="Unable to find image '$image' locally"
+  run "$dir" --image "$image"
+  expect_status 0
+  expect_line "release-static: surf-agent help --for-agent ran in $image: surf-agent 0.0.0"
+  expect_args "$dir"
+  case_end
 }
 
 table "$script" "$out/table" yes
@@ -480,6 +503,16 @@ defect() {
     wrong=$((wrong + 1))
     return
   fi
+  # A copy that no longer runs (an edit that left a broken if or an open quote) turns every case
+  # red, the named ones too; case 1, four static files and no image, holds that the copy runs.
+  case " $red_cases " in
+    *' 1 '*)
+      printf '%s\n' "release-static-test: planted defect $defects ($1): case 1 decided otherwise" \
+        "  too: the copy does not check four static files; red:$red_cases ($copy)"
+      wrong=$((wrong + 1))
+      return
+      ;;
+  esac
   printf '%s\n' "release-static-test: planted defect $defects ($1): case(s)$red_cases decided otherwise"
 }
 if [ "$given" -eq 0 ]; then
