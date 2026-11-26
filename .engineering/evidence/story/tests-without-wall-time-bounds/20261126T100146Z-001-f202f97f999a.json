@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:46Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-without-wall-time-bounds",
+  "kind": "story",
+  "revision": 24,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes of the adversary review by reviewers who did not write the unit, 2026-11-26",
+    "reference": "each pass wrote cases and was answered by a fix round; the second found one bound in a test that the check did not see, which a fourth round of name tracking refuses; the check has 96 cases, each rule held by a case its own defect turns red"
+  }
+}

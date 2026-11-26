@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tests-without-wall-time-bounds
 kind: story
-status: active
+status: implemented
 title: Replace the wall-time bounds of five tests by counts and keep the rule in the gate
 summary: Five tests of main bound a time by a clock (four assert an elapsed time, one waits 10 s for a parse); each gets the count that proves its cost (one new in webidl, one steps ceiling, two tightened), and a source check with a ledger of the other statements it finds refuses new ones.
 relations:
@@ -32,10 +32,11 @@ scope:
   path: taskfiles/test-clocks-ledger.txt
 - confidence: cited
   path: taskfiles/test-clocks.yml
-revision: 23
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-26T04:50:10Z", actor: "human:operator", revision: 23}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:46Z", actor: "human:operator", revision: 25, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -829,3 +830,281 @@ Read with `git grep -l -F <path> -- .engineering/planning/story` for each scope 
   new `taskfiles/` files are named by no other story. What follows for `lib.rs` is not that
   nobody else's change meets it: its digest line sits in `bindings.rs`, which the stories of
   the bullet above write again.
+
+## As built
+
+The unit is on `main` at `e4604fb` (the merge of `impl/tests-without-wall-time-bounds` at
+`52ebbd7`). Against the two units that go to `main` before it (`ac1901f`) it changes 12 files,
+1,677 lines added and 60 removed: exactly the 12 paths of the story's scope. Three are new
+(`taskfiles/test-clocks-check.sh` 980 lines, `taskfiles/test-clocks.yml` 498,
+`taskfiles/test-clocks-ledger.txt` 31). Two files under `src/` change
+(`crates/webidl/src/model.rs`, `lib.rs`), and the generated `crates/script/src/bindings.rs`
+with them (6 lines, all in its header).
+
+- What was built.
+  - The five tests. No time assertion is left in any of them; each prints its time.
+    - `adversary_5.rs`, the code getter loop: keeps `rounds[2] * 2 > rounds[1]` and the three
+      ends `Limit(StepsPerScript)`. Red with the guard of `dom_exception_code` switched off
+      (`rounds 23255,30302,1249`). Does not see: a copy that is made and not charged.
+    - `adversary_5.rs`, `strings_only_exceptions_hold_survive_collections_inside_and_between_
+      scripts`: `runner.steps()` before and after each of the three scripts, asserted at
+      `STEPS_CEILINGS` = 6,623,919, 3,501,804 and 3,501,804, 1.5 times the first green steps
+      (4,415,946, 2,334,536, 2,334,536). The four `collect` calls charge no step and are not
+      bounded.
+    - `adversary_4.rs`, `a_dom_exception_holds_no_uncharged_copy`: the second arm is now
+      `end == ScriptEnd::Ran && mib < 4`; the doc comment says that `ExceptionData` holds two
+      `StringRef`s and copies nothing.
+    - `depth.rs`: `surf_webidl::definition_visits()` (a thread-local counter behind
+      `#[doc(hidden)] pub fn`, every lookup of a definition by index through the one accessor
+      `definition_at`). The test
+      `the_definitions_a_model_visits_double_when_its_interfaces_double` builds a model of 8,000
+      and one of 16,000 interfaces and asserts `half > 0` and `whole <= 3 * half`; it visits
+      40,000 and 80,000. The scan per statement it was written against visits 4 times as many.
+    - `script_hook.rs`, `a_hook_that_keeps_every_element_open_ends_at_the_step_limit`: the parse
+      runs on the test's own thread (no spawn, no channel, no `recv_timeout`) and the test
+      asserts `Some(Limit::Steps)` and `max_steps < steps < max_steps + 4 * max_nodes` of
+      `Limits::default()`. The green run ends at 134,217,729 steps.
+  - The check, `sh taskfiles/test-clocks-check.sh [--count] [--ledger <file>] [<root>]`, with
+    the tasks `test-clocks-check` and `test-clocks-check-test` (`taskfiles/test-clocks.yml`),
+    two steps of `check` in `Taskfile.yml` and five places of `AGENTS.md` (16 occurrences of
+    `test-clocks`). POSIX sh and POSIX awk only; its header names the ten features it never
+    uses and the rest of the script uses none.
+    - Reads the tracked `*.rs` files under a `tests/` directory of `crates/`, `generated/` and
+      `conformance/` (`git ls-files`), with comments, strings, raw strings and character
+      literals blanked. A root that is not the top of a git work tree exits 2.
+    - Refuses: an `assert!` form with an upper bound on an elapsed value (`.elapsed()`,
+      `.duration_since(..)` and its `saturating_` and `checked_` forms, or a name bound from
+      one), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left;
+      an `if` or `while` on such a value whose block fails the test; a downward `if` whose
+      `else` block fails it; a match guard that compares upward with a failing arm. Prints
+      `<path>:<line>`, exit 1.
+    - Four rounds of name tracking: a name is tracked when the value of its binding holds an
+      elapsed value (round 1) or a name of rounds 1 to 3 (rounds 2 to 4). Bindings read: `let`,
+      `if let`, `while let`, a `for` pattern, `NAME =`, `NAME +=`, the pattern of a match arm.
+      Of a pattern that binds several names only those holding `took`, `elapsed`, `seconds`,
+      `secs`, `waited`, `duration` or `time` are tracked. The fourth round came last
+      (`f72a740`); the first three came with the check, widened in the first fix round.
+    - The ledger `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, sorted by path, no
+      comment) lists the files that still hold refused statements. A file with more fails and
+      names each statement; a file with fewer fails and names the count to write, so the ledger
+      only shrinks; a line for a file the scan did not read fails (`delete the line`); a line
+      out of order fails, naming the first.
+    - 96 cases in `taskfiles/test-clocks.yml`, each a small tree made the top of a git work
+      tree, run under each of `awk`, `mawk`, `gawk`, `gawk --posix` and `busybox awk` that the
+      machine has. A case is held by its own defect: the reviews and fix rounds wrote a defect
+      into a copy of the script (`SCRIPT=<copy>`) for each rule and want a case that turns red
+      under it, one that the other cases of the rule do not already supply; the first fix
+      round ran 17 such defects, the second review 25, the second fix round 9.
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written. 22 deviations.
+  - From the build (first report):
+    1. Acceptance 17 cannot be shown as written. The first script of the test takes 262,240
+       steps and the loop of 64 constructions 1,936, so every `steps_per_entry` under 262,240
+       ends the first `ran` before the loop starts, and none ends the loop by
+       `Limit(StepsPerScript)` with the first script `Ran`. Shown instead: a loop that throws
+       at `i == 8`. The old arm (`|| mib < 4`) passes it, the new arm fails it (`threw value
+       1:46; the process grew by 0 MiB`). The first review recomputed both counts.
+    2. Acceptance 14: removing the guard of `dom_exception_code` fails the build under
+       `-D warnings` (`constant LEGACY_NAME_UNITS is never used`), so the guard was switched
+       off with `if false && ..`.
+    3. Acceptance 16: `ExceptionData` is `Copy`, so the defect added a field
+       `_owned: (&'static str, &'static str)` filled at the construction by `to_utf16` and
+       `String::from_utf16_lossy`, leaked, no charge. Red: `the process grew by 16 MiB for
+       16 MiB of messages`.
+    4. Acceptance 15: `k < 4000` turns the test red by `ran` (the 200,000,000 steps of an
+       entry), not by a ceiling. `k < 400` was added: `MAKE charged 10172346 steps, over its
+       ceiling of 6623919`. The code-side defect adds 63 steps per `READ` (steps 4,415,946,
+       2,334,599, 2,334,599) and stays inside the margin: it passes, so it is one of "Does
+       not see", as the story allows. Whether an allocation of `churn` charges a step was not
+       separated.
+    5. The `depth` test asserts `half > 0` too, because a zero count would pass
+       `whole <= 3 * half`.
+    6. The entry of `task test-clocks-check` in `AGENTS.md` is the story's text rewrapped,
+       plus one sentence on a ledger line for a file the scan did not read.
+    7. Acceptance 11 is shown in part: the cases ran under `awk`, `gawk` and `gawk --posix`;
+       `mawk` and `busybox awk` are not on the machine and never ran. Acceptance 13 (the
+       forge's run of `task check`) is not shown here.
+  - The 13 points where the story's text is behind the script (second review):
+    8. Comparisons. The story refuses an elapsed value as the smaller operand; the script also
+       refuses a clock read as the smaller operand and the time left as the larger one. The
+       first review found four poll-loop asserts `assert!(Instant::now() < deadline, ..)`
+       (`crates/view-fixture/tests/fixture.rs:174` and `:318`,
+       `crates/tls-test-server/tests/hostile.rs:46`,
+       `crates/surfd/tests/adversary.rs:193`) that were neither refused nor ledgered, which
+       made the `AGENTS.md` sentence false.
+    9. Elapsed value. The story names `.elapsed()`, `.duration_since(..)`,
+       `.saturating_duration_since(..)` and a chain. The script adds `.checked_duration_since(..)`,
+       a cast after the value, an operand behind `*`, `&`, `&mut` or parentheses, and decides
+       `a.duration_since(b)` by its sides: no elapsed value when `b` is `UNIX_EPOCH` or both
+       sides are fixed instants, the time left when `b` is a clock read, else an elapsed value.
+       Each form passed in the first review; a Unix timestamp and a difference of two fixed
+       instants were refused with no clock in them.
+    10. Bindings. The story reads names bound by `let`, and the word rule for tuples only. The
+        script binds by `if let`, `while let`, a `for` pattern, `NAME =`, `NAME +=` and match
+        arms, and applies the word rule to every pattern. The first review found
+        `let took; took = ..`, `total += ..` and `if let` untracked; the second a `for`
+        pattern.
+    11. The `if` rule. The story compares against a `Duration`, a number or an upper-case
+        constant; the script against any operand that is not of the elapsed value's kind. An
+        `if s.elapsed() > limit { panic!() }` with a lower-case `limit` passed.
+    12. Downward conditions. The story does not read them. The script refuses a downward `if`
+        whose `else` block fails the test and a match guard that compares upward with a
+        failing arm; both passed in the first review.
+    13. The story reads `<`, `<=`, `>`, `>=`; the script also reads `.lt`, `.le`, `.gt`, `.ge`.
+    14. Allowed. The script adds an upper bound on the time left
+        (`deadline.saturating_duration_since(Instant::now()) < WAIT`).
+    15. Not seen. The script adds: a clock read through an alias or a name; a name bound from
+        the time left; a failing `else if` branch; a downward guard with a failing arm; and,
+        from the second review and its fix round, an expression around an elapsed value
+        (`took + SLACK`), a comparison through `cmp`, `partial_cmp`, `min` or `max`, a
+        destructuring assignment, a value assigned through a reference or to a field, the time
+        left with a name or a parameter as argument, a bound between two Unix timestamps, and
+        the names of a pattern of several names none of which holds a word of the list.
+    16. Ledger. The story says sorted and states no failure; the script fails on a line out of
+        order and names the first (the first review saw an unsorted ledger pass).
+    17. The pre-scan. The story has none. The script reads a file further only when a line
+        holds `elapsed` or `duration_since`, or the word `now` in a file that also holds
+        `Instant` or `SystemTime`. The first review found a file skipped whole when `.elapsed
+        ()` has a space or a line feed before the parenthesis. The word `now` came with the
+        clock-read rule and admitted 110 files (54,776 lines); the condition on `Instant` or
+        `SystemTime` brings it to 68 files (30,279 lines) with no decision changed.
+    18. Cases. The story lists 50 by name; the file holds 96.
+    19. Acceptance 9: `git grep -o -F test-clocks -- AGENTS.md | wc -l` prints 16, not 15,
+        because the sentence added to the entry of `task test` names
+        `taskfiles/test-clocks-check.sh`. Left as it is, that entry holds 2 of the 16, so the
+        count without it is 14, as the story says.
+    20. Acceptance 1 and 2. With the script as built the scan of `a14e3b0` with an empty
+        ledger prints the six deadline statements too; the ledger holds 30 lines and 46
+        statements after the first fix round (25 and 40 at `996c05c`), 47 statements after the
+        fourth round of names, and 31 lines and 48 statements at the merge.
+  - Two more:
+    21. The `task test` entry of `AGENTS.md` does not say that the check refuses every upper
+        bound outside its ledger, which the forms it does not see would make false. It says
+        "in the forms the header of `taskfiles/test-clocks-check.sh` lists as refused, that
+        its ledger does not list; the same header names the forms it does not see". Likewise
+        the entry of `task test-clocks-check` ends its list of bindings with "in the forms the
+        header of the script lists".
+    22. Four rounds of names; the story states three and a fourth round as not seen. A bound
+        at `crates/surfd/tests/adversary_2.rs:232` is reached through four bindings by name,
+        so the fourth round was built (see the second review).
+  - The forms the check does not read, as its header lists them: a bound written through a
+    helper function, a macro or a `bool` of a `let`; a name bound through a name of round 4;
+    the names of a pattern that binds several names of which none holds a word of the list;
+    the negated spelling `assert!(!(took >= LIMIT))`; `assert_eq!(took, ..)` by equality; a bound
+    recorded in a list asserted after the loop; a test that returns `Err` from the block; a
+    failure by `.expect`, `.unwrap` or `std::process::exit` in the block; a difference of two
+    instants written with `-`; a clock read through an alias or a name; a name bound from the
+    time left; a failing `else if` branch; a match guard that compares downward with a failing
+    arm; an expression around an elapsed value; a comparison through `cmp`, `partial_cmp`, `min`
+    or `max`; a name bound by a destructuring assignment, through a reference or to a field; the
+    time left whose argument is a name or a parameter; a bound between two Unix timestamps;
+    whether the limit of a wait is at least 10 times the time alone.
+- The two reviews. Both ended NEEDS-CHANGE. Lines of other tests are those of the reviewed
+  commit; at `52ebbd7` the bound of `adversary_2.rs:232` is at `:292`, the deadline assert of
+  `crates/surfd/tests/adversary.rs:193` at `:196` and the heap bound of `bindings.rs:693` at
+  `:722`.
+  - First review (on `996c05c`; origin all introduced). Report: 11 findings, 2 must,
+    4 should, 5 notes; its findings block holds 7 (2 blockers, 4 warnings, 1 note).
+    - Must: the pre-scan skipped a file whose `.elapsed()` has a space or line feed before the
+      parenthesis; the `AGENTS.md` sentence was false, four deadline asserts being neither
+      refused nor ledgered.
+    - Should: operand forms around an elapsed value pass (`checked_duration_since`, a cast,
+      parentheses, a dereference, a comparison method); names bound other than by `let NAME =`
+      are not tracked; the `if` rule misses a lower-case limit, a failing `else` and a match
+      guard; `duration_since` is an elapsed value whichever side reads the clock.
+    - Notes: gawk's syntax error ends with exit 1 and no line of the script's own; edges of
+      the ledger (a path with a space, an unsorted ledger passes, a renamed file); the window
+      test alone does not hold that every entry read again is a step (one step per four
+      entries stays green, the test `each_entry_read_again_after_a_hook_run_is_a_step` goes
+      red); `DEFINITION_VISITS` is compiled in every build and no crate depends on
+      `surf-webidl`; the first deviation above, checked and confirmed.
+    - 23 cases written (50 to 73): 19 red on `996c05c`, 4 green. Two hand-made defects in the
+      code under test, taken back: `definition_at` without its count turns `depth` red
+      (`no definition visited at 8000 interfaces`); a `settle_entries` that charges one step
+      per four entries leaves `a_hook_that_keeps_every_element_open_ends_at_the_step_limit`
+      green.
+  - Fix round 1 (`af3bc95`, `89cf1fd`, `0398d9a`): every finding repaired (deviations 8 to 17);
+    73 to 77 cases, 19 red to none. The scan then found six new statements, the four
+    deadline asserts and `crates/surf-cli/tests/cli.rs:99` and
+    `crates/surf-cli/tests/review1_output.rs:65` (the second was not in the review's list);
+    the ledger went from 25 lines and 40 statements to 30 and 46. Two cases were added for
+    the pre-scan beyond the review's: the first defect left the review's two cases green
+    because every file that reads a clock holds the word `now`.
+  - Second review (on `0398d9a`; origin 7 introduced, 1 pre-existing). Report: 12 findings,
+    2 must, 2 should, 8 notes; its block holds 8 (2 blockers, 2 warnings, 4 notes).
+    - Must: `crates/surfd/tests/adversary_2.rs:232`, `assert!(longest < KILL_GRACE_OF_SURFD * 2,
+      ..)`, an upper bound on measured times that the check passed and the ledger did not
+      count (pre-existing; the times pass through a tuple `let` of two unworded names and a
+      `for` pattern); eleven rules that the round added or the header states were held by no
+      case.
+    - Should: the word `now` admitted 42 files (24,497 lines) that hold neither `Instant` nor
+      `SystemTime`, doubling the main scan; the `AGENTS.md` clause on names bound had no
+      limit.
+    - Notes: operand expressions, `cmp` and `min`, bindings not read, the time left with a
+      name, two Unix timestamps, a clock read against an instant of the product, helper
+      bounds (`crates/test-process/tests/children.rs:70`, `:79`, `:135`,
+      `crates/webidl/tests/adversary_3.rs:250`), one equivalent defect.
+    - 12 cases written (77 to 89): 1 red (the `for` pattern), 11 green and each held by a
+      defect in a copy of the script.
+  - Fix round 2: merge of the review's cases (`aa7915d`); `162f64b` reads a `for` pattern as a
+    binding, narrows the pre-scan, limits the `AGENTS.md` clause and extends "Not seen" (6
+    cases, 89 to 95); `f72a740` adds the fourth round (cases 95 to 96). The bound at
+    `adversary_2.rs:232` is the one the check did not see and now refuses: `opens` (round 1),
+    `answers` (2), `took` (3), `longest` (4). The only new line of the tree's scan is that
+    one; the ledger line of `crates/surfd/tests/adversary_2.rs` goes from 1 to 2 (47
+    statements). The review's case was reshaped to the tree's statement (a binding inside the
+    closure was added). `fourth_round_of_rebinding_refused` is new,
+    `fourth_round_of_rebinding_not_seen` became `fifth_round_of_rebinding_not_seen`, and the
+    case of the unworded pattern became
+    `pattern_of_unworded_names_from_an_elapsed_value_not_seen` (it wants exit 0).
+  - Merge of the two units that go to `main` before it (`7e9dc11`, parents `f72a740` and
+    `ac1901f`): two conflicts, the `crates/webidl` paragraph of `AGENTS.md` (the other side's
+    test count kept, this side's last clause kept) and the whole-file digest in the header of
+    `bindings.rs` (written again by the generator, not by hand). The check then refused
+    `crates/script/tests/adversary_dom_reading.rs:245`, `assert!(took < Duration::from_secs(1),
+    ..)`, a bound that `main` holds; `52ebbd7` ledgers it. The four files of the five tests are
+    not touched by the merge.
+- Numbers.
+  - Cases of `test-clocks-check-test`: 50 at `996c05c`, 73 after the first review, 77 after
+    the first fix round, 89 with the second review's, 95 and 96 after the second fix round.
+  - Ledger: 25 lines and 40 statements at `996c05c` (the scan of `a14e3b0` printed 44 lines
+    with an empty ledger, 4 of them the story's), 30 and 46, then 30 and 47, then 31 and 48 at
+    `52ebbd7`.
+  - Merge report, `slot cargo nextest run -p <crate> --locked`: `surf-html` 253 passed in
+    5.396 s; `surf-script` 229 passed, 3 skipped, 38.015 s; `surfd` 98 passed, 5.121 s;
+    `surf-webidl` 131 passed, 1.446 s. `sh taskfiles/test-layout.sh .`: 26 test directories,
+    246 test files, one test binary each. The workspace build under `-D warnings`: exit 0.
+  - The three crates of the five tests, first report: 455 passed, 3 skipped in 8.236 s, and in
+    17.135 s with another build running.
+  - The step `test-clocks-check`: 733 ms under `awk` and 661 ms under `gawk --posix` at
+    `996c05c`; 6,485, 4,126 and 3,348 ms at `0398d9a`, after the pre-scan grew (110 files
+    admitted in place of 48); 1,402, 1,364 and 1,385 ms at `f72a740`. The merge report gives
+    none for its tip. All run alone, without `slot`.
+  - The step `test-clocks-check-test`: 6,749 ms for 73 cases (first review), 8,450 ms for 89
+    (second review), 20,091 ms for 96 at `f72a740`, 12,873 ms for 96 at the merge. All over
+    5 s, none over 60 s; the step is under 120 s.
+  - The five tests (first review): `script_hook` 2.163 s, `adversary_4` 0.112 s,
+    `strings_only` 2.516 s, `depth` 0.546 s, the code getter loop 6.195 s. Over 5 s: the code
+    getter loop (5.192 to 11.802 s in the first report, 5.835 s in the merge report) and
+    `script_hook` (5.995 s). No test over 60 s.
+- Left as it is.
+  - A rule that tracks every name of a pattern with no worded name was written and not taken:
+    it refused a bound on heap bytes, `crates/script/tests/bindings.rs:693`
+    (`assert!(heap <= BINDINGS_REALM_HEAP_BYTES, ..)`), and no narrowing separated the two.
+    The fourth round took its place.
+  - The window test of `script_hook.rs` does not see a step charged at less than one per
+    entry; the test `each_entry_read_again_after_a_hook_run_is_a_step` does.
+  - The `depth` test sees a scan only when it passes `definition_at`.
+  - The count of `adversary_5.rs:231` does not see the four `collect` calls or a defect that
+    stays inside the 50 % margin of its ceilings.
+  - gawk's syntax error ends the check with exit 1 and no line of its own; a ledger path with
+    a space cannot be written; the message for a renamed ledgered file says `delete the line`.
+  - The pre-scan rule of the word `now` alone, put back, changes no decision and costs time
+    only; a defect in the direction of `later.duration_since(Instant::now())` changes no case,
+    and no test would write that form.
+  - `README.md` and `website/docs/how-it-is-built.md` show sample gate lines of
+    `doc-tests`; none for `test-clocks` was added.
+  - One job of the first report ended with client exit 0 while nextest printed `test run
+    failed`.
+- A later story takes up: `story:time-bounds-in-tests` (the ledger, 31 lines and 48
+  statements, and the helper bounds above).
