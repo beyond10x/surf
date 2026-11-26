@@ -1,0 +1,498 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  test-clocks-check:
+    desc: Fail, naming the file and line, on a test that asserts an upper bound on an elapsed time that taskfiles/test-clocks-ledger.txt does not list.
+    summary: |
+      Fail, naming the file and line, on a test that asserts an upper bound on an elapsed time that taskfiles/test-clocks-ledger.txt does not list.
+
+      A test proves a cost by a count and bounds a time only by a wait with a limit (task test).
+      Runs taskfiles/test-clocks-check.sh on the repository. It reads the tracked *.rs files
+      under a tests/ directory of crates/, generated/ and conformance/ (git ls-files), blanks
+      comments, strings, raw strings and character literals, and refuses an assert! whose
+      arguments compare an elapsed value (.elapsed(), .duration_since(..) and its forms, or a
+      name bound from one) or a clock read (Instant::now()) as the smaller operand, or the time
+      left before a deadline as the larger one; an if or while that compares such a value
+      upward against a value not of its kind and whose block fails the test; an if that
+      compares it downward and whose else block fails the test; and a match guard that compares
+      it upward and whose arm fails the test. The ledger lists the files that still hold such
+      statements, "<path> <count>", sorted by path: a line out of order fails, a file with more
+      fails naming each statement, a file with fewer fails and names the count to write, a
+      line for a file the check did not read fails. Else it prints "test-clocks-check: no
+      elapsed-time bound outside taskfiles/test-clocks-ledger.txt". The header of the script
+      states what it does not see. It calls no cargo.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - sh taskfiles/test-clocks-check.sh .
+
+  test-clocks-check-test:
+    desc: Give taskfiles/test-clocks-check.sh refused and passing statements, a root that is no work tree and ledgers, under each awk on the machine.
+    summary: |
+      Give taskfiles/test-clocks-check.sh refused and passing statements, a root that is no work tree and ledgers, under each awk on the machine.
+
+      Writes each case as a small tree under .out/test-clocks-check-test/case, made the top of
+      a git work tree by git init and git add (no commit), with no configuration of the user or
+      the system read, runs the script on it and compares its exit status and every line it
+      printed with the expected ones. The cases run under each of awk, mawk, gawk,
+      gawk --posix and busybox awk that exists on the machine; it prints "ran under <name>" or
+      "<name>: not on this machine" for each, one line "case <name>: ok" per case decided as
+      written by every awk that ran, and the case and the awk of each other.
+
+      SCRIPT names the script under test (default taskfiles/test-clocks-check.sh), so that a
+      planted defect can be run in a copy. It fails when a case is decided otherwise, or ends
+      with "test-clocks-check-test: all cases decided as written".
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    vars:
+      SCRIPT: '{{.SCRIPT | default "taskfiles/test-clocks-check.sh"}}'
+    cmds:
+      - |
+        script='{{.SCRIPT}}'
+        test -f "$script" || { echo "$script: missing"; exit 1; }
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+        export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+        out=.out/test-clocks-check-test
+        rm -rf "$out"
+        mkdir -p "$out"
+        case_dir=$out/case
+        file=crates/x/tests/t.rs
+        ledger=$out/ledger.txt
+        clean='test-clocks-check: no elapsed-time bound outside taskfiles/test-clocks-ledger.txt'
+        awks=
+        for a in awk mawk gawk 'gawk --posix' 'busybox awk'; do
+          if $a 'BEGIN { exit 0 }' > /dev/null 2>&1; then
+            awks="$awks:$a"
+            echo "test-clocks-check-test: ran under $a"
+          else
+            echo "test-clocks-check-test: $a: not on this machine"
+          fi
+        done
+        awks=${awks#:}
+        [ -n "$awks" ] || { echo "test-clocks-check-test: no awk on this machine"; exit 1; }
+        cases=0
+        wrong=0
+        over() {
+          printf 'test-clocks-check: %s: %s elapsed-time bound(s), the ledger allows %s; prove the cost by a count, or wait in a loop that leaves on its deadline and assert after it' "$1" "$2" "$3"
+        }
+        fresh() {
+          name=$1
+          root=$case_dir
+          ledger_opt=/dev/null
+          rm -rf "$case_dir"
+          mkdir -p "$case_dir"
+        }
+        put() {
+          target=$case_dir/$1
+          shift
+          mkdir -p "$(dirname "$target")"
+          printf '%s\n' "$@" > "$target"
+        }
+        test_fn() {
+          put "$file" 'use std::time::{Duration, Instant};' '#[test]' 'fn a() {' '    let s = Instant::now();' "$@" '}'
+        }
+        track() {
+          (cd "$case_dir" && git init -q --template= && git -c core.excludesFile=/dev/null add -A)
+        }
+        decide() {
+          expected=$1
+          shift
+          printf '%s\n' "$@" > "$out/expected"
+          said=
+          old_ifs=$IFS
+          IFS=:
+          for a in $awks; do
+            IFS=$old_ifs
+            status=0
+            AWK="$a" sh "$script" --ledger "$ledger_opt" "$root" > "$out/printed" 2>&1 || status=$?
+            if [ "$status" -ne "$expected" ] || ! cmp -s "$out/printed" "$out/expected"; then
+              said="$said; under $a: exit $status, expected $expected, printed: $(tr '\n' '|' < "$out/printed")"
+            fi
+          done
+          IFS=$old_ifs
+          printf '%s\n' "$said"
+        }
+        verdict() {
+          cases=$((cases + 1))
+          if [ -z "$1" ]; then
+            echo "case $name: ok"
+          else
+            echo "case $name: decided otherwise$1"
+            wrong=$((wrong + 1))
+          fi
+        }
+        refused() {
+          line=$1
+          track
+          verdict "$(decide 1 "$file:$line" "$(over "$file" 1 0)")"
+        }
+        passed() {
+          track
+          verdict "$(decide 0 "$clean")"
+        }
+
+        fresh elapsed_name_against_duration
+        test_fn '    work();' '    let took = s.elapsed();' '    assert!(took < Duration::from_secs(2), "{took:?}");'
+        refused 7
+        fresh elapsed_direct_in_assert
+        test_fn '    assert!(s.elapsed() < LIMIT);'
+        refused 5
+        fresh limit_above_name
+        test_fn '    let took = s.elapsed();' '    assert!(LIMIT > took);'
+        refused 6
+        fresh float_seconds
+        test_fn '    let seconds = s.elapsed().as_secs_f64();' '    assert!(seconds < 20.0, "{seconds} s");'
+        refused 6
+        fresh tuple_with_seconds
+        test_fn '    let (end, grown, seconds) = with(|runner| {' '        let started = Instant::now();' \
+          '        let end = runner.run();' '        (end, 0, started.elapsed().as_secs_f64())' '    });' \
+          '    assert!(seconds < 30.0, "{seconds} s");'
+        refused 10
+        fresh branch_that_panics
+        test_fn '    if s.elapsed() > LIMIT {' '        panic!("slow");' '    }'
+        refused 5
+        fresh assert_inside_poll_loop
+        test_fn '    while !done() {' '        assert!(s.elapsed() < WAIT, "waited");' '        sleep(STEP);' '    }'
+        refused 6
+        fresh less_or_equal_refused
+        test_fn '    let took = s.elapsed();' '    assert!(took <= LIMIT);'
+        refused 6
+        fresh limit_at_least_name_refused
+        test_fn '    let took = s.elapsed();' '    assert!(LIMIT >= took);'
+        refused 6
+        fresh duration_since_refused
+        test_fn '    let took = Instant::now().duration_since(s);' '    assert!(took < LIMIT);'
+        refused 6
+        fresh rebound_through_a_second_name_refused
+        test_fn '    let a = s.elapsed();' '    let b = a;' '    assert!(b < LIMIT);'
+        refused 7
+        fresh rebound_through_a_third_name_refused
+        test_fn '    let a = s.elapsed();' '    let b = a;' '    let c = b;' '    assert!(c < LIMIT);'
+        refused 8
+        fresh assert_eq_over_a_comparison_refused
+        test_fn '    let took = s.elapsed();' '    assert_eq!(took < LIMIT, true);'
+        refused 6
+        fresh compound_assert_refused
+        test_fn '    let took = s.elapsed();' '    assert!(took >= IDLE && took < IDLE + SLACK, "m");'
+        refused 6
+        fresh nested_block_with_assert_refused
+        test_fn '    let took = s.elapsed();' '    if took > LIMIT {' '        if verbose {' '            println!("{took:?}");' \
+          '        }' '        assert!(false, "slow");' '    }'
+        refused 6
+        fresh condition_over_two_lines_refused
+        test_fn '    if s.elapsed()' '        > LIMIT' '    {' '        panic!("slow");' '    }'
+        refused 5
+        fresh assert_over_two_lines_refused
+        test_fn '    let took = s.elapsed();' '    assert!(' '        took < LIMIT,' '        "m"' '    );'
+        refused 6
+        fresh let_over_two_lines_refused
+        test_fn '    let elapsed = accepted_at' '        .try_recv()' '        .ok()' \
+          '        .map(|at| ended.saturating_duration_since(at));' '    let elapsed = elapsed.expect("accepted");' \
+          '    assert!(' '        elapsed < LIMIT,' '        "m"' '    );'
+        refused 10
+        fresh quote_char_before_a_bound_refused
+        test_fn "    let q = '\"'; assert!(s.elapsed() < LIMIT);"
+        refused 5
+        fresh lifetime_before_a_bound_refused
+        test_fn "    fn f<'a>(x: &'a str) -> &'a str { assert!(s.elapsed() < LIMIT); x }"
+        refused 5
+        fresh label_before_a_bound_refused
+        test_fn "    'reading: loop { assert!(s.elapsed() < LIMIT); break 'reading; }"
+        refused 5
+        fresh unicode_escape_before_a_bound_refused
+        test_fn "    let a = ['\\u{41}','\"']; assert!(s.elapsed() < LIMIT);"
+        refused 5
+        fresh two_unicode_escapes_before_a_bound_refused
+        test_fn "    let e = ['\\u{2028}','\\u{202e}','\"'];" '    assert!(s.elapsed() < LIMIT);'
+        refused 6
+        fresh non_ascii_literal_before_a_bound_refused
+        test_fn "    let m = ['é','\"'];" '    assert!(s.elapsed() < LIMIT);'
+        refused 6
+        fresh three_byte_literal_before_a_bound_refused
+        test_fn "    let m = ['€','\"'];" '    assert!(s.elapsed() < LIMIT);'
+        refused 6
+        fresh untracked_file_added_refused
+        put crates/x/tests/ok.rs 'fn a() {' '    println!("{:?}", s.elapsed());' '}'
+        track
+        put crates/x/tests/late.rs 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        (cd "$case_dir" && git -c core.excludesFile=/dev/null add crates/x/tests/late.rs)
+        verdict "$(decide 1 crates/x/tests/late.rs:3 "$(over crates/x/tests/late.rs 1 0)")"
+
+        fresh wait_loop_with_break
+        test_fn '    while !done() {' '        if s.elapsed() > LIMIT {' '            break;' '        }' '        sleep(STEP);' '    }' \
+          '    assert!(done());'
+        passed
+        fresh branch_that_breaks_on_a_name
+        test_fn '    loop {' '        let waited = s.elapsed();' '        if waited > LIMIT {' '            break;' '        }' '    }' \
+          '    assert!(done());'
+        passed
+        fresh branch_that_returns_a_value
+        test_fn '    fn wait(s: Instant) -> Option<u32> {' '        loop {' '            if s.elapsed() > LIMIT {' \
+          '                return None;' '            }' '            if done() {' '                return Some(1);' '            }' \
+          '        }' '    }' '    assert!(wait(s).is_some());'
+        passed
+        fresh lower_bound
+        test_fn '    let took = s.elapsed();' '    assert!(took >= IDLE, "{took:?}");'
+        passed
+        fresh lower_bound_with_the_limit_first
+        test_fn '    let took = s.elapsed();' '    assert!(IDLE <= took);'
+        passed
+        fresh print_only
+        test_fn '    println!("{:?}", s.elapsed());' '    eprintln!("took {:?}", s.elapsed());'
+        passed
+        fresh deadline_loop_on_now
+        test_fn '    let deadline = Instant::now() + LIMIT;' '    while Instant::now() < deadline {' '        if done() {' \
+          '            break;' '        }' '    }' '    println!("{:?}", s.elapsed());' '    assert!(done());'
+        passed
+        fresh clock_in_comment_and_string
+        test_fn '    // assert!(s.elapsed() < LIMIT);' '    /// assert!(s.elapsed() < LIMIT);' \
+          '    let t = "assert!(s.elapsed() < LIMIT)";' '    let u = "a \" assert!(s.elapsed() < LIMIT) \\";' \
+          '    let v = "two' '    assert!(s.elapsed() < LIMIT);' '    lines";'
+        passed
+        fresh negated_spelling_not_seen
+        test_fn '    let took = s.elapsed();' '    assert!(!(took >= LIMIT));'
+        passed
+        fresh assert_eq_on_equality_not_seen
+        test_fn '    let took = s.elapsed();' '    assert_eq!(took, LIMIT);'
+        passed
+        fresh branch_that_sets_failed_and_breaks
+        test_fn '    let mut failed = false;' '    loop {' '        if s.elapsed() > LIMIT {' '            failed = true;' \
+          '            break;' '        }' '    }' '    assert!(!failed);'
+        passed
+        fresh assert_after_a_nested_block_passes
+        test_fn '    let took = s.elapsed();' '    if took > LIMIT {' '        if verbose {' '            println!("slow");' \
+          '        }' '    }' '    assert!(done());'
+        passed
+        fresh loop_head_under_the_limit_with_assert
+        test_fn '    while s.elapsed() < LIMIT {' '        assert!(!early());' '        sleep(STEP);' '    }'
+        passed
+        fresh raw_string_with_quote_and_clock
+        test_fn '    let r = r#"a " assert!(s.elapsed() < LIMIT); "#;' '    let b = br##"x "# assert!(s.elapsed() < LIMIT); "##;' \
+          '    let c = r"assert!(s.elapsed() < LIMIT)";'
+        passed
+        fresh block_comment_with_a_bound
+        test_fn '    /* assert!(s.elapsed() < LIMIT); */' '    /*' '    assert!(s.elapsed() < LIMIT);' '    */'
+        passed
+        fresh nested_block_comment_with_a_bound
+        test_fn '    /* outer /* inner */ assert!(s.elapsed() < LIMIT); */' '    /* a /* b' '    */ assert!(s.elapsed() < LIMIT);' '    */'
+        passed
+        fresh fourth_round_of_rebinding_refused
+        test_fn '    let a = s.elapsed();' '    let b = a;' '    let c = b;' '    let d = c;' '    assert!(d < LIMIT);'
+        refused 9
+        fresh fifth_round_of_rebinding_not_seen
+        test_fn '    let a = s.elapsed();' '    let b = a;' '    let c = b;' '    let d = c;' '    let e = d;' '    assert!(e < LIMIT);'
+        passed
+        fresh field_of_another_value_not_refused
+        test_fn '    let total = s.elapsed();' '    println!("{total:?}");' '    assert!(counts.total < LIMIT);'
+        passed
+        fresh untracked_file_not_read
+        put crates/x/tests/ok.rs 'fn a() {' '    println!("{:?}", s.elapsed());' '}'
+        track
+        put crates/x/tests/late.rs 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        first=$(decide 0 "$clean")
+        rm -rf "$case_dir"
+        mkdir -p "$case_dir"
+        put crates/x/tests/ok.rs 'fn a() {' '    println!("{:?}", s.elapsed());' '}'
+        track
+        put crates/x/target/debug/tests/late.rs 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        second=$(decide 0 "$clean")
+        verdict "${first:+; crates/x/tests/late.rs untracked$first}${second:+; crates/x/target/debug/tests/late.rs untracked$second}"
+
+        fresh plain_directory_exit_2
+        root=$out/plain
+        rm -rf "$root"
+        mkdir -p "$root/crates/x/tests"
+        printf '%s\n' 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}' > "$root/crates/x/tests/t.rs"
+        verdict "$(decide 2 "test-clocks-check: $root is not the top of a git work tree")"
+
+        fresh count_equal_passes
+        test_fn '    let took = s.elapsed();' '    assert!(took < LIMIT);' '    assert!(s.elapsed() < LIMIT);'
+        printf '%s\n' "$file 2" > "$ledger"
+        ledger_opt=$ledger
+        passed
+        fresh count_above_refused
+        test_fn '    let took = s.elapsed();' '    assert!(took < LIMIT);' '    assert!(s.elapsed() < LIMIT);' '    assert!(LIMIT > took);'
+        printf '%s\n' "$file 2" > "$ledger"
+        ledger_opt=$ledger
+        track
+        verdict "$(decide 1 "$file:6" "$file:7" "$file:8" "$(over "$file" 3 2)")"
+        fresh count_below_refused
+        test_fn '    let took = s.elapsed();' '    assert!(took < LIMIT);'
+        printf '%s\n' "$file 2" > "$ledger"
+        ledger_opt=$ledger
+        track
+        verdict "$(decide 1 "test-clocks-check: $file: 1 elapsed-time bound(s), the ledger allows 2; write \"$file 1\" in $ledger")"
+        fresh ledger_line_for_unread_file_refused
+        test_fn '    println!("{:?}", s.elapsed());'
+        printf '%s\n' 'crates/x/tests/gone.rs 1' > "$ledger"
+        ledger_opt=$ledger
+        track
+        verdict "$(decide 1 "test-clocks-check: $ledger:1: crates/x/tests/gone.rs names a file the check did not read (not tracked, renamed, deleted or outside the path patterns); delete the line")"
+        fresh unsorted_ledger_refused
+        put crates/x/tests/t.rs 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        put crates/x/tests/u.rs 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        printf '%s\n' 'crates/x/tests/u.rs 1' 'crates/x/tests/t.rs 1' > "$ledger"
+        ledger_opt=$ledger
+        track
+        verdict "$(decide 1 "test-clocks-check: $ledger:2: \"crates/x/tests/t.rs 1\" is out of order; the lines are sorted by path")"
+
+        fresh elapsed_call_with_a_space_refused
+        test_fn '    assert!(s.elapsed () < LIMIT);'
+        refused 5
+        fresh elapsed_call_split_before_its_paren_refused
+        test_fn '    assert!(s.elapsed' '        () < LIMIT);'
+        refused 5
+        fresh elapsed_call_with_a_space_in_a_file_without_now_refused
+        put "$file" 'fn a(s: std::time::Instant) {' '    assert!(s.elapsed () < LIMIT);' '}'
+        refused 2
+        fresh elapsed_call_split_in_a_file_without_now_refused
+        put "$file" 'fn a(s: std::time::Instant) {' '    assert!(s.elapsed' '        () < LIMIT);' '}'
+        refused 2
+        fresh duration_since_in_a_file_without_now_refused
+        put "$file" 'fn a(s: std::time::Instant, e: std::time::Instant) {' '    assert!(e.duration_since (s) < LIMIT);' '}'
+        refused 2
+        fresh checked_duration_since_refused
+        test_fn '    let took = Instant::now().checked_duration_since(s).unwrap();' '    assert!(took < LIMIT);'
+        refused 6
+        fresh assert_on_now_against_a_deadline_in_a_poll_loop_refused
+        test_fn '    let deadline = s + WAIT;' '    while !done() {' '        assert!(Instant::now() < deadline, "waited");' \
+          '        sleep(STEP);' '    }'
+        refused 7
+        fresh branch_on_now_past_a_deadline_that_panics_refused
+        test_fn '    let deadline = s + WAIT;' '    while !done() {' '        if Instant::now() > deadline {' \
+          '            panic!("timed out");' '        }' '        sleep(STEP);' '    }'
+        refused 7
+        fresh time_left_before_a_deadline_above_zero_refused
+        test_fn '    let deadline = s + WAIT;' '    work();' \
+          '    assert!(deadline.saturating_duration_since(Instant::now()) > Duration::ZERO);'
+        refused 7
+        fresh elapsed_cast_before_the_comparison_refused
+        test_fn '    assert!(s.elapsed().as_millis() as u64 < LIMIT_MS);'
+        refused 5
+        fresh elapsed_in_parentheses_refused
+        test_fn '    assert!((s.elapsed()) < LIMIT);'
+        refused 5
+        fresh deref_of_a_tracked_name_refused
+        test_fn '    let took = &s.elapsed();' '    assert!(*took < LIMIT);'
+        refused 6
+        fresh comparison_by_a_method_refused
+        test_fn '    assert!(s.elapsed().lt(&LIMIT));'
+        refused 5
+        fresh name_assigned_after_its_let_refused
+        test_fn '    let took;' '    work();' '    took = s.elapsed();' '    assert!(took < LIMIT);'
+        refused 8
+        fresh elapsed_summed_into_a_name_refused
+        test_fn '    let mut total = Duration::ZERO;' '    for _ in 0..3 {' '        total += s.elapsed();' '    }' \
+          '    assert!(total < LIMIT);'
+        refused 9
+        fresh if_let_binding_refused
+        test_fn '    if let Some(took) = Some(s.elapsed()) {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh branch_on_a_lower_case_limit_that_panics_refused
+        test_fn '    let limit = Duration::from_secs(2);' '    if s.elapsed() > limit {' '        panic!("slow");' '    }'
+        refused 6
+        fresh else_branch_that_panics_refused
+        test_fn '    if s.elapsed() <= LIMIT {' '        work();' '    } else {' '        panic!("slow");' '    }'
+        refused 5
+        fresh match_guard_that_panics_refused
+        test_fn '    match s.elapsed() {' '        t if t > LIMIT => panic!("slow"),' '        _ => {}' '    }'
+        refused 6
+        fresh time_left_under_the_wait_passes
+        test_fn '    let deadline = s + WAIT;' '    work();' \
+          '    assert!(deadline.saturating_duration_since(Instant::now()) < WAIT);'
+        passed
+        fresh difference_of_two_fixed_instants_passes
+        test_fn '    let expires = s + TTL;' '    assert!(expires.duration_since(s) <= TTL);'
+        passed
+        fresh unix_timestamp_passes
+        test_fn '    let secs = std::time::SystemTime::now()' '        .duration_since(std::time::UNIX_EPOCH)' \
+          '        .unwrap()' '        .as_secs();' '    assert!(secs < 4_102_444_800);'
+        passed
+        fresh crlf_line_ends_refused
+        test_fn "$(printf '    let x = 1;\r')" "$(printf '    assert!(s.elapsed() < LIMIT);\r')"
+        refused 6
+        fresh tab_indent_refused
+        test_fn "$(printf '\tassert!(s.elapsed() < LIMIT);')"
+        refused 5
+        fresh field_of_a_tracked_name_refused
+        test_fn '    let run = Run { took: s.elapsed() };' '    assert!(run.took < LIMIT);'
+        refused 6
+        fresh tests_common_module_refused
+        put crates/x/tests/common/mod.rs 'pub fn a(s: Instant) {' '    assert!(s.elapsed() < LIMIT);' '}'
+        track
+        verdict "$(decide 1 crates/x/tests/common/mod.rs:2 "$(over crates/x/tests/common/mod.rs 1 0)")"
+        fresh bound_through_a_for_pattern_over_a_list_of_pairs_refused
+        test_fn '    let (answers, looked) = thread::scope(|scope| {' \
+          '        let opens: Vec<_> = (0..8).map(|n| scope.spawn(move || (n, s.elapsed()))).collect();' \
+          '        let answers: Vec<_> = opens.into_iter().map(|o| o.join().unwrap()).collect();' \
+          '        (answers, 0)' '    });' '    let mut longest = Duration::ZERO;' \
+          '    for (answer, took) in &answers {' '        longest = longest.max(*took);' '    }' \
+          '    assert!(longest < LIMIT, "longest {longest:?}");'
+        refused 14
+        fresh operand_behind_a_reference_refused
+        test_fn '    assert!(&s.elapsed() < &LIMIT);'
+        refused 5
+        fresh clock_read_in_parentheses_refused
+        test_fn '    let deadline = s + WAIT;' '    assert!((Instant::now()) < deadline);'
+        refused 6
+        fresh parenthesized_call_with_a_chain_after_it_refused
+        test_fn '    assert!((s.elapsed()).as_millis() < LIMIT_MS);'
+        refused 5
+        fresh clock_read_by_its_full_path_refused
+        test_fn '    let deadline = s + WAIT;' '    assert!(std::time::Instant::now() < deadline);'
+        refused 6
+        fresh difference_of_a_constant_instant_and_a_start_passes
+        test_fn '    assert!(EXPIRES.duration_since(s) <= TTL);'
+        passed
+        fresh else_branch_on_now_before_a_deadline_refused
+        test_fn '    let deadline = s + WAIT;' '    if Instant::now() < deadline {' '        work();' '    } else {' \
+          '        panic!("timed out");' '    }'
+        refused 6
+        fresh branch_on_time_left_under_a_margin_that_panics_refused
+        test_fn '    let deadline = s + WAIT;' '    if deadline.saturating_duration_since(Instant::now()) < MARGIN {' \
+          '        panic!("late");' '    }'
+        refused 6
+        fresh unsorted_ledger_names_its_first_line_out_of_order_only
+        for f in s t u; do
+          put "crates/x/tests/$f.rs" 'fn a() {' '    let s = Instant::now();' '    assert!(s.elapsed() < LIMIT);' '}'
+        done
+        printf '%s\n' 'crates/x/tests/u.rs 1' 'crates/x/tests/t.rs 1' 'crates/x/tests/s.rs 1' > "$ledger"
+        ledger_opt=$ledger
+        track
+        verdict "$(decide 1 "test-clocks-check: $ledger:2: \"crates/x/tests/t.rs 1\" is out of order; the lines are sorted by path")"
+        fresh else_branch_on_time_left_at_a_margin_refused
+        test_fn '    let deadline = s + WAIT;' '    if deadline.saturating_duration_since(Instant::now()) >= MARGIN {' \
+          '        work();' '    } else {' '        panic!("late");' '    }'
+        refused 6
+        fresh operand_behind_a_mutable_reference_refused
+        test_fn '    let mut took = s.elapsed();' '    let mut limit = LIMIT;' '    assert!(&mut took < &mut limit);'
+        refused 7
+        fresh if_let_value_ends_at_its_block_passes
+        test_fn '    if let Some(count) = poll() {' '        println!("{count} {:?}", s.elapsed());' '        assert!(count < 5);' '    }'
+        passed
+        fresh for_pattern_bound_from_an_elapsed_value_refused
+        test_fn '    for took in [s.elapsed()] {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh for_pattern_with_braces_refused
+        test_fn '    for Run { took, .. } in [Run { took: s.elapsed() }] {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh for_value_ends_at_its_block_passes
+        test_fn '    for n in 0..3 {' '        println!("{n} {:?}", s.elapsed());' '        assert!(n < 5);' '    }'
+        passed
+        fresh pattern_of_unworded_names_from_an_elapsed_value_not_seen
+        test_fn '    let (first, last) = (s.elapsed(), 1);' '    assert!(first < LIMIT);'
+        passed
+        fresh pattern_with_a_worded_name_tracks_only_it_passes
+        test_fn '    let (count, took) = (poll(), s.elapsed());' '    println!("{took:?}");' '    assert!(count < 5);'
+        passed
+        fresh clock_read_of_system_time_in_a_file_without_instant_refused
+        put "$file" 'fn a(deadline: std::time::SystemTime) {' '    assert!(std::time::SystemTime::now() < deadline);' '}'
+        refused 2
+
+        if [ "$wrong" -ne 0 ]; then
+          echo "test-clocks-check-test: $wrong of $cases case(s) decided otherwise by $script"
+          exit 1
+        fi
+        echo "test-clocks-check-test: all cases decided as written"

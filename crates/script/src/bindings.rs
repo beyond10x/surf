@@ -53,8 +53,8 @@
 //! bd7ad49af55281f3d8b2722b1a34a4465ed8b119a9359a1344392fb7afc69a96  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
-//! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
-//! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
+//! fac53fd0bec48dd000de36b0b04b377bee2031a80ce7eae898db2f812908b0f1  crates/webidl/src/lib.rs
+//! d5ddfa7b61d568fa7618b2f0d8706808f1ca83445f1e53c6dee17c035efbf2f0  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
 //! e153c94cce1e549a19ca492eca99716026b001f19a1901f2e5ed85173381f8e8  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 32277900367f651b0909502f8d969adc485b60b059124e6d6bef1b393e194974
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 95c0b4bd1f665411a2f8c208d5cfeee2c64c9d599878a9694e7d87b9df8dea14
 
 use std::cell::Cell;
 
