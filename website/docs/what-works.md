@@ -14,7 +14,7 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,602 tests** (2,050, and 552 of the TLS crates in a step of their own): 2,600 pass, and 2
+- **2,667 tests** (2,115, and 552 of the TLS crates in a step of their own): 2,665 pass, and 2
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
