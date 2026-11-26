@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 221 of 221 scenarios](docs/badges/conformance.svg)
-![tests: 2556 passed](docs/badges/tests.svg)
+![tests: 2565 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -282,7 +282,7 @@ there instead.
   check revocation: a revoked certificate that has not expired loads.
 - **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,559 tests** (2,007, and 552 of the TLS crates in a step of their own): 2,556 pass, and 3
+- **2,568 tests** (2,016, and 552 of the TLS crates in a step of their own): 2,565 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
@@ -608,15 +608,15 @@ surf v1 — 9 file(s), 57 scenario(s), valid
 221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
 conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/bf8e07a7fadd2c930f14f7df5e3dd43e29214ae1869916263ee911b671eee82d are current
-Summary [   5.554s] 63 tests run: 63 passed, 0 skipped
+Summary [   4.024s] 63 tests run: 63 passed, 0 skipped
   221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
-conformance step: 8.4 s of its budget of 120 s
+conformance step: 6.6 s of its budget of 120 s
 the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:03a9baffc55cf9dba071245f7718a60181adf1641388478333f7084f80fa90f7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 244 test files, one test binary each
+test-layout: 26 test directories, 246 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
@@ -629,26 +629,28 @@ webidl-check: self-test: a copy of bindings.rs with one byte after the header ch
 webidl-check: self-test: a copy of bindings.rs with a //! line of the header rewritten fails naming it
 webidl-check: self-test: a copy of bindings.rs with an inner attribute inserted before the digest line fails naming it
 doc-tests-check: no doc test outside crates/ports
+test-clocks-check: no elapsed-time bound outside taskfiles/test-clocks-ledger.txt
     Finished `dev` profile [unoptimized] target(s) in 0.04s
-2007 tests: 2004 passed, 0 failed, 3 ignored (cargo-nextest 2005, doc tests 2)
-test step: 34.3 s of its budget of 120 s
+2016 tests: 2013 passed, 0 failed, 3 ignored (cargo-nextest 2014, doc tests 2)
+test step: 22.6 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
-tls test step: 4.9 s of its budget of 120 s
+tls test step: 4.3 s of its budget of 120 s
 agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [  11.854s] 55 tests run: 55 passed, 155 skipped
+sh-echo: Summary [  10.899s] 55 tests run: 55 passed, 155 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  72 passed (24.0s)
-page step: 24.8 s of its budget of 120 s
+  72 passed (35.8s)
+page step: 37.4 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
-tls-x509-conformance: 1 s
+tls-x509-conformance: 3 s
 forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
 planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
 test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
 sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
 doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
-four steps: 72.4 s (test step 34.3 s, tls test step 4.9 s, conformance step 8.4 s, page step 24.8 s)
+test-clocks-check-test: all cases decided as written
+four steps: 70.9 s (test step 22.6 s, tls test step 4.3 s, conformance step 6.6 s, page step 37.4 s)
 ```
 
 It validates the specification, runs the 221 scenarios against the interpreter built into `ess`
@@ -661,18 +663,23 @@ tests the gate's own scripts. The tests run under cargo-nextest; a test still ru
 seconds is ended and fails, each of the four timed steps (the conformance step, the test step,
 the TLS test step and the page step) fails when it takes over 120 seconds, and the last line
 adds the four up. The block leaves out the ten slowest tests each step also prints, the agent
-tasks' rows after their counts, npm's and Playwright's own lines and the rows of the two
-conformance counts. It is the gate run of 2026-11-26 on `e61d766`, the tip of
-`story:agent-tasks-left-process-wait`, that `task check-runner` ended in 153 s, export included,
-at a load of 54.73 at its start and 58.33 at its end; every line and every time of the block is
-that run's (2007 tests, 3 of them ignored, and 244 test files, where `story:scripts-dom-reading`'s
-tip `5664184` had 2003 and 244; its conformance step found the narrowed suites current, as the
-run on `5664184` did and the run on `58d720b` did not). Before it the block was the gate run of
-2026-11-26 on `5664184`, which ended in 111 s at a load of 48.07 at its start and 59.05 at its
-end, before that the gate run of 2026-11-25 on `58d720b`, which ended in 231 s at a load of
+tasks' rows after their counts, npm's and Playwright's own lines, the rows of the two
+conformance counts and the rows of `test-clocks-check-test` before its last line (the awks it
+names and its cases). It is the gate run of 2026-11-26 on `52ebbd7`, the tip of
+`story:tests-without-wall-time-bounds` with `story:agent-tasks-left-process-wait` and
+`story:session-core-limit-one` merged into it, that `task check-runner` ended in 176 s, export
+included, at a load of 57.02 at its start and 81.27 at its end; every line and every time of
+the block is that run's (2016 tests, 3 of them ignored, and 246 test files, where
+`story:agent-tasks-left-process-wait`'s tip `e61d766` had 2007 and 244; its conformance step
+found the narrowed suites current, as the runs on `e61d766` and `5664184` did and the run on
+`58d720b` did not). Before it the block was the gate run of 2026-11-26 on `e61d766`, which
+ended in 153 s at a load of 54.73 at its start and 58.33 at its end, before that the gate run
+of 2026-11-26 on `5664184`, which ended in 111 s at a load of 48.07 at its start and 59.05 at
+its end, before that the gate run of 2026-11-25 on `58d720b`, which ended in 231 s at a load of
 33.20 at its start and 57.83 at its end, and before that the run of 2026-11-24 on `91f7ff1`, the
 Web IDL reader's branch, with the lines of the stories merged after it counted on their tips.
-The page tests' line of the run on `e61d766`, `72 passed (24.0s)`, has its slowest test
+The page tests' line of the run on `52ebbd7`, `72 passed (35.8s)`, has its slowest test (`an
+entry over 1 MiB`) at 2.473 s; the run on `e61d766` had `72 passed (24.0s)`, its slowest test
 (`adversary: with Latest off the playhead stays after its action is dropped by the bound`) at
 1.504 s and `an entry over 1 MiB` at 1.465 s; the run on `5664184` had `72 passed (27.6s)`, its
 slowest test (`adversary: an action streamed while the detail loads after a reset is not lost`)

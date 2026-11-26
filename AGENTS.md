@@ -1572,7 +1572,7 @@ the others were written to a scratch directory and not compiled:
   and 4 are in release `0.8.0` (TLS, round 2, `story:agent-cookie-jar`, implemented), and so
   is item 6's `surf-agent help --for-agent` (`story:agent-skill-definition`, still active in
   the planning store). Open for the next steps: pages that build their content by script
-  (`epic:scripts-in-a-page`, draft) and round 3 (`epic:e2e-scenario-runner`, active), which
+  (`epic:scripts-in-a-page`, active) and round 3 (`epic:e2e-scenario-runner`, active), which
   items 2 and 4 no longer hold back.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
