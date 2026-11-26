@@ -51,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 55
+revision: 56
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -833,7 +833,7 @@ the merged file and resolves what overlaps.
 - The public-surface lines of acceptance 21 (`README.md:285`, `docs/badges/make.sh:38`,
   `docs/badges/tests.svg`, `website/docs/status.md`, `what-works.md`) are rewritten in the last
   commit of this story and of `story:scripts-dom-attributes` and `story:scripts-dom-selectors`
-  too (`scripts-dom-attributes.md:1687-1708`, `scripts-dom-selectors.md:72-80`), which also write
+  too (`scripts-dom-attributes.md:1708-1729`, `scripts-dom-selectors.md:72-80`), which also write
   other files of `crates/script`; `story:scripts-dom-mutation` rewrites them, `status.md:31` and
   `what-works.md:17` in its acceptance 22 (`scripts-dom-mutation.md:1745-1763`; its scope list
   names none of them), and `story:scripts-html-conformance` and `story:scripts-document-port` have
