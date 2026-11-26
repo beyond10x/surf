@@ -56,7 +56,7 @@
 //! fac53fd0bec48dd000de36b0b04b377bee2031a80ce7eae898db2f812908b0f1  crates/webidl/src/lib.rs
 //! d5ddfa7b61d568fa7618b2f0d8706808f1ca83445f1e53c6dee17c035efbf2f0  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! f66d719bc72058d9bc35815ac435d06fef4709f0343914fa0f9efa870fb01668  crates/webidl/src/prelude.rs
+//! 0795883f8cd6f1121b607e63e0ef7760420fa385a3e638084b2da684ed5f7d81  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: ef2d940eb590e5ed33e4ce8420499ec2a80fae6823aaef0905c0360c589621bb
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 630b9568c7d043c6c12a37164901765c5e4069170ab3ed1633ba65ce5ff009a6
 
 use std::cell::Cell;
 
@@ -399,14 +399,18 @@ impl<'e> DomCx<'_, 'e> {
                 // Ends faulted: the state frees no handle while it runs. A limit or an
                 // interrupt is never this outer error: the budget answers the inner completion.
                 Err(HostError::StaleHandle) => Err(DomEnd::Fault),
-                // End faulted: a resize takes no value, no module and no evaluation, so these
-                // answer only a defect; a limit is the inner MemoryBudget, an interrupt the
-                // termination the next step reads, never this outer error.
+                // End faulted: a resize takes no value, no module and no evaluation and queues
+                // no job, so these answer only a defect; a limit is the inner MemoryBudget, an
+                // interrupt the termination the next step reads, never this outer error. The
+                // outer MemoryBudget (new at swell 0.9.0) is answered by `queue_microtask`
+                // only (`host/jobs.rs:207 @ 0.10.0`); a resize ends the run instead
+                // (`host/host_bytes.rs:93-94 @ 0.10.0`).
                 Err(
                     HostError::WrongKind { .. }
                     | HostError::ModuleStatus { .. }
                     | HostError::ModuleTerminated
-                    | HostError::EvaluationInProgress,
+                    | HostError::EvaluationInProgress
+                    | HostError::MemoryBudget,
                 ) => Err(DomEnd::Fault),
             },
         }

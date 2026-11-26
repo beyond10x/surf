@@ -334,14 +334,18 @@ impl<'e> DomCx<'_, 'e> {
                 // Ends faulted: the state frees no handle while it runs. A limit or an
                 // interrupt is never this outer error: the budget answers the inner completion.
                 Err(HostError::StaleHandle) => Err(DomEnd::Fault),
-                // End faulted: a resize takes no value, no module and no evaluation, so these
-                // answer only a defect; a limit is the inner MemoryBudget, an interrupt the
-                // termination the next step reads, never this outer error.
+                // End faulted: a resize takes no value, no module and no evaluation and queues
+                // no job, so these answer only a defect; a limit is the inner MemoryBudget, an
+                // interrupt the termination the next step reads, never this outer error. The
+                // outer MemoryBudget (new at swell 0.9.0) is answered by `queue_microtask`
+                // only (`host/jobs.rs:207 @ 0.10.0`); a resize ends the run instead
+                // (`host/host_bytes.rs:93-94 @ 0.10.0`).
                 Err(
                     HostError::WrongKind { .. }
                     | HostError::ModuleStatus { .. }
                     | HostError::ModuleTerminated
-                    | HostError::EvaluationInProgress,
+                    | HostError::EvaluationInProgress
+                    | HostError::MemoryBudget,
                 ) => Err(DomEnd::Fault),
             },
         }

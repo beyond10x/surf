@@ -422,7 +422,11 @@ fn writes_on_two_elements_in_turn_are_charged_by_both_lists() {
         let mut most = 0;
         for k in 0..800 {
             let r = next_random(&mut seed);
-            let target = if (r >> 32) % 2 == 0 { "H" } else { "B" };
+            let target = if (r >> 32).is_multiple_of(2) {
+                "H"
+            } else {
+                "B"
+            };
             let write = seeded_write(r, target);
             ran(runner, &write);
             let tree = tree(runner);

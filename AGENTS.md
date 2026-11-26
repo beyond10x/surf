@@ -941,10 +941,11 @@ above, and the list of standards itself was written from memory.
     one token before the step check, end tags in the public `tokenizer::tokenize`, and the
     decoded text of `parse_document_bytes` (up to 3 bytes per input byte). Since
     `story:html-document-port` (round 1) `surf` depends on `surf-html` and parses every
-    committed HTML body with it. 253 tests: 19 unit tests and 234 in one test binary:
+    committed HTML body with it. 268 tests: 20 unit tests and 248 in one test binary:
     `encoding` 13, `not_yet_parsed` 1, `tree_body` 8, `tree_formatting` 8, `tree_costs` 11,
     `tree_state` 3, `adversary_tree` 16, `adversary_tree_state` 3, `adversary_tree_state_2` 2,
-    `limits` 37, `adversary_limits` 11, `script_hook` 62, `adversary_script_hook` 23,
+    `adversary_tree_writes` 2, `adversary_tree_writes_2` 1,
+    `limits` 37, `adversary_limits` 11, `script_hook` 73, `adversary_script_hook` 23,
     `adversary_script_hook_2` 13, `adversary_script_hook_3` 9, `adversary_script_hook_4` 4,
     `adversary_script_hook_5` 2 and `adversary_script_hook_6` 8. `limits` and
     `adversary_limits` share `tests/common/mod.rs`, a counting allocator
