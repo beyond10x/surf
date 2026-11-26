@@ -50,7 +50,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 54
+revision: 55
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -1500,8 +1500,8 @@ says it is a guard. Every command that reads the diff names its base:
    (the script without the refused call, with the convert made by hand for two items or more, as
    decision 6 gives it: `f = createDocumentFragment(); f.appendChild(a); f.appendChild(b)`,
    which makes 1 node and raises `writes()` by 2, by 4 when `a` and `b` had parents) and asserts
-   the comparison of decision 6. The node count the tree gained equals `totals().nodes` in every
-   case that makes nodes. The `title` setter has no depth test, since
+   the comparison of decision 6. The nodes the tree gained over the page whose scripts are
+   spaces equal `totals().nodes` where nodes are made. The `title` setter has no depth test, since
    it cannot reach `limit: depth` (the `Document.title` member says why); a guard test,
    `title_at_the_smallest_depth`, parses `<head><script>document.title = "x"</script>` at
    `max_depth` 3 and asserts the script ran to its end and the `title` is in the tree.
@@ -1644,7 +1644,7 @@ says it is a guard. Every command that reads the diff names its base:
    the tree's gain is its `node_count()` and `stored_bytes()` less those of the same page parsed
    with each script's text replaced by as many spaces as it has bytes, so that both sides hold
    the same script text (the text mode of the parser keeps every character, `modes.rs:1157-1161
-   @ 73126a0`; the second script's own node is in both sides). At `steps_without + 100` the
+   @ 73126a0`; the script elements' text nodes are in both sides). At `steps_without + 100` the
    convert has already made the fragment and the text node (arithmetic: the glue's step, the
    `n` of the list, the string's step and its `b16`, the fragment and the two items are 22
    steps, before the climb of `p`, steps 23 to 522, where the limit falls), so 2 nodes and 1
