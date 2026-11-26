@@ -42,8 +42,17 @@ Each archive holds one directory, `surf-<version>-<target>/`:
 The four binaries of a Linux archive stay in one directory, also when installed: `surf-agent`
 starts `surfd` from the directory it runs from, and `surfd` starts `surf-session` from its own.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
-on any distribution, and they load no name service module from the host; the workflow refuses a
-Linux binary whose `readelf -lW` shows an `INTERP` header. The macOS `surf` links two libraries
+on any distribution, and they load no name service module from the host. A host with an older
+glibc than the build's cannot run a binary linked against glibc, so after the smoke test and
+before the upload the workflow runs
+[`taskfiles/release-static.sh`](../taskfiles/release-static.sh) on each unpacked Linux archive:
+it fails a binary whose `readelf -lW` lists an `INTERP` row, whose `readelf -d` lists a
+`(NEEDED)` entry, or which `readelf` cannot read, and then runs `surf-agent help --for-agent`
+from the archive, without network, in an Alpine container named by digest (`STATIC_IMAGE` in
+the workflow's `env:`), whose first line must hold the version of the directory's name. Alpine
+has musl, so the container alone does not prove a binary static; the `readelf` check and the
+container together are the check. The step fails when `docker` is missing or fails. The macOS
+`surf` links two libraries
 of the system, `/usr/lib/libSystem.B.dylib` and, since ring, `/usr/lib/libiconv.2.dylib`
 (`llvm-otool -L surf` on both macOS archives of release workflow run 45344883467; release
 `0.5.0` linked `libSystem.B.dylib` only). The macOS binaries are neither signed nor notarised.
@@ -166,6 +175,13 @@ The commands use the gates as the bot, from a checkout of this repository:
    `release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux`:
 
        sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
+
+   And the static check on the same directory, which prints `release-static: <path> holds 4
+   static binaries: surf surf-agent surfd surf-session`, `<path>` the directory's absolute
+   path, and exits 0 (with `--image <image>@sha256:<digest>` on a machine with docker it also
+   runs `surf-agent help --for-agent` in that image):
+
+       sh taskfiles/release-static.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
 
    Then measure the agent tasks with the same binaries (the listed states of
    `crates/agent-tasks/status.txt` play no part):
