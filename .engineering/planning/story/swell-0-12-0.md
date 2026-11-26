@@ -22,11 +22,25 @@ scope:
 - confidence: cited
   path: crates/script/src/runner.rs
 - confidence: cited
+  path: crates/script/tests/adversary.rs
+- confidence: cited
+  path: crates/script/tests/adversary_4.rs
+- confidence: cited
   path: crates/script/tests/adversary_6.rs
 - confidence: cited
   path: crates/script/tests/adversary_checkpoint.rs
 - confidence: cited
   path: crates/script/tests/adversary_checkpoint_2.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading_2.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading_3.rs
+- confidence: cited
+  path: crates/script/tests/bindings.rs
+- confidence: cited
+  path: crates/script/tests/dom_reading.rs
 - confidence: cited
   path: crates/script/tests/engine.rs
 - confidence: cited
@@ -51,17 +65,25 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 22
+revision: 30
 ---
 ## Context
 
 surf depends on swell by a git tag. The code of `story:swell-0-9-0`, commit `f463e24` on the
 branch `impl/swell-0-10-0`, writes the tag `0.10.0` once, in `crates/script/Cargo.toml:16`. That
-commit is implemented and reviewed and is not on `main` yet (`main` is `a14e3b0`, tag `0.8.0`).
-This story starts from `f463e24`. Every surf citation below is `<path>:<line>` at `f463e24`.
-Every swell citation is `<path>:<line> @ 0.12.0`, read with `git show <tag>:<path>` in a clone
-of `https://github.com/beyond10x/swell`. A statement that no file or command shows is marked
-"not shown".
+commit is implemented and reviewed and is not on `main` yet; `main` pins `0.8.0` today. The
+reading unit of `story:scripts-dom-reading` is merged beside it and changes `crates/script`
+too; it is not on `main` either.
+
+This story's base is `main` after both units. Every surf citation below is `<path>:<line>` at
+`f463e24`, which does not hold the reading unit. Every count or list that the story takes from
+the code (the places of the version, the lines `#[ignore`, the tests with a small
+`memory_bytes`, the `HostObjectSpec` literals, the setters of the interrupt) is read at the base
+by the command written beside it, when the unit starts. The result stated beside a command is
+an example, with the commit it was read at, or "the base with the reading unit" for `main`
+merged with that unit alone. Every swell citation is `<path>:<line> @ 0.12.0`, read with
+`git show <tag>:<path>` in a clone of `https://github.com/beyond10x/swell`. A statement that no
+file or command shows is marked "not shown".
 
 swell has released two tags since `0.10.0`, both dated 2026-11-25: `0.11.0`, commit
 `3785379a9eb75d25b76e842746cdb7391a768159`, and `0.12.0`, commit
@@ -114,13 +136,15 @@ as surf's does (`rust-toolchain.toml` at `f463e24`), and swell's `NOTICE` is the
 (`git diff --stat 0.10.0 0.12.0 -- NOTICE` lists nothing). `Cargo.lock` at `f463e24` holds 58
 packages, 25 from outside the repository (`grep -c '^\[\[package\]\]'` prints 58, `grep -c
 '^source = '` prints 25); the six swell packages keep their names, so the counts stay and
-only version and source change. The numbers are those of `f463e24`; the base after
-`story:swell-0-9-0` is merged is re-read there (not shown).
+only version and source change. The numbers are those of `f463e24`; the base is read by the two
+commands above, and at the base with the reading unit they print 58 and 25 too.
 
 ### Where the version is written
 
-At `f463e24`, `git grep -n -E '0\.10\.0|b9d3d46'` outside `.engineering` and the website's own
-lock lists these places that state swell's version, tag or commit:
+Read at the base by `git grep -n -E '0\.10\.0|b9d3d46' -- . ':!.engineering'
+':!website/package-lock.json'`; at `f463e24` it lists these places that state swell's version,
+tag or commit (a place the command prints at the base that this list lacks is changed too if its
+sentence names the pin):
 
 - `crates/script/Cargo.toml:16`, the dependency line.
 - `Cargo.lock:350-351`, `:362-363`, `:371-372`, `:376-377`, `:384-385`, `:393-394`: per package
@@ -178,7 +202,14 @@ terminated before the host function returned ignores what it returned
 gets `Err(Abrupt::Terminated(Termination::Interrupted))` where it got the function's `Ok`
 (`CHANGELOG.md:72-74 @ 0.12.0`).
 
-Where surf sets the interrupt, at `f463e24`:
+Where surf sets the interrupt, at `f463e24`. The base is read by `git grep -n -E
+'interrupt\(\)\.interrupt\(\)|interrupt\.interrupt\(\)' -- crates/script crates/webidl/src`. At
+`f463e24` it prints `bindings.rs:447`, `prelude.rs:376`, `runner.rs:512` and five test lines
+(`run_end.rs:48` and `:50`, `adversary_checkpoint_2.rs:49`, `adversary_checkpoint.rs:323`,
+`adversary_5.rs:98`). At the base with the reading unit it prints `bindings.rs:514`,
+`prelude.rs:443`, `runner.rs:513` and `adversary_5.rs:98`: the reading unit adds no setter, and
+`bindings.rs:514` is the same `end_with_limit`. A production line that the command prints at
+the base and that is not one of those three is read before decision 5 stands.
 
 - `bindings::end_with_limit` (`crates/script/src/bindings.rs:445-452`; the generated copy is
   `crates/webidl/src/prelude.rs:374-381`) records a limit, sets the flag
@@ -316,11 +347,12 @@ step per code unit past 32", `:104-106`; `Math.hypot` charges "one step per argu
 to the memory budget", `:112-113`). surf's limits are those of Q4 and need no new row. The new
 builtins also make the realm larger: swell's own tests had to be changed to hold at any size
 of the realm, and tests that compared against a room fitted to one size now read their room
-from agents of their own (`CHANGELOG.md:135-139 @ 0.12.0`). Four tests of surf set
-`memory_bytes` to 1 MiB
-(`engine.rs:166`, `:631`, `adversary.rs:203`, `bindings.rs:959`) and two to 4 MiB
-(`adversary_4.rs:644`, `adversary_checkpoint.rs:26`). Whether any of them turns red because the
-realm grew is not shown (decision 8).
+from agents of their own (`CHANGELOG.md:135-139 @ 0.12.0`). Tests of surf set `memory_bytes` to
+a room of 1 MiB or 4 MiB. They are found at the base by the command of decision 8, which keeps
+no fixed list: at `f463e24` it prints six lines (`engine.rs:166`, `:631`, `adversary.rs:203`,
+`bindings.rs:959`, `adversary_4.rs:644`, `adversary_checkpoint.rs:26`) and at the base with the
+reading unit eight, four of them in tests that unit adds. Whether any of them turns red because
+the realm grew is not shown (decision 8).
 
 ### `HostObjectSpec`
 
@@ -354,16 +386,21 @@ syntax, compiler and regexp without std"). That work has no tag, and this story 
    decided: `SWELL` and `SWELL_VERSION` in `crates/surf/tests/lock_check.rs:21-25` and
    `crates/surf/tests/adversary.rs:11-15`. The unit changes those two constants in each file and no
    other line; every other literal in the two files is built from them, so the grep of
-   acceptance 2 shows the count of lines it showed before.
+   acceptance 4 shows the count of lines it showed before.
 3. The places of Context that name the tag in prose change with it: `NOTICE:54`,
    `AGENTS.md:366` and `:1901`, `README.md:254`, `website/docs/principles.md:27` name `0.12.0`;
    swell's `NOTICE` is the same file at both tags, so the quoted text stays. The sentence of
    `AGENTS.md:365-369` about `surf-script` changes the tag and its list of ignored tests: at
    `f463e24` it says 3 ignored, "HOST-125, HOST-26 and HOST-127" (`:367-368`), while the code has
-   two `#[ignore` lines (`git grep -n -F '#[ignore' f463e24 -- crates/script/tests` prints
-   `engine.rs:353` and `:372`), so it names `HOST-26` only after this story (decision 9). The
-   base, after `story:swell-0-9-0` merged, is re-read for the figure (not shown).
-   `story:swell-0-9-0` and `story:scripts-dom-reading` own the sentence's other words.
+   two `#[ignore` lines. The figure of "ignored in `surf-script`" is the count of those lines,
+   read at the base by `git grep -c -F '#[ignore' -- crates/script/tests`: at `f463e24` it prints
+   `engine.rs:2` (lines `:353` and `:372`); at the base with the reading unit `engine.rs:3`,
+   because that unit's tree still ignores `clock_advances` (`engine.rs:341`, `HOST-125`), which
+   `story:swell-0-9-0` un-ignores. The base holds both units and is read to count 2
+   (`HOST-26`, `HOST-127`); after this story the sentence names `HOST-26` only and the count is
+   1 (decision 9). The ignored figure of the gate's own lines is another number: the one the log of
+   `slot task check` prints on the tip (acceptance 23). `story:swell-0-9-0` and
+   `story:scripts-dom-reading` own the sentence's other words.
 4. The runner's logic does not change. No signature surf calls changes (Context), the code
    compiles unchanged, `end_with_limit` keeps its `Cx::charge_steps(0)` (a termination is read
    the same way with or without the fix) and surf has no `cx.call`. What changes in
@@ -383,7 +420,7 @@ syntax, compiler and regexp without std"). That work has no tag, and this story 
    half decide: a host function of surf's tests that sets the flag is read by swell when it
    returns. The doc comments (`runner.rs:641-646`, `:709-710`, `:885-887`,
    `docs/design/scripts.md:348-353`) say so, and the report lists these branches as held by no
-   test (acceptance 10). Question 1 of the questions file asks whether to delete the flag
+   test (acceptance 28). Question 1 of the questions file asks whether to delete the flag
    halves instead; the default is to keep them.
 6. A case for the behaviour of the tag that surf's tests rely on, the smallest that is red on
    `0.10.0` and green on `0.12.0`: in `crates/script/tests/run_end.rs`, which has the slice
@@ -424,15 +461,38 @@ syntax, compiler and regexp without std"). That work has no tag, and this story 
    `0.10.0`: write the new test of decision 6 and run it; it must fail with the second script
    `threw`, and the rewritten step-limit test must pass. If the new test is green at `0.10.0`
    the unit stops and reports, and keeps no test that is not red there. Then move the pin and
-   run `slot cargo nextest run -p surf-script` before any other edit: the report names every
-   red test and the reading above (one expected, the step-limit test) says which. Then the
-   renames and comments. A test that is red for a reason the reading did not give is a finding,
-   not an edit.
+   run `slot cargo nextest run -p surf-script --test main` before any other edit: the report
+   names every red test and the reading above (one expected, the step-limit test) says which.
+   Then the renames and comments. A test that is red for a reason the reading did not give is a
+   finding, not an edit.
+   The report is the bodies of the unit's commits, and each says what it holds:
+   - the commit that adds the new test: the test's name, the command that ran it, and the
+     assertion line it printed on `0.10.0` (acceptance 6), and its time (acceptance 27);
+   - the commit that rewrites the step-limit test: that it passed at both tags, with its time;
+   - the commit that moves the pin: every test that was red at `0.12.0` before any other edit,
+     and the memory finding of decision 8;
+   - the last commit, the public numbers: the old strings of acceptance 22 and the lists of
+     acceptance 28.
 8. A test of surf whose memory room was fitted to the realm of `0.10.0` and that is red at
    `0.12.0` is fixed by raising its `memory_bytes` to the next whole MiB that passes, with the
-   reading of `live_bytes()` after the realm printed and named in the report. A bound is never
-   raised for any other reason, and the report names each test it touched. Not shown: that any
-   of the six tests of Context is red. Question 3 of the questions file gives the other way.
+   reading of `live_bytes()` after the realm printed and named in the body of the commit that
+   moves the pin. A bound is never raised for any other reason, and that body names each test
+   the unit touched. The tests with a small room are not a fixed list. They are found at the
+   base by this command, which takes both spellings, `1024 * 1024` and `<< 20`, with a value
+   under 16 MiB, and no other value:
+
+       git grep -n -E -e 'memory_bytes(:| =) *1024 \* 1024' \
+         -e 'memory_bytes(:| =) *([1-9]|1[0-5]) *(\* *1024 *\* *1024|<< *20)' -- crates/script/tests
+
+   Today: at `f463e24` it prints six lines (`engine.rs:166`, `:631`, `adversary.rs:203`,
+   `bindings.rs:959`, `adversary_4.rs:644`, `adversary_checkpoint.rs:26`); at the base with the
+   reading unit it prints eight lines: `adversary.rs:195`, `adversary_4.rs:644`,
+   `adversary_dom_reading.rs:37`, `adversary_dom_reading_2.rs:229`,
+   `adversary_dom_reading_3.rs:192`, `bindings.rs:943`, `dom_reading.rs:58` and `engine.rs:165`.
+   The base holds both units, so it prints their union, ten lines in nine files, give or take a
+   moved line. Each such file is a path of this story's scope, and a file is edited only when
+   its test turns red. Not shown: that any of them is red. Question 3 of the questions file
+   gives the other way.
 9. `engine::time_zone` loses its `#[ignore = "HOST-127"]` and passes (`HOST-127` has a test at
    `0.12.0`; the draft `story:scripts-seeds-and-time-zone` held both ignores for one later tag,
    see Placement and Question 4); `engine::seeds_fixed` keeps `#[ignore = "HOST-26"]`
@@ -496,164 +556,288 @@ syntax, compiler and regexp without std"). That work has no tag, and this story 
   `crates/script/tests/adversary_checkpoint_2.rs`: the rewrite and the rename of decision 6.
   `crates/script/tests/adversary_checkpoint.rs`: the rename and the comments of decision 6.
   `crates/script/tests/adversary_6.rs`: the stamp of decision 6. `crates/script/tests/engine.rs`:
-  decision 9 and the stamps of the sentences it rewrites. `crates/script/tests/adversary.rs`,
-  `bindings.rs`, `adversary_4.rs`: only if decision 8 applies.
+  decision 9 and the stamps of the sentences it rewrites. The files that the command of decision
+  8 prints at the base (`crates/script/tests/adversary.rs`, `adversary_4.rs`, `bindings.rs`,
+  `dom_reading.rs`, `adversary_dom_reading.rs`, `adversary_dom_reading_2.rs` and
+  `adversary_dom_reading_3.rs` today, with `engine.rs` and `adversary_checkpoint.rs` above):
+  only if decision 8 applies, that is, only when the test in it turns red.
 - `crates/script/src/runner.rs`: decision 4, comments only.
 - `NOTICE`, `AGENTS.md`, `README.md`, `website/docs/principles.md`: decision 3.
 - `docs/design/scripts.md`: decision 10 and 11.
-- In the last commit, on its own tip, the public numbers (acceptance 9): `README.md`,
+- In the last commit, on its own tip, the public numbers (acceptances 22 and 23): `README.md`,
   `AGENTS.md`, `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/status.md`,
   `website/docs/what-works.md`, `website/docs/how-it-is-built.md`.
 
 ## Acceptance
 
+Every command runs on the tip of the unit's branch, after the last merge of `main` into it. A
+line named "at `f463e24`" is what the command prints there, where the item is false.
+
 1. `slot task lock-check` prints
    `Cargo.lock: <n> package(s), <m> from outside this repository, each on the allow-list`
-   with the `<n>` and `<m>` of the story's base (58 and 25 at `f463e24`, re-read at the base);
-   `git grep -n -F -e 'tag=0.10.0' -e 'tag = "0.10.0"' -e b9d3d46fa7ac4abc982f2248e903e6301e277a9f
-   -- Cargo.lock taskfiles crates NOTICE` prints nothing; `git grep -c -F
+   with the `<n>` and `<m>` of the story's base, read before the first commit by
+   `grep -c '^\[\[package\]\]' Cargo.lock` and `grep -c '^source = ' Cargo.lock` (58 and 25 at
+   `f463e24` and at the base with the reading unit).
+2. The new pin is written where the old one was: `git grep -c -F
    'tag=0.12.0#911a83df281b3e788bc1c7eac41f95ed49227e6e' -- Cargo.lock taskfiles/lock-allow.txt`
-   counts 6 in each file; `git grep -c -F 'tag 0.12.0' -- NOTICE` counts 1 (`NOTICE:54` at the
-   base) and the same with `tag 0.10.0` prints nothing.
-2. `slot cargo nextest run -p surf --test lock_check --test adversary` exits 0 within the bounds
-   of acceptance 10: every case passes, the swell cases among them. `git grep -n -F -e '0.10.0'
-   -e b9d3d46 -- crates/surf/tests/lock_check.rs crates/surf/tests/adversary.rs` prints nothing,
-   and `git grep -c -F 911a83d -- crates/surf/tests/lock_check.rs crates/surf/tests/adversary.rs`
-   counts 1 in each file.
-3. In `crates/script/tests/run_end.rs` the test of decision 6 passes at `0.12.0`, and the report
-   says it failed at `0.10.0` and quotes the end of the second script (`threw`) from that run
-   (decision 7). `git grep -n -F
+   counts 6 in each file; `git grep -c -F 'tag = "0.12.0"' -- crates/script/Cargo.toml` counts 1
+   (line 16 at `f463e24`); `git grep -c -F 'tag 0.12.0' -- NOTICE` counts 1 (`NOTICE:54` at the
+   base). All three print nothing at `f463e24`.
+3. The old pin is written nowhere: `git grep -n -F -e 'tag=0.10.0' -e 'tag = "0.10.0"' -e
+   b9d3d46fa7ac4abc982f2248e903e6301e277a9f -- Cargo.lock taskfiles crates NOTICE` prints nothing,
+   and `git grep -n -F 'tag 0.10.0' -- NOTICE` prints nothing. At `f463e24` the first prints 15
+   lines (six of `Cargo.lock`, `crates/script/Cargo.toml:16`, six of `taskfiles/lock-allow.txt`
+   and the two constants of the tests) and the second one line, `NOTICE:54`.
+4. The swell cases of the lock check hold the new pin: `slot cargo nextest run -p surf --test
+   main -E 'test(lock_check::) | test(adversary::)'` exits 0 within the bounds of acceptance 27,
+   every case passing, the swell cases among them. `git grep -n -F -e '0.10.0' -e b9d3d46 --
+   crates/surf/tests/lock_check.rs crates/surf/tests/adversary.rs` prints nothing, and `git grep
+   -c -F 911a83d -- crates/surf/tests/lock_check.rs crates/surf/tests/adversary.rs` counts 1 in
+   each file. At `f463e24` the first prints four lines and the second nothing.
+5. The test of decision 6 exists and passes at `0.12.0`: `git grep -n -F
    'a_getter_that_sets_the_interrupt_and_throws_ends_the_script_at_the_getter' --
-   crates/script/tests` prints one line, and `git grep -c -F 'HOST-221' --
-   crates/script/tests/run_end.rs` counts at least 1 (its doc comment).
-4. `slot cargo nextest run -p surf-script --test run_end --test adversary_checkpoint --test
-   adversary_checkpoint_2 --test adversary_3 --test adversary_6` exits 0 within the bounds of
-   acceptance 10, and these greps print what is said: `git grep -n -F 'a property get reads no
-   flag after it' -- crates/script/tests` prints nothing (`adversary_checkpoint_2.rs:254` at
-   the base); `git grep -n -F -e
-   'a_host_function_as_the_last_job_leaves_the_flag_to_the_runner' -e
-   'an_interrupt_the_record_read_takes_still_ends' -- crates/script/tests` prints nothing, and
-   the two new names of decision 6 print one line each; `git grep -n -F 'not after a job whose'
-   -- crates/script/tests` prints nothing (`run_end.rs:8` at the base). The rewritten step-limit
-   test passes at both tags (decision 7).
-5. `slot cargo nextest run -p surf-script --test engine` exits 0 within the bounds of acceptance
-   10: `engine::time_zone` runs and passes; `git grep -n -F '#[ignore' -- crates/script/tests`
-   prints one line, `HOST-26`; `git grep -n -F '0.10.0' -- crates/script/tests/engine.rs |
-   /usr/bin/grep -v -F '@ 0.10.0'` prints nothing (the stamps of `:1` and `:10` name `0.12.0`;
-   the lines that remain are citations `@ 0.10.0` of files that are the same at both tags).
-6. `git grep -n -F -e 'and not when it is a host function' -e 'meets no read of it' --
-   crates/script/src/runner.rs docs/design/scripts.md` prints nothing (`runner.rs:811` and
-   `docs/design/scripts.md:333`, `:343` at the base). `git grep -c -F 'HOST-221' --
-   docs/design/scripts.md` counts at least 2 (Q4 and the list of Q18). `git grep -n -F '221
-   lines, 159 `test`, 62 `pending`' -- docs/design/scripts.md` prints one line, and the same
-   with `220 lines, 152 `test`, 68 `pending`` prints nothing. `git grep -n -F 'swell is read at
-   its tag `0.12.0`' -- docs/design/scripts.md` prints the head (`:13` at the base for the
-   `0.10.0` form). `git grep -n -F -e 'Date.parse` throw a `TypeError`' -e 'fields, do not
-   exist' -- docs/design/scripts.md` prints nothing (`:528`, `:537` at the base). `git grep -c
-   -F "rev-parse '0.12.0^{commit}'" -- docs/design/scripts.md` counts 1 (the probe of Q13).
-7. `slot task check` exits 0, and `git diff --stat main...HEAD`, run after the last merge of
-   `main` into the unit's branch, names only the files of the Change and the public surfaces
-   of acceptance 9.
-8. The prose that names the tag, the version or the ignored tests: the strings `release tag
-   (`0.10.0`)` (`README.md:254`, `website/docs/principles.md:27`) and `swell 0.10.0`
-   (`AGENTS.md:366`, `:1901`) name `0.12.0`; the sentences on ignored tests of `surf-script`
-   (`README.md:285-286`, `website/docs/what-works.md:17-18`, `AGENTS.md:367-368`,
-   `website/docs/status.md:31`) say one test is ignored, `HOST-26`. At `f463e24` the code has two
-   `#[ignore` lines and these sentences say 3; the base's figure is re-read (not shown).
-9. Public surfaces: in the story's last commit, on its own tip, after merging `main`, the story
-   changes every public surface its change makes false, each number from the `slot task check`
-   log of that tip: the test counts of the repository and of `surf-script` (`README.md:11`,
-   `:285-286`, `:661`, `docs/badges/make.sh:38`, `docs/badges/tests.svg:1,2,10`,
-   `website/docs/status.md:31`, `website/docs/what-works.md:17-18`,
-   `website/docs/how-it-is-built.md:105`, `AGENTS.md:367-369`, all at `f463e24`) and the gate
-   blocks (`README.md:596-645`, `website/docs/how-it-is-built.md:40-89`) hold that log's lines.
-   The old strings are read on the story's base with `git grep -n` before the first commit and
-   listed in the report; after the commit `git grep -n -F -e '<old>' -- README.md website/docs
-   docs/badges AGENTS.md` prints nothing for each, except a string that is also a line of the
-   new log, which the report names. At `f463e24` the figures are 2,397 tests (`README.md:285`)
-   and 1845 tests with 3 ignored (`README.md:626`); the figures of the base are not shown.
-10. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s
-    (`.config/nextest.toml`); no model call and no network request in a test (cargo fetches
-    swell before the tests); every build and test runs through `slot`, with none of `--local`,
-    `--here`, `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`; a job in the pool ends within 10 minutes or
-    names its time with `slot --timeout` or `SLOT_TIMEOUT`, at most 30 minutes (the first cold
-    build of swell `0.12.0` through the cargo shim may name it), and a job that timed out is not
-    started again unchanged; a script that measures or waits starts without the `slot`
-    prefix; no Python in anything that stays in the repository; no generator with a committed
-    output is added; a test over 5 s is named with its time. The new test of decision 6 and the
-    rewritten test are timed before they are kept, and each time is in the report.
-11. The report lists what no test of this story holds at `0.12.0`: the branch `Err(RunEnded)`
-    of `Runner::exception_text` (`runner.rs:893`, `:961`), the question before the read of a
-    thrown value (`:888`), and the flag halves of the questions before and after the
-    checkpoint (`:783`, `:822`): they decide only for a flag set after swell's last read, which
-    no deterministic test makes. It also lists that the new test was run red at `0.10.0`
-    (decision 7) or, if it was not, that the story stopped; which of the tests of Context were
-    red at `0.12.0` before any edit; that the realm's growth was or was not found to turn a
-    memory test red; and that the measurement of the copies (`docs/design/scripts.md:1214-1244`)
-    was read, not run, on `0.12.0` (decision 10).
-12. The public-numbers step is the story's last: no commit after it changes a file that a
-    count or a gate block depends on, and its tip is the one that `slot task check` is run on.
+   crates/script/tests` prints one line, `git grep -c -F 'HOST-221' --
+   crates/script/tests/run_end.rs` counts at least 1 (its doc comment), and `slot cargo nextest
+   run -p surf-script --test main -E
+   'test(a_getter_that_sets_the_interrupt_and_throws_ends_the_script_at_the_getter)'` runs one
+   test and it passes. At `f463e24` the first prints nothing and the second counts 0.
+6. The same test is red at `0.10.0`, and a reviewer can see it. The report (decision 7) is the
+   body of the commit that adds the test: it holds the test's name, the command that ran it and
+   the assertion line the test printed on `0.10.0`, where the end of the second script is a
+   throw and the test expects `Ran`. To see it red, in a scratch worktree of the tip: set
+   line 16 of `crates/script/Cargo.toml` back to `tag = "0.10.0"`, run `cargo update -p swell`
+   (the lock changes for the six swell packages only, and `git diff --stat` lists
+   `crates/script/Cargo.toml` and `Cargo.lock` alone), then run the test command of item 5
+   through `slot`: it exits non-zero with that assertion. The scratch worktree is removed after.
+7. The tests of `surf-script` pass at `0.12.0`: `slot cargo nextest run -p surf-script --test
+   main` exits 0 within the bounds of acceptance 27. That is the whole test binary of the crate:
+   every file of `crates/script/tests` is a module of `tests/main.rs`, so no list of files
+   stands for it.
+8. The test names and comments that claim the old behaviour are gone, and the renamed tests
+   exist. Each command prints nothing; the lines it prints at `f463e24` are named.
+   - `git grep -n -F 'a property get reads no flag after it' -- crates/script/tests`
+     (`adversary_checkpoint_2.rs:254`).
+   - `git grep -n -F -e 'a_host_function_as_the_last_job_leaves_the_flag_to_the_runner'
+     -e 'an_interrupt_the_record_read_takes_still_ends' -- crates/script/tests`
+     (`adversary_checkpoint_2.rs:161`, `adversary_checkpoint.rs:389`).
+   - ``git grep -n -F -e 'not after a job whose' -e 'ends the run with the flag still set' -e
+     "read at the script's return takes the flag" -- crates/script/tests/run_end.rs``
+     (`run_end.rs:8`, `:6`, `:159`).
+   - ``git grep -n -F -e "the flag is set at the end of the script, as the wall clock" -e 'the
+     read takes the flag' -- crates/script/tests/adversary_checkpoint.rs``
+     (`adversary_checkpoint.rs:315`, `:383`).
+   - `git grep -n -F 'nothing reads the flag after a host function a job' --
+     crates/script/tests/adversary_checkpoint_2.rs` (`adversary_checkpoint_2.rs:155`).
+   - The two new names of decision 6 print one line each: `git grep -n -F -e 'fn
+     a_host_function_as_the_last_job_ends_the_checkpoint_at_the_wall_clock' -e 'fn
+     an_interrupt_set_at_the_end_of_a_script_ends_it_at_the_wall_clock' -- crates/script/tests`.
+9. The rewritten step-limit test exists, ends through the new arm and passes at both tags. `git
+   grep -c -F 'fn a_step_limit_with_the_interrupt_set_leaves_no_flag_for_the_next_script' --
+   crates/script/tests/adversary_checkpoint_2.rs` counts 1 and `git grep -n -F 'Arm::Steps' --
+   crates/script/tests/adversary_checkpoint_2.rs` prints at least one line (the second prints
+   nothing at `f463e24`). It passes at `0.12.0` in the run of item 7, and at `0.10.0` in the
+   run of decision 7, whose passing line is in the body of the commit that rewrites it.
+10. `engine::time_zone` runs and passes and only `seeds_fixed` stays ignored: `slot cargo
+    nextest run -p surf-script --test main -E 'test(=engine::time_zone)'` runs one test and it
+    passes; `git grep -n -F '#[ignore' -- crates/script/tests` prints one line, `HOST-26` (at
+    `f463e24` two lines, `engine.rs:353` and `:372`); `git grep -n -F '0.10.0' --
+    crates/script/tests/engine.rs | /usr/bin/grep -v -F '@ 0.10.0'` prints nothing (at
+    `f463e24` the stamps of `:1` and `:10`; the lines that remain are citations `@ 0.10.0` of
+    files that are the same at both tags).
+11. The unit changes no logic of `crates/script/src/runner.rs`: `git diff -U0 main...HEAD --
+    crates/script/src/runner.rs | awk '/^[+-]/ && !/^(\+\+\+|---)/ && !/^[+-][[:space:]]*\/\//'`
+    prints nothing, that is, every changed line is a `//` or `///` comment line. A changed
+    `if` or call prints its line.
+12. The sentences of `crates/script/src/runner.rs` that the tag made false, or that carry the
+    stamp `0.10.0` where this tag changes them, are rewritten. Both commands print nothing; at
+    `f463e24` they print the lines named.
+    - ``git grep -n -F -e 'at swell `0.10.0` they never decide' -e 'at swell 0.10.0, where' -e
+      'A second line at swell 0.10.0' -e 'decide if a later tag changes where the engine reads
+      the flag' -e 'decides if a later tag reads the flag elsewhere' --
+      crates/script/src/runner.rs`` (`:641`, `:646`, `:709`, `:885`, `:887`).
+    - `git grep -n -F -e 'and not when it is a host function' -e 'function is a host function,
+      or the wall clock' -- crates/script/src/runner.rs` (`:811`, `:813`).
+13. The same sentences are rewritten in the design note: ``git grep -n -F -e 'meets no read of
+    it' -e 'and not when it is a host function' -e 'So a last job whose function is a host' -e
+    'at `0.10.0` they never decide an end alone' -e 'Both decide if a later tag of swell changes
+    where the engine reads the flag' -- docs/design/scripts.md`` prints nothing (at `f463e24`
+    `:333`, `:343`, `:344`, `:348`, `:353`).
+14. `HOST-221` is recorded in the two places by name. `awk '/^## Q4\./{f=1;next}
+    /^## Q5\./{f=0} f' docs/design/scripts.md | /usr/bin/grep -c -F HOST-221` counts at least 1
+    (inside Q4), and `awk '/^The requirements new at /{f=1} /^## /{f=0} f'
+    docs/design/scripts.md | /usr/bin/grep -c -F HOST-221` counts at least 1 (inside the list
+    of Q18, which closes the file). Both count 0 at `f463e24`.
+15. The count line of Q18 is the one of `0.12.0`: ``git grep -n -F '221 lines, 159 `test`, 62
+    `pending`' -- docs/design/scripts.md`` prints one line, and ``git grep -n -F '220 lines, 152
+    `test`, 68 `pending`' -- docs/design/scripts.md`` prints nothing (`:1439` at `f463e24`).
+16. The head and the table row say `0.12.0`: ``git grep -n -F 'swell is read at its tag
+    `0.12.0`' -- docs/design/scripts.md`` prints the head, and ``git grep -n -F -e 'read at its
+    tag `0.10.0`' -e '| swell | tag `0.10.0`' -- docs/design/scripts.md`` prints nothing (`:13`
+    and `:31` at `f463e24`).
+17. Q6 no longer calls `Date` and `Math` absent: ``git grep -n -F -e 'Date.parse` throw a
+    `TypeError`' -e 'fields, do not exist' -- docs/design/scripts.md`` prints nothing (`:528`
+    and `:537` at `f463e24`).
+18. The probe of Q13 is read again at `0.12.0` and its output is written on its own line: `git
+    grep -c -F "rev-parse '0.12.0^{commit}'" -- docs/design/scripts.md` counts 1, and `git grep
+    -n -F "rev-parse '0.12.0^{commit}'" -- docs/design/scripts.md | /usr/bin/grep -F 911a83d |
+    /usr/bin/grep -c -F 'lock packages: 9'` counts 1, so the line holds the commit and the
+    package count of its output. The reads in the swell clone give
+    `911a83df281b3e788bc1c7eac41f95ed49227e6e`, 9 packages, 0 `source` lines, and an unchanged
+    `NOTICE` (`git diff --quiet 0.8.0 0.12.0 -- NOTICE` exits 0). Both greps count 0 at
+    `f463e24`.
+19. The heads of Q18 and the stamps of the pinned tag are rewritten: ``git grep -n -F -e
+    'status at `0.10.0`' -e 'swell `0.10.0` runs promises' -e 'At `0.10.0` `Date` exists' -e
+    'at the tag `0.10.0` of Q13' -e 'reversible): tag `0.10.0`' -e 'The tag surf pins:
+    `0.10.0`' -- docs/design/scripts.md`` prints nothing (at `f463e24` `:140`, `:526`, `:546`,
+    `:1149`, `:1276`, `:1438`, `:1443`, `:1456`).
+20. The prose that names the tag says `0.12.0`: ``git grep -n -F -e 'release tag (`0.10.0`)' -e
+    'swell 0.10.0' -e 'tag 0.10.0' -- README.md website/docs AGENTS.md NOTICE`` prints nothing
+    (at `f463e24` `README.md:254`, `website/docs/principles.md:27`, `AGENTS.md:366`, `:1901`
+    and `NOTICE:54`).
+21. The sentences on the ignored tests of `surf-script` (`README.md:285-286`,
+    `website/docs/what-works.md:17-18`, `AGENTS.md:367-368`, `website/docs/status.md:31`, lines
+    of `f463e24`) say one test is ignored, `HOST-26`. "Ignored in `surf-script`" is the count
+    of `git grep -c -F '#[ignore' -- crates/script/tests`, which prints `engine.rs:1` here (2 at
+    `f463e24`, where the sentences say 3). ``git grep -n -F -e 'are ignored until swell reaches
+    what they call' -e '3 of them ignored until swell' -e 'the 3 ignored tests of
+    `surf-script`' -- README.md AGENTS.md website/docs`` prints nothing (at `f463e24`
+    `README.md:286`, `website/docs/what-works.md:18`, `AGENTS.md:367`,
+    `website/docs/status.md:31`).
+22. The old figures are gone from the public surfaces. Before the first commit the unit reads
+    them on the base by `git grep -n -E '[0-9],?[0-9]{3} tests|[0-9] ignored|[0-9] of them
+    ignored|[0-9]{4} passed' -- README.md docs/badges website/docs` and `git grep -n -F 'of them
+    ignored' -- AGENTS.md` (at `f463e24` 18 lines and one line, `AGENTS.md:367`), and lists each
+    old string in the body of the last commit. After that commit, `git grep -n -F -e '<old>' --
+    README.md AGENTS.md website/docs docs/badges` prints nothing for each, except a string that
+    is also a line of the new log, which that body names. At `f463e24` the figures are 2,397
+    tests (`README.md:285`) and 1845 tests with 3 ignored (`README.md:626`).
+23. The gate blocks and the counts hold the log of the tip. `README.md:596-645` and
+    `website/docs/how-it-is-built.md:40-89` (lines of `f463e24`) hold the lines of the log of the
+    run of item 25: with `<line>` the `N tests: P passed, F failed, I ignored (...)` line of
+    that log, `git grep -c -F '<line>' -- README.md website/docs/how-it-is-built.md` counts 1
+    in each file. Each count of the surfaces of item 22 (`README.md:11`, `:285-286`, `:661`,
+    `docs/badges/make.sh:38`, `docs/badges/tests.svg:1,2,10`, `website/docs/status.md:31`,
+    `website/docs/what-works.md:17-18`, `website/docs/how-it-is-built.md:105`,
+    `AGENTS.md:367-369`, lines of `f463e24`) is a figure of that log. The `I ignored` of the log
+    is the gate's number for the workspace; it can differ from the count of item 21.
+24. `git diff --stat main...HEAD` names only the files of the Change and the public surfaces of
+    items 22 and 23.
+25. `slot task check` exits 0 on the tip that item 26 names, after the last merge of `main`.
+    The log of this run is the one item 23 quotes.
+26. The public-numbers commit is the last that changes a counted file. With `<commit>` that
+    commit, `git diff --stat <commit>..HEAD -- crates spec conformance taskfiles .config
+    Cargo.lock Cargo.toml README.md AGENTS.md docs/badges website/docs` prints nothing: no test,
+    no source and no public surface changes after it, so the counts of item 23 are the tip's.
+27. The folder's bounds hold. No test runs over 60 s: `.config/nextest.toml` holds `slow-timeout
+    = { period = "60s", terminate-after = 1 }`, and no test of the run of item 7 is killed. The
+    test step ends within 120 s: the gate prints `test step: <s> s of its budget of 120 s` (the
+    line `AGENTS.md:1962-1964` describes at `f463e24`) and `<s>` is at most 120. No model call
+    and no network request in a test (cargo fetches swell before the tests). Every build and
+    test runs through `slot`, with none of `--local`, `--here`, `SLOT_NO_REMOTE` or
+    `SLOT_SHIM_OFF`. A job in the pool ends within 10 minutes or names its time with `slot
+    --timeout` or `SLOT_TIMEOUT`, at most 30 minutes (the first cold build of swell `0.12.0`
+    through the cargo shim may name it), and a job that timed out is not started again
+    unchanged. A script that measures or waits starts without the `slot` prefix. No Python in
+    anything that stays in the repository. No generator with a committed output is added. A test
+    over 5 s is named with its time. The new test of decision 6 and the rewritten test are timed
+    before they are kept, and each time is in the body of the commit that adds or rewrites it.
+28. The report lists what no test of this story holds at `0.12.0`, in the body of the last
+    commit: the branch `Err(RunEnded)` of `Runner::exception_text` (`runner.rs:893`, `:961`),
+    the question before the read of a thrown value (`:888`), and the flag halves of the
+    questions before and after the checkpoint (`:783`, `:822`). They decide only for a flag set
+    after swell's last read, which no deterministic test makes. That body also says that the
+    measurement of the copies (`docs/design/scripts.md:1214-1244`) was read, not run, on
+    `0.12.0` (decision 10). The body of the commit that moves the pin names which tests of
+    Context were red at `0.12.0` before any edit and whether the realm's growth turned a memory
+    test red. That the new test was run red at `0.10.0`, or that the story stopped because it
+    was not, is item 6.
 
 ## Out of scope
 
-`overrides` and `is_html_dda` on `HostObjectSpec`, which swell's design lists and
-`0.12.0` does not have (Context). The later story needs the list of surf's literals, at
-`f463e24`, each naming `prototype`, `brand`, `data` and `error_kind`: 13 literals,
+`overrides` and `is_html_dda` on `HostObjectSpec`, which swell's design lists and `0.12.0` does
+not have (Context). The later story needs the list of surf's literals, each naming
+`prototype`, `brand`, `data` and `error_kind`. That list is read again at the base of the later
+story, by `git grep -n 'HostObjectSpec {' -- crates | /usr/bin/grep -v 'pub fn window_spec'`,
+which prints one line per literal. Today, as an example: at `f463e24` it prints 13 lines,
 `crates/script/src/bindings.rs:351`, `:663`, `:1141`, `:1331`, `:1444`, `:1524`;
-`crates/webidl/src/prelude.rs:284`, `:593`, `:1049`, `:1228`, `:1312`, `:1377` (the
-generated copy of the six of `bindings.rs`); `crates/script/tests/engine.rs:263`.
-The mentions of the type that change if swell makes it generic: the import
-(`bindings.rs:80`, `prelude.rs:15`, `engine.rs:24`) and the return type of `window_spec`
-(`bindings.rs:1523`, `prelude.rs:1376`). swell's `main` after `0.12.0` (the `#![no_std]` crates)
-is not taken. `Math.random` and the six requirements `pending slice 4`; the shell binary
-`swell` and its release assets; the stale doc comments of the generated code that
-`story:scripts-utf16-length` (draft) rewrites (the cite `object/builtin_function.rs:497 @ 0.8.0`
-in `bindings.rs:443` and `prelude.rs:372`); the second member form of the interrupt (a setter, a
-conversion or an iterator in a test slice, Question 2);
-deleting the flag halves of the runner's questions (Question 1); a provided time zone or a
-clock hook other than UTC and the system clock.
+`crates/webidl/src/prelude.rs:284`, `:593`, `:1049`, `:1228`, `:1312`, `:1377` (the generated
+copy of the six of `bindings.rs`); `crates/script/tests/engine.rs:263`. At the base with the
+reading unit it prints 13 lines too: six in `bindings.rs` (`:418`, `:757`, `:1341`, `:1724`,
+`:1837`, `:1917`), six in `prelude.rs` (`:351`, `:677`, `:1239`, `:1608`, `:1692`, `:1757`) and
+`engine.rs:262`. The mentions of the type that change if swell makes it generic are read again
+the same way, by `git grep -n -w HostObjectSpec -- crates`: the import (`bindings.rs:80`,
+`prelude.rs:15`, `engine.rs:24` at `f463e24`) and the return type of `window_spec`
+(`bindings.rs:1523`, `prelude.rs:1376` at `f463e24`). swell's `main` after `0.12.0` (the
+`#![no_std]` crates) is not taken. `Math.random` and the six requirements `pending slice 4`;
+the shell binary `swell` and its release assets; the stale doc comments of the generated code
+that `story:scripts-utf16-length` (draft) rewrites (the cite
+`object/builtin_function.rs:497 @ 0.8.0` in `bindings.rs:443` and `prelude.rs:372`); the second
+member form of the interrupt (a setter, a conversion or an iterator in a test slice,
+Question 2); deleting the flag halves of the runner's questions (Question 1); a provided time
+zone or a clock hook other than UTC and the system clock.
 
 ## Placement
 
-After `story:swell-0-9-0` is on `main`: this story's base is `main` after it, and its
-decisions 3, 6 and 10 edit what that story wrote (the tag strings, the two constants, the
-runner's doc comments and the tests of the checkpoint). `story:swell-0-9-0` is `active` in the
-store; nothing in this story starts before it merges.
+After `story:swell-0-9-0` and `story:scripts-dom-reading` are on `main`: this story's base is
+`main` after both units. Its decisions 3, 6 and 10 edit what the first wrote (the tag strings,
+the two constants, the runner's doc comments and the tests of the checkpoint), and it reads the
+bindings and the tests that the second wrote (decision 8). Both stories are `active` in the
+store; nothing in this story starts before both merge. The front declares the edge to
+`story:swell-0-9-0` only.
 
-Stories not implemented that have a manifest or `Cargo.lock` in scope:
-`story:scripts-dom-reading` (active: `Cargo.lock`, `crates/script/Cargo.toml`),
-`story:scripts-document-port` (proposed: `Cargo.lock`) and `story:scripts-html-conformance`
-(proposed: `Cargo.lock`). The reading story adds `surf-url` right after `surf-secret` in
-`crates/script/Cargo.toml` and in the entry of `surf-script` in `Cargo.lock`; this story changes
-line 16 and the swell entries, so the second merge may conflict in those two files and keeps both
-changes. Whichever of the two merges second merges `main` first and runs `slot task check` on
-the merged tree.
+Stories not implemented that name a file this story edits, from `git grep -l -F <path> --
+.engineering/planning/story` in the plan tree, each with its status (the stories already
+implemented are not named):
 
-Other stories in work that scope a file this story edits: `story:scripts-dom-reading` and
-`story:scripts-dom-mutation` (proposed) and `story:scripts-parse-run` (proposed) scope
-`crates/script/src/runner.rs`; `story:scripts-parse-run` also `crates/script/tests/engine.rs`
-and the public surfaces; `story:scripts-document-port`, `story:scripts-dom-attributes`,
-`story:scripts-dom-selectors`, `story:scripts-dom-mutation`, `story:scripts-dom-reading` and
-`story:scripts-parse-run` scope `docs/design/scripts.md`; `story:conformance-lock-and-lints`
-(draft), `story:agent-tasks-left-process-wait`, `story:test-step-holds-with-tls` and
-`story:tests-without-wall-time-bounds` (active) scope `AGENTS.md`;
-`story:agent-cookie-public-suffixes` (active) scopes `NOTICE`; `story:scripts-dom-reading`,
-`story:scripts-parse-run`, `story:scripts-document-port`, `story:scripts-html-conformance` and
-`story:conformance-lock-and-lints` scope public surfaces. `story:tests-without-wall-time-bounds`
-scopes `crates/script/tests/adversary_4.rs` and `adversary_5.rs`; this story reads
-`adversary_4.rs:221` and `adversary_5.rs:98` and edits neither unless decision 8 applies. Each
-overlap is settled as the story before it did: the second merge merges `main` first, keeps both
-sets of edits, and takes the counts from its own log.
+- `Cargo.lock`: `story:runner-formats` and `story:scripts-dom-reading` (active),
+  `story:scripts-document-port` and `story:scripts-html-conformance` (proposed),
+  `story:conformance-lock-and-lints` and `story:tls-anchor-check-without-ring` (draft).
+- `crates/script/Cargo.toml`: `story:scripts-dom-reading` (active),
+  `story:scripts-document-port`, `story:scripts-dom-selectors` and
+  `story:scripts-html-conformance` (proposed).
+- `crates/script/src/runner.rs`: `story:scripts-dom-reading` and
+  `story:tests-without-wall-time-bounds` (active), `story:scripts-dom-attributes`,
+  `story:scripts-dom-mutation` and `story:scripts-parse-run` (proposed),
+  `story:scripts-job-errors` and `story:scripts-event-loop-and-timers` (draft). The closest is
+  `story:scripts-job-errors`: it rewrites checkpoint and record behaviour, the comments that
+  decision 4 edits.
+- `docs/design/scripts.md`: `story:scripts-dom-reading` (active), `story:scripts-document-port`,
+  `story:scripts-dom-attributes`, `story:scripts-dom-mutation`, `story:scripts-dom-selectors`,
+  `story:scripts-hostile-pages`, `story:scripts-html-conformance` and
+  `story:scripts-parse-run` (proposed), `story:scripted-page-numbers`,
+  `story:scripts-job-errors`, `story:scripts-event-loop-and-timers` and
+  `story:session-memory-bound` (draft).
+- `crates/script/tests/engine.rs`: `story:scripts-parse-run` (proposed).
 
-`story:scripts-seeds-and-time-zone` (draft, depends on `story:swell-0-9-0`) un-ignores
-`seeds_fixed` (`HOST-26`) and `time_zone` (`HOST-127`) on "the first tag whose requirements
-list has no `pending slice 4` line for HOST-26 and HOST-127". `0.12.0` is not that tag:
-`HOST-26` is still `pending slice 4` (`conformance/host/requirements.txt:26 @ 0.12.0`), while
-`HOST-127` is `test`. Decision 9 takes `time_zone` here (Question 4 puts the fork). After this
-story that draft has `seeds_fixed` left: its first Change item, its acceptance 1 (an empty
-`#[ignore` grep) and its title name two tests and are not rewritten here. `story:scripts-parse-run`
-measures Q4 on the tag the pin story pins; it reads the tag this story leaves, `0.12.0`, and its
-text is not rewritten here.
+The reading story adds `surf-url` right after `surf-secret` in `crates/script/Cargo.toml` and in
+the entry of `surf-script` in `Cargo.lock`; this story's base holds that, and it changes line 16
+and the swell entries on top of it. The four test files that the reading story added with a
+small `memory_bytes` are written by it before this story starts.
+
+Other stories in work that scope a file of the rest of this story's Change:
+`story:conformance-lock-and-lints` (draft), `story:agent-tasks-left-process-wait`,
+`story:test-step-holds-with-tls` and `story:tests-without-wall-time-bounds` (active) scope
+`AGENTS.md`; `story:agent-cookie-public-suffixes` (active) scopes `NOTICE`;
+`story:scripts-dom-reading`, `story:scripts-parse-run`, `story:scripts-document-port`,
+`story:scripts-html-conformance` and `story:conformance-lock-and-lints` scope public surfaces.
+`story:tests-without-wall-time-bounds` scopes `crates/script/tests/adversary_4.rs` and
+`adversary_5.rs`; this story reads `adversary_4.rs:221` and `adversary_5.rs:98` and edits
+neither unless decision 8 applies. The one settlement rule for every overlap above and in this
+paragraph is the one the story before it used: the story that merges second merges `main`
+first, keeps both sets of edits, runs `slot task check` on the merged tree and takes its counts
+from that log.
+
+`story:scripts-seeds-and-time-zone` (draft) was edited with this story. It held both ignored
+tests, `seeds_fixed` (`HOST-26`) and `time_zone` (`HOST-127`), for "the first tag whose
+requirements list has no `pending slice 4` line for HOST-26 and HOST-127". `0.12.0` is not that
+tag: `HOST-26` is still `pending slice 4` (`conformance/host/requirements.txt:26 @ 0.12.0`),
+while `HOST-127` is `test`. Decision 9 takes `time_zone` here (Question 4 puts the fork). The
+draft now holds `seeds_fixed` (`HOST-26`) only, depends on this story, and waits for the first
+swell tag after `0.12.0` whose requirements list no longer has `HOST-26` pending.
+
+`story:scripts-parse-run` (proposed) depends on this story. It measures Q4 and Q5 and runs its
+probes on the tag the pin story leaves, `0.12.0`; the lines of its text that named `0.10.0` for
+that were edited with this story.
 
 ## Why `epic:scripts-in-a-page`
 
