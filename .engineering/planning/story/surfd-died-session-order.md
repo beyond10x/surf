@@ -4,13 +4,11 @@ id: story:surfd-died-session-order
 kind: story
 status: proposed
 title: Order the session's end and its child's line by an event in two surfd tests
-summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. The story makes the order by an event and changes no product file.
+summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. In the first case the child waits until the shell is waitable; the second keeps two clocks with margins of 1 s and more. No product file changes.
 scope:
 - confidence: cited
-  path: AGENTS.md
-- confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 4
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 ---
@@ -22,63 +20,88 @@ clock of 0.3 s:
 
 - `another_first_line_after_the_session_died_by_its_own_signal_names_it` (`:135-148`): the
   session program is `( /usr/bin/sleep 0.3; printf 'x\n' ) &` and then `kill -s ABRT $$`. The
-  case needs the shell to have ended by `SIGABRT` before the child writes `x`. When the shell
-  takes longer than 0.3 s from the fork of the child to its own end, `surfd` reads `x` from a
-  live session, kills it itself and answers without a `note ended` line, which is the right
-  answer for that order and the wrong one for the case.
+  case needs the shell to have ended by `SIGABRT` before the child writes `x`.
 - `a_ready_timeout_after_the_session_died_by_its_own_signal_names_it` (`:153-171`): the ready
   timeout is 0.3 s (`:156`) and the session program is `( /usr/bin/sleep 1 ) &` and then `kill
   -s ABRT $$`. The case needs the shell to have ended before the ready timeout runs out.
 
+What the product does with the two orders (`crates/surfd/src/daemon.rs`): `supervise` reads
+the line and sends `Start::Other` (`:1647-1656`), or the opener's `recv_timeout` of the ready
+timeout runs out (`:1474`); either way the opener calls `abandon` (`:1329-1334`), whose
+`Process::kill` (`:425-432`) asks `try_wait` first. A shell that has ended, collected or not,
+keeps its status, and the answer carries `note ended: signal SIGABRT`. A shell that is still
+alive is killed by `surfd`, `killed` is set, and the answer has no note. Both answers are
+right for their order.
+
 Observed once: the test step of the gate, run on a branch that does not touch `crates/surfd`,
-under a load average of 50, ended `1998 tests run: 1997 passed, 1 failed`: the first case
-failed after 0.335 s at `adversary_2.rs:68` with `Answer { status: 3, reason: Some("the
-session ended or wrote another line before it reported ready"), text: "" }`. A gate run nine
-minutes earlier on the same code of `crates/surfd` was green. A red gate that the change did
-not cause holds a merge.
+with a load average of 49.9 at the job's start, ended `1998 tests run: 1997 passed, 1 failed`:
+the first case failed after 0.335 s at `adversary_2.rs:68` with `Answer { status: 3, reason:
+Some("the session ended or wrote another line before it reported ready"), text: "" }`, the
+answer for a shell that was still alive when `x` arrived. A gate run on the same code of
+`crates/surfd` shortly before and a second run on the same tip after it were green. A red
+gate that the change did not cause holds a merge.
 
 `AGENTS.md:1965-1967 @ a14e3b0` asks that a limit on a wait in a test is at least 10 times the
-event alone. Here the clock is no limit on a wait: it orders two events, and no factor makes
-that safe.
+event alone. In the first case the clock is no limit on a wait: it orders two events, and no
+factor makes that safe.
 
 ## Decisions
 
-1. The order is made by an event. In the first case the child writes its line after the
-   session process has ended, which it learns without a clock: for example it reads a FIFO
-   whose only writer is the session shell, so the read ends when that shell ends. The
-   implementor picks the construction and shows that it holds the child's standard output
-   open, as the case needs, and that it cannot block for ever (the case's own bound ends it).
-2. In the second case the ready timeout stays a clock, because the product's timeout is what
-   the case reaches. The case makes the session's end certain before the timeout can run out
-   by the same event: `surfd` is told to open the session only after the shell has ended, or
-   the ready timeout is raised so that it is at least 10 times the time the shell needs to
-   end, measured in the case's report. The implementor picks one and says why.
+1. First case: the order is made by an event. The child writes `x` only after the session
+   shell is waitable: it reads `/proc/<pid>/stat` of the shell (`$$` names the shell in the
+   subshell too) until the state after the last `)` is `Z` or the file is gone, and then
+   writes. The end of a pipe or FIFO that the shell holds is not that event: the kernel closes
+   a process's descriptors before the process is waitable, and in between `try_wait` is empty.
+   The loop is a wait for an event with a limit: it sleeps 10 ms a turn (`/usr/bin/sleep
+   0.01`; the session's environment is cleared, so commands are named by path) and gives up
+   after 400 turns, which is over 10 times the 0.3 s the shell failed to meet once. A child
+   that gives up writes nothing and exits; the case then fails by its assertions, at the
+   default ready timeout of 5 s (`daemon.rs:31`), and does not hang. The loop is sh, so it
+   adds no elapsed value to a Rust test.
+2. Second case: the order stays one of two clocks, because the event the case reaches is the
+   product's ready timeout, which starts inside `open` right after the spawn (`:1409`,
+   `:1474`) and which a test cannot hold back. The child must hold the session's standard
+   output past the ready timeout T (a child that lets go earlier takes the path of
+   `Start::Nothing`, `:1476`), and must let go inside `abandon`'s wait, so its hold S obeys
+   `T < S < T + max(kill_grace, KILL_GRACE)` (`:1331`; `KILL_GRACE` is 2 s, `:43`). The case
+   sets T = 2 s (`session_ready_timeout`), S = 3 s (`/usr/bin/sleep 3`) and `kill_grace` = 4
+   s: the shell has 2 s to end where it had 0.3 s, the timeout has 1 s before the child lets
+   go, and the wait has 3 s left after it. The case lasts about 3 s. Its doc comment says
+   that it orders clocks, with these three margins.
 3. No product file changes. If the implementor finds that `surfd` answers wrongly for an
-   order the product must hold (a session that died first and is reported as killed), that is
-   a finding for a story of its own, with a failing test, and this story stops there.
+   order the product must hold, that is a finding for a story of its own, with a failing
+   test, and this story stops there.
 
 ## Change
 
-- `crates/surfd/tests/adversary_2.rs`: the two session programs and, where needed, a helper in
-  the same file. The doc comments of both cases say how the order is made.
-- `AGENTS.md`: only if the entry of `crates/surfd` counts the cases or names the 0.3 s.
+- `crates/surfd/tests/adversary_2.rs`: the two session programs, the three settings of the
+  second case, and the doc comments of both cases, which say how the order is made. No case is
+  added or renamed, so no count of `AGENTS.md` moves.
 
 ## Acceptance
 
-1. Each of the two cases still fails when the product loses the note: with the `note ended`
-   line left out of the before-ready answer (a hand-made defect in `crates/surfd/src/`, made,
-   run, taken back, `git diff --quiet` after), both cases are red.
+1. Guard: each of the two cases still fails when the product loses the note. With the `note
+   ended` line left out of the before-ready answer (a hand-made defect in `with_ended`,
+   `daemon.rs:1561-1566`, made on the committed tip, run, taken back; `git diff --quiet`
+   after), both cases are red.
 2. The first case is green when the session shell is slow to end: with `/usr/bin/sleep 1`
-   written between the fork of the child and `kill -s ABRT $$` (a hand-made change of the
-   session program, taken back), the case is green; at `a14e3b0` the same change makes it red,
-   shown once.
-3. The second case is green under the same slow shell, or, if decision 2 took the raised
-   timeout, the report gives the measured time of the shell's end and the factor.
-4. `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one line at `a14e3b0`
-   (`:141`) and nothing after the change.
-5. One pool job, the gate's environment, `slot cargo nextest run -p surfd --locked`: all
-   green; each of the two cases is named with its time, none over 5 s.
-6. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
+   written before `kill -s ABRT $$` in its session program (taken back after), the case is
+   green; at `a14e3b0` the same line makes it red. Each shown once.
+3. The second case is green when the session shell is slow to end: with `/usr/bin/sleep 1`
+   written before `kill -s ABRT $$` in its session program (taken back after), the case is
+   green; at `a14e3b0` the same line makes it red. Each shown once.
+4. The first case is red when the child does not wait: with the loop of decision 1 replaced
+   by nothing (the child writes `x` at once) and `/usr/bin/sleep 1` before the `kill`, the
+   case is red. Shown once, taken back.
+5. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
+   line at `a14e3b0` (`:141`) and nothing after the change, and `git grep -c
+   'from_millis(300)' -- crates/surfd/tests/adversary_2.rs` prints 2 at `a14e3b0` and 1 after
+   (the case of the live session at `:118` keeps its timeout).
+6. One pool job after `slot cargo build --workspace --all-targets --locked`, with
+   `RUSTFLAGS="-D warnings"` and `SURF_BIN_DIR=<tree>/target/debug` as `task test` sets them:
+   `slot cargo nextest run -p surfd --locked` is all green; the two cases are named with their
+   times, the second about 3 s, none over 5 s.
+7. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
    its time with `slot --timeout` (at most 30 minutes), none started again unchanged. Every
    command that compiles or tests carries `slot`; none carries `--local`, `--here`,
    `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`. No Python. A script that measures or waits starts
@@ -86,13 +109,15 @@ that safe.
 
 ## Out of scope
 
-- The other clocks of `crates/surfd/tests/` (`story:time-bounds-in-tests` lists the bounds;
-  `story:tests-without-wall-time-bounds` brings the check that finds them).
+- The other clocks of the file: the `thread::sleep` of 500 ms with its two elapsed bounds
+  (`:210`, `:220`, `:232`) is for `story:time-bounds-in-tests`, and
+  `story:tests-without-wall-time-bounds` brings the check that finds such bounds. The sleeps
+  at `:102`, `:190` and `:319` order nothing.
 - Any change of `surfd`'s ready timeout, kill grace or answers.
 
 ## Placement
 
-`crates/surfd/tests/adversary_2.rs` is in the scope of no story that is not implemented, read
-with `git grep -l -F crates/surfd/tests/adversary_2.rs -- .engineering/planning/story`. The
-check of `story:tests-without-wall-time-bounds` reads this file; the change adds no elapsed
-bound, so no ledger line moves.
+`crates/surfd/tests/adversary_2.rs` is in the scope of no other story, read with `git grep -l
+-F crates/surfd/tests/adversary_2.rs -- .engineering/planning/story`. The check of
+`story:tests-without-wall-time-bounds` reads this file; the change adds no elapsed value, so
+no ledger line moves, and no edge is needed.
