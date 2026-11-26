@@ -44,7 +44,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 53
+revision: 54
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -1874,7 +1874,7 @@ The files shared, one by one:
   writes to call `position_of` and `position_of_ns` (the removing functions make no copy of
   the name, decision 3) and `put_attribute` to reserve exactly. The reading story adds the write
   counter and merges first. The mutation story's Change (the entry of `crates/html/src/tree.rs`,
-  file lines 1282-1319 at revision 7) makes `parent_or_host` `pub`, adds the validity check
+  file lines 1286-1323 at revision 8) makes `parent_or_host` `pub`, adds the validity check
   `check_insertion` (with the enum `Exclude` it takes), the bulk removal `remove_all`, the work
   counter `work()` and its doc comments, and changes no recursive function, so it makes no
   change of its own to the clone. This story has three reads and
@@ -1903,7 +1903,7 @@ The files shared, one by one:
   later merger keeps every line.
 - `crates/script/tests/main.rs`: this story adds `mod dom_attributes_cost;` after `mod
   dom_attributes;` (line 17 @ 83e6b8a); the mutation story adds `mod dom_mutation_cost;` (its
-  text `:1336` and `:2285` at revision 7), after `mod dom_mutation;` on line 18, one
+  text `:1340` and `:2295` at revision 8), after `mod dom_mutation;` on line 18, one
   line from this story's: adjacent
   hunks, resolved by keeping both; the selectors story adds none (`dom_selectors` is declared
   at `:21`).
