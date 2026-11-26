@@ -1095,8 +1095,9 @@ wrong sibling; a later story decides the tree's own sibling positions.
 
 The selector members (`story:scripts-dom-selectors`) take a name's code points from the list of
 CSS Syntax Level 3, 4.2 (the Editor's Draft of 20 October 2026), so a code point beyond ASCII
-outside it, such as U+00A0 in `div` U+00A0 `span`, makes the text not valid, a place where a
-browser may answer otherwise.
+outside it where a name goes, such as U+00A0 in `div` U+00A0 `span`, makes the text not valid,
+while a string, an escape or a pseudo-class argument that holds it leaves the text valid; the
+first is a place where a browser may answer otherwise.
 
 Of those exceptions, swell lists as open that "`string_units` and `string_units_in` copy without
 a memory charge" and that "The `call` and `new` instructions copy their argument list uncharged"

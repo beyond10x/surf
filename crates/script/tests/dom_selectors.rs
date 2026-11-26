@@ -1070,6 +1070,51 @@ check(err(function () {{ document.querySelector(".\\2028"); }}) === "no throw", 
     });
 }
 
+/// CSS Syntax 4.3.4, 4.3.6 and 4.3.15: `url(` with no quote after it is one url token, to its
+/// `)` or the end of the text, or a bad url whose remnants run to the first `)` not escaped;
+/// nothing inside opens a block, a string or a comment. A url is a token no production takes,
+/// so in a pseudo-class argument it is skipped like any other, and anywhere else it is not
+/// valid. Each text's comment gives the reason from the text.
+#[test]
+fn a_url_is_one_token() {
+    with_page(PAGE, |runner| {
+        checked(
+            runner,
+            r##"
+var PSEUDO = UNSUPPORTED + "pseudo-class";
+var texts = [
+  // 4.3.6: the end of the text ends the url token (a parse error, still a url); the end
+  // closes the function too.
+  ["a:is(url(x", PSEUDO], ["a:is(url([", PSEUDO],
+  // 4.3.6: whitespace then `)` ends the url; the next `)` ends the function and the `]`
+  // after it is a closer no production takes.
+  ["a:is(url( x )) ]", INVALID],
+  // 4.3.6: whitespace then another code point makes a bad url, read to the first `)`.
+  ["a:is(url(x y)) ]", INVALID],
+  // 4.3.6 and 4.3.7: an escape is part of the url, `\)` too; a backslash before a newline is
+  // no valid escape and makes a bad url, and its remnants keep an escaped `)` (4.3.15).
+  ["a:is(url(x\\)y)) ]", INVALID], ["a:is(url(x\\\ny)) ]", INVALID],
+  ["a:is(url(x\"\\)y)) ]", INVALID],
+  // 4.3.6: a `"`, a `'`, a `(` or a non-printable code point makes a bad url, read to the
+  // first `)`, so a quote opens no string and the `]` is outside the argument.
+  ["a:is(url(x\"y)) ]", INVALID], ["a:is(url(x'y)) ]", INVALID],
+  ["a:is(url(x(y)) ]", INVALID], ["a:is(url(x\u0001y)) ]", INVALID],
+  // 4.3.4: a quote after `url(`, whitespace or not, makes a function token.
+  ["a:is(url( \"x)\" )) b", PSEUDO], ["a:is(url(\"x)\")) b", PSEUDO],
+  // A url where a selector goes.
+  ["url(x)", INVALID], ["a url(x)", INVALID]
+];
+var wrong = [];
+for (var i = 0; i < texts.length; i++) {
+  var got = err(function () { document.querySelector(texts[i][0]); });
+  if (got !== texts[i][1]) { wrong.push(JSON.stringify(texts[i][0]) + ": " + got); }
+}
+check(wrong.length === 0, wrong.join("; "));
+"##,
+        );
+    });
+}
+
 /// The case of attribute values (decision 16): the names of the HTML Standard's list compare
 /// ASCII case-insensitively on an HTML element, every other name and every other element
 /// exactly.
@@ -1755,6 +1800,51 @@ check(G.many.length === 3997 && G.one.length === 3997, "the second pair");
                 )];
                 report("15e", &calls);
                 under(&calls[0], 410_600);
+            },
+        );
+    }
+
+    /// A url of 4,096 bytes is one token. `a:is(url(x x ... x))`, a text of 4,096 bytes whose
+    /// bad url holds 4,085 bytes with 2,042 spaces, costs what `a:is("x...x")`, a string in a
+    /// text of the same length, costs: the glue's copy, 512, and the parse's text, 257, both
+    /// before the lexer reads a byte, five tokens (`a`, `:`, `is(`, the url or the string,
+    /// `)`) and the script's own steps. Read as a function and its parts, the spaces and names
+    /// alone would be 4,084 tokens more. Each text is passed twice and the second calls are
+    /// compared: the first call of the runner costs 3 steps more (measured 804 for the url
+    /// and 801 for the string, then 801 and 801).
+    #[test]
+    fn a_url_is_charged_as_one_token() {
+        with_tree(
+            limits(),
+            || parsed("<b></b>"),
+            |runner| {
+                checked(
+                    runner,
+                    r##"G.url = "a:is(url(x" + rep(" x", 2042) + "))";
+G.str = "a:is(\"" + rep("x", 4088) + "\")";
+check(G.url.length === 4096 && G.str.length === 4096, "4,096 bytes each");"##,
+                );
+                let mut calls = Vec::new();
+                for round in ["first", "second"] {
+                    for (what, name) in [("a url", "url"), ("a string", "str")] {
+                        calls.push(call(
+                            runner,
+                            &format!("{what} of 4,096 bytes, {round}"),
+                            &format!(
+                                "try {{ document.querySelector(G.{name}); }} \
+                                 catch (e) {{ G.e = e.message; }}"
+                            ),
+                            512 + 257 + 5,
+                        ));
+                    }
+                }
+                report("a url", &calls);
+                assert_eq!(calls[2].steps, calls[3].steps);
+                assert!(calls[2].steps < 512 + 257 + 5 + 100, "{}", calls[2].steps);
+                checked(
+                    runner,
+                    "check(G.e === \"selector is not supported by surf: pseudo-class\", G.e);",
+                );
             },
         );
     }

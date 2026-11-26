@@ -26,9 +26,13 @@
 //! one newline and U+0000 is U+FFFD (3.3); an escape is up to six hex digits and one whitespace,
 //! or any other code point but a newline (4.3.7); an identifier starts with a digit only through
 //! an escape (4.3.8, 4.3.9); a name holds the ident code points of 4.2, whose list beyond ASCII
-//! leaves out such code points as U+00A0, U+00D7 and U+200B, each a delim outside a string; a string ends at its quote or at the end of the text, and a newline
-//! inside it makes it bad (4.3.5); a comment is dropped and an unterminated one runs to the end
-//! (4.3.2). The end of the text closes an open `[` or `(` (5.5.9, 2.2), so `[a=b` is `[a=b]`.
+//! leaves out such code points as U+00A0, U+00D7 and U+200B: where a name goes, each is a delim
+//! and the text is not valid, while an escape, a string or a pseudo-class argument may hold it;
+//! a string ends at its quote or at the end of the text, and a newline inside it makes it bad
+//! (4.3.5); `url(` with no quote after it, whitespace or not, is one url token to its `)` or
+//! the end, or a bad url with its remnants (4.3.4, 4.3.6, 4.3.15); a comment is dropped and an
+//! unterminated one runs to the end (4.3.2). The end of the text closes an open `[` or `(`
+//! (5.5.9, 2.2), so `[a=b` is `[a=b]`.
 //!
 //! Outside the subset, and valid, a text is refused with a `SyntaxError` that says surf does not
 //! support it, naming the first such construct: a pseudo-class or a pseudo-element, recognised
@@ -258,6 +262,9 @@ enum Token {
     /// pseudo-class they open and close a block.
     OpenBrace,
     CloseBrace,
+    /// A url token or a bad url token (CSS Syntax 4.3.6, 4.3.15), with its remnants: one
+    /// token, which no production of a selector takes.
+    Url,
     /// A token no production of a selector takes: a number, a dimension, a percentage, an
     /// at-keyword, `;`, `<!--` or `-->`.
     Other,
@@ -305,6 +312,11 @@ fn is_non_ascii_ident(c: char) -> bool {
 
 fn is_name(c: Option<char>) -> bool {
     is_name_start(c) || is_digit(c) || c == Some('-')
+}
+
+/// CSS Syntax 4.2, a non-printable code point (U+0000 is U+FFFD by then, 3.3).
+fn is_non_printable(c: char) -> bool {
+    matches!(c, '\u{0}'..='\u{8}' | '\u{B}' | '\u{E}'..='\u{1F}' | '\u{7F}')
 }
 
 /// CSS Syntax 4.3.8: whether two code points are a valid escape.
@@ -498,14 +510,86 @@ impl<'t> Lexer<'t> {
         }
     }
 
-    /// CSS Syntax 4.3.4: an identifier, or a function token when a `(` follows.
+    /// CSS Syntax 4.3.4: an identifier, or a function token when a `(` follows; but a name
+    /// that is `url` in any ASCII case, its escapes decoded, and a `(` make a function token
+    /// only when a quote follows, after whitespace or not, and else one url token
+    /// ([`Lexer::url`]).
     fn ident_like(&mut self) -> Token {
         let name = self.ident_sequence();
-        if self.peek(0) == Some('(') {
+        if self.peek(0) != Some('(') {
+            return Token::Ident(name);
+        }
+        self.bump();
+        if !name.eq_ignore_ascii_case("url") {
+            return Token::Function;
+        }
+        while is_newline_or_space(self.peek(0)) && is_newline_or_space(self.peek(1)) {
             self.bump();
-            Token::Function
-        } else {
-            Token::Ident(name)
+        }
+        let quote = |c: Option<char>| matches!(c, Some('"' | '\''));
+        if quote(self.peek(0)) || (is_newline_or_space(self.peek(0)) && quote(self.peek(1))) {
+            return Token::Function;
+        }
+        self.url()
+    }
+
+    /// CSS Syntax 4.3.6, after `url(`: whitespace, then code points up to the first `)` or
+    /// the end of the text, a url token; whitespace not followed by `)` or the end, a `"`,
+    /// `'` or `(`, a non-printable code point or a backslash that starts no valid escape make
+    /// a bad url, whose remnants are read to the first `)` not escaped or the end (4.3.15).
+    /// Either is one [`Token::Url`]; its value is not kept, as no production takes it.
+    fn url(&mut self) -> Token {
+        while is_newline_or_space(self.peek(0)) {
+            self.bump();
+        }
+        loop {
+            match self.bump() {
+                None | Some(')') => return Token::Url,
+                Some(c) if is_newline_or_space(Some(c)) => {
+                    while is_newline_or_space(self.peek(0)) {
+                        self.bump();
+                    }
+                    match self.peek(0) {
+                        None => return Token::Url,
+                        Some(')') => {
+                            self.bump();
+                            return Token::Url;
+                        }
+                        Some(_) => return self.bad_url(),
+                    }
+                }
+                Some('"' | '\'' | '(') => return self.bad_url(),
+                Some(c) if is_non_printable(c) => return self.bad_url(),
+                Some('\\') => {
+                    if valid_escape(Some('\\'), self.peek(0)) {
+                        self.escape();
+                    } else {
+                        return self.bad_url();
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+    }
+
+    /// CSS Syntax 4.3.15: the remnants of a bad url, to the first `)` not escaped, which is
+    /// consumed, or the end of the text.
+    fn bad_url(&mut self) -> Token {
+        loop {
+            match self.peek(0) {
+                None => return Token::Url,
+                Some(')') => {
+                    self.bump();
+                    return Token::Url;
+                }
+                Some('\\') if valid_escape(Some('\\'), self.peek(1)) => {
+                    self.bump();
+                    self.escape();
+                }
+                Some(_) => {
+                    self.bump();
+                }
+            }
         }
     }
 
