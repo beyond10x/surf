@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! ea16c13b8b8dbf894dcd766b6e066694c93d507a7d72fd26a6db71186dce7218  crates/webidl/src/prelude.rs
+//! 6a24493aa4b7653ab265e5a77051a688da3709842e1f3aa86d053c439d04751e  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 42ecfbf83a2a48d98717b5a1264228d242324b4403014c2724a8754aa5cac42f
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: f1b60e45f89d4b0510107eb818615e9e91a15c80eac7317bbaf03156a9155e29
 
 use std::cell::Cell;
 
@@ -394,7 +394,20 @@ impl<'e> DomCx<'_, 'e> {
             Some(held) => match engine.resize_host_bytes(held, bytes) {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(Abrupt::Throw(_) | Abrupt::Terminated(_))) => Err(spent()),
-                Err(_) => Err(DomEnd::Fault),
+                // A faulted agent, or a handle of another one: surf's own defect.
+                Err(HostError::Faulted | HostError::ForeignHandle) => Err(DomEnd::Fault),
+                // Ends faulted: the state frees no handle while it runs. A limit or an
+                // interrupt is never this outer error: the budget answers the inner completion.
+                Err(HostError::StaleHandle) => Err(DomEnd::Fault),
+                // End faulted: a resize takes no value, no module and no evaluation, so these
+                // answer only a defect; a limit is the inner MemoryBudget, an interrupt the
+                // termination the next step reads, never this outer error.
+                Err(
+                    HostError::WrongKind { .. }
+                    | HostError::ModuleStatus { .. }
+                    | HostError::ModuleTerminated
+                    | HostError::EvaluationInProgress,
+                ) => Err(DomEnd::Fault),
             },
         }
     }

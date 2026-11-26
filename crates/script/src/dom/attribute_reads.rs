@@ -43,8 +43,9 @@ pub(super) struct Found {
     pub(super) stored_bytes: usize,
 }
 
-/// What [`find`] answers: the attribute found, and the two numbers of its scan that a write
-/// reuses for the charge of the tree's own scan, since the list has not changed since.
+/// What [`find`] answers: the attribute found, the two numbers of its scan that a write reuses
+/// for the charge of the tree's own scan, since the list has not changed since, and what the
+/// tree says one add or one removal does to the list's allocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Scan {
     /// The attribute, `None` for none.
@@ -53,6 +54,12 @@ pub(super) struct Scan {
     pub(super) count: usize,
     /// The attributes whose name has the wanted name's length (`k`).
     pub(super) same_length: usize,
+    /// The bytes the list's allocation grows by, beyond the new record, when an attribute is added
+    /// (`Tree::attribute_room_grown`).
+    pub(super) room_grown: usize,
+    /// The bytes of room the list's allocation gives back, beyond the removed record, when an
+    /// attribute is removed (`Tree::attribute_room_freed`).
+    pub(super) room_freed: usize,
 }
 
 impl Scan {
@@ -112,7 +119,8 @@ pub(super) fn namespace_of(namespace: Option<&str>) -> Option<Option<Namespace>>
 /// Finds the attribute `wanted` names on `element`. The order: one step per 4 attributes of the
 /// element, from the count; one pass over the list that counts the attributes whose name has
 /// the wanted name's length (`k`, lengths only); one step per 16 bytes of `k` compares of the
-/// whole name; then the tree's position read, the second pass. A node that is no element has no
+/// whole name; then the tree's position read, the second pass, and its two reads of the room an
+/// add or a removal takes or gives back, a constant number of steps. A node that is no element has no
 /// attribute.
 pub(super) fn find(cx: &mut DomCx<'_, '_>, element: NodeId, wanted: Wanted<'_>) -> DomResult<Scan> {
     let count = reads::attribute_count(cx.tree(), element);
@@ -141,10 +149,13 @@ pub(super) fn find(cx: &mut DomCx<'_, '_>, element: NodeId, wanted: Wanted<'_>) 
                 stored_bytes: attribute.stored_bytes(),
             })
     });
+    let tree = cx.tree();
     Ok(Scan {
         found,
         count,
         same_length,
+        room_grown: tree.attribute_room_grown(element),
+        room_freed: tree.attribute_room_freed(element),
     })
 }
 

@@ -11,7 +11,7 @@
 use std::time::{Duration, Instant};
 
 use surf_html::limits::Limits as ParserLimits;
-use surf_html::{ParseOptions, Tree, parse_document};
+use surf_html::{NodeData, ParseOptions, Tree, parse_document};
 use surf_script::dom::{self, DocumentInfo};
 use surf_script::{Document, Mode, Runner, RunnerLimits, ScriptEnd, run_document};
 use swell::Limits;
@@ -152,6 +152,34 @@ fn report(name: &str, calls: &[Call]) {
 }
 
 /// `n` attributes `n0` .. `n<n-1>` with empty values, as markup.
+/// The number of attributes of the first element named `name` in the runner's tree, and the
+/// byte length of the local name of its last attribute.
+fn last_attribute(runner: &mut Runner, name: &str) -> (usize, usize) {
+    let tree = runner
+        .agent_and_realm()
+        .0
+        .host()
+        .document()
+        .expect("the bindings")
+        .tree();
+    let attributes = tree
+        .descendants(tree.root())
+        .into_iter()
+        .find_map(|node| match tree.data(node) {
+            NodeData::Element {
+                local_name,
+                attributes,
+                ..
+            } if local_name == name => Some(attributes),
+            _ => None,
+        })
+        .expect("the element");
+    let last = attributes
+        .last()
+        .map_or(0, |attribute| attribute.local_name.len());
+    (attributes.len(), last)
+}
+
 fn numbered(n: usize) -> String {
     (0..n).map(|i| format!(" n{i}=\"\"")).collect()
 }
@@ -282,10 +310,25 @@ fn values_at_and_over_string_length() {
 /// last attribute.
 #[test]
 fn writes_and_removals_over_16_384_attributes() {
-    let page = format!("<!DOCTYPE html><b{}></b>", numbered(16_384));
+    let attributes = numbered(16_384);
+    let page = format!("<!DOCTYPE html><b{attributes}></b>");
+    // The arguments come from the parser's markup, read by the setup with `getAttribute`,
+    // which copies a parsed value at once where `'x'.repeat(..)` builds it by steps of the
+    // engine: the measured call and its floor are the same.
+    let value_page = format!(
+        "<!DOCTYPE html><b{attributes}></b><i v=\"{}\"></i>",
+        "x".repeat(4_194_304)
+    );
+    let name_page = format!(
+        "<!DOCTYPE html><b{attributes}></b><i n=\"{}\" q=\"x:{}\"></i>",
+        "y".repeat(1_048_576),
+        "y".repeat(1_048_574)
+    );
     let b = "var e = document.getElementsByTagName('b')[0];";
-    let value = format!("{b} var v = 'x'.repeat(4194304);");
-    let name = format!("{b} var n = 'y'.repeat(1048576); var q = 'x:' + 'y'.repeat(1048574);");
+    let i = "var i = document.getElementsByTagName('i')[0];";
+    let value = format!("{b} {i} var v = i.getAttribute('v');");
+    let local = format!("{b} {i} var n = i.getAttribute('n');");
+    let qualified = format!("{b} {i} var q = i.getAttribute('q');");
     // Two charged scans of 16,384 attributes, three passes: 2 x 16,384 / 4.
     let scans = 2 * 16_384 / 4;
     // The glue's copy of the value, 4,194,304 x 2 / 16, and the tree's, (1 + 4,194,304) / 16.
@@ -300,9 +343,10 @@ fn writes_and_removals_over_16_384_attributes() {
     // `k` is 6,384 (`n10000` to `n16383` have 6 bytes): each scan 16,384 / 4 + 6,384 x 6 / 16.
     let removal_floor = 2 * (16_384 / 4 + 6_384 * 6 / 16);
     assert_eq!(removal_floor, 12_980);
-    // Each write adds the 16,385th attribute, read by a script after the measured one.
-    let added = |what: &str, setup: &str, source: &str, floor: u64| {
-        let page = page.clone();
+    // Each write adds the 16,385th attribute, read from the tree after the measured call: the
+    // count of `b`'s attributes, and the local name of the last one by its length.
+    let added = |what: &str, page: &str, setup: &str, source: &str, local: usize, floor: u64| {
+        let page = page.to_string();
         let (setup, source) = (setup.to_string(), source.to_string());
         with_tree(
             move || parsed(&page),
@@ -310,10 +354,9 @@ fn writes_and_removals_over_16_384_attributes() {
                 let end = runner.evaluate(&setup);
                 assert_eq!(end, ScriptEnd::Ran, "{what}: the setup: {end}");
                 let measured = call(runner, what, &source, floor);
-                let end = runner.evaluate(
-                    "if (e.getAttributeNames().length !== 16385) throw new Error('not added');",
-                );
-                assert_eq!(end, ScriptEnd::Ran, "{what}: the 16,385th attribute: {end}");
+                let (count, last) = last_attribute(runner, "b");
+                assert_eq!(count, 16_385, "{what}: the 16,385th attribute");
+                assert_eq!(last, local, "{what}: the local name of the added attribute");
                 measured
             },
         )
@@ -321,27 +364,42 @@ fn writes_and_removals_over_16_384_attributes() {
     let calls = vec![
         added(
             "setAttribute('a', 4 Mi bytes)",
+            &value_page,
             &value,
             "e.setAttribute('a', v);",
+            1,
             value_floor,
         ),
-        added("id = 4 Mi bytes", &value, "e.id = v;", value_floor),
+        added(
+            "id = 4 Mi bytes",
+            &value_page,
+            &value,
+            "e.id = v;",
+            2,
+            value_floor,
+        ),
         added(
             "setAttributeNS(SVG, a name of 1 MiB, '')",
-            &name,
+            &name_page,
+            &qualified,
             "e.setAttributeNS('http://www.w3.org/2000/svg', q, '');",
+            1_048_574,
             ns_floor,
         ),
         added(
             "toggleAttribute(a name of 1 MiB), adding",
-            &name,
+            &name_page,
+            &local,
             "e.toggleAttribute(n);",
+            1_048_576,
             name_floor,
         ),
         added(
             "setAttribute(a name of 1 MiB, '')",
-            &name,
+            &name_page,
+            &local,
             "e.setAttribute(n, '');",
+            1_048_576,
             name_floor,
         ),
         call_on(
@@ -446,41 +504,17 @@ fn braced(text: &str, from: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// The members of `attributes` touch the tree and the charges only through the files that own
-/// them: `attributes.rs` holds the members and no tree call and no charge; `attribute_reads.rs`
-/// reads and charges and writes nothing; `attribute_writes.rs` reads no tree, and holds the
-/// charge for memory, the tree call and the settle only in `charged_write`, where nothing
+/// The members of `attributes` touch the tree and the charges only through `charged_write`:
+/// it charges for memory once and settles twice, each settle the statement
+/// `cx.settle_stored(..)?;`, one in each arm of the `match` of the tree's answer, and nothing
 /// leaves the function between the tree call and the settle of each arm.
 #[test]
 fn the_members_touch_the_tree_only_through_the_files() {
-    let members = code_lines(include_str!("../src/dom/attributes.rs"));
-    for token in [
-        "tree()",
-        "tree_mut()",
-        "charge(",
-        "charge_steps",
-        "charge_stored",
-        "settle_stored",
-    ] {
-        assert!(!members.contains(token), "attributes.rs holds `{token}`");
-    }
-    let reads = code_lines(include_str!("../src/dom/attribute_reads.rs"));
-    for token in ["tree_mut()", "charge_stored", "settle_stored"] {
-        assert!(!reads.contains(token), "attribute_reads.rs holds `{token}`");
-    }
+    // Which file names the tree and the charges, in any spelling, is held by
+    // `adversary_dom_attributes::the_members_file_names_no_tree_and_no_charge_in_any_spelling`;
+    // this test holds the order inside `charged_write`.
     let writes = code_lines(include_str!("../src/dom/attribute_writes.rs"));
-    assert!(
-        !writes.contains("tree()"),
-        "attribute_writes.rs holds `tree()`"
-    );
-    let (start, body) = function_text(&writes, "fn charged_write");
-    let outside = format!("{}{}", &writes[..start], &writes[start + body.len()..]);
-    for token in ["charge_stored(", "tree_mut()", "settle_stored("] {
-        assert!(
-            !outside.contains(token),
-            "attribute_writes.rs holds `{token}` outside charged_write"
-        );
-    }
+    let (_, body) = function_text(&writes, "fn charged_write");
     assert_eq!(body.matches("charge_stored(").count(), 1, "{body}");
     assert_eq!(body.matches("settle_stored(").count(), 2, "{body}");
     assert_eq!(body.matches("settle_stored(0, 0)").count(), 1, "{body}");

@@ -173,6 +173,44 @@ fn attributes(tree: &Tree, node: NodeId) -> &[Attribute] {
     }
 }
 
+/// The room of the attribute list of `node`, in records.
+fn room_of(tree: &Tree, node: NodeId) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes.capacity(),
+        _ => panic!("an element"),
+    }
+}
+
+/// The change of the stored live bytes a write makes beside the attribute's own bytes, from
+/// the list's room before and after it: a list that grew takes the records beyond the new
+/// one, a list that shrank gives back those beyond the removed one.
+fn room_change(before: usize, after: usize) -> i64 {
+    let records = if after > before {
+        (after - before - 1) as i64
+    } else if after < before {
+        -((before - after - 1) as i64)
+    } else {
+        0
+    };
+    records * ATTRIBUTE_BYTES as i64
+}
+
+/// The bytes of room beyond the new records that `adds` adds take on a list of `len` records
+/// with room for `capacity`, by the tree's rule: one record at a time below four, then as many
+/// again as the list holds.
+fn room_beyond(len: usize, capacity: usize, adds: usize) -> u64 {
+    let (mut len, mut capacity, mut beyond) = (len, capacity, 0);
+    for _ in 0..adds {
+        if len == capacity {
+            let grown = if len < 4 { len + 1 } else { 2 * len };
+            beyond += grown - capacity - 1;
+            capacity = grown;
+        }
+        len += 1;
+    }
+    (beyond * ATTRIBUTE_BYTES) as u64
+}
+
 /// The value of the attribute `name` in no namespace of `node`.
 fn value<'t>(tree: &'t Tree, node: NodeId, name: &str) -> Option<&'t str> {
     attributes(tree, node)
@@ -1693,10 +1731,15 @@ fn the_stored_charge_follows_each_write() {
         for (write, adds) in writes {
             let before = figures(runner);
             let count = attributes(tree(runner), html).len();
+            let before_room = room_of(tree(runner), html);
             ran(runner, write);
             let after = figures(runner);
             let rise = after.stored as i64 - before.stored as i64;
-            assert_eq!(after.live as i64 - before.live as i64, rise, "{write}");
+            let room = room_change(before_room, room_of(tree(runner), html));
+            // The live bytes stop at 0: a list that kept its room after a removal gave back the
+            // record, so a later shrink may give back more than is live.
+            let next = (before.live as i64 + rise + room).max(0);
+            assert_eq!(after.live as i64, next, "{write}");
             assert_eq!(after.charged, 2 * after.live, "{write}");
             assert_eq!(after.handles, 1, "{write}");
             assert_eq!(after.node_charges, 0, "{write}");
@@ -1759,7 +1802,10 @@ fn memory_first(name: &str, row: MemoryRow) {
         assert_eq!(end, ScriptEnd::Limit(Reason::Memory), "{name}");
         let after = figures(runner);
         assert_eq!(after.handles, 1, "{name}");
-        assert_eq!(after.stored - before.stored, after.live as usize, "{name}");
+        assert!(
+            after.live as usize >= after.stored - before.stored,
+            "{name}"
+        );
         assert_eq!(after.charged, 2 * after.live, "{name}");
         let tree = tree(runner);
         let n = match b {
@@ -1786,7 +1832,7 @@ fn memory_first(name: &str, row: MemoryRow) {
                 let live: u64 = (0..n)
                     .map(|i| (ATTRIBUTE_BYTES + format!("a{i}").len() + 40_000) as u64)
                     .sum();
-                assert_eq!(after.live, live, "{name}");
+                assert_eq!(after.live, live + room_beyond(0, 0, n), "{name}");
                 assert!(value(tree, html, &format!("a{n}")).is_none(), "{name}");
                 assert!(
                     value(tree, html, &format!("a{}", n - 1)).is_some(),
@@ -1952,7 +1998,11 @@ fn attributes_first() {
             let html = element(tree(runner), "html");
             assert_eq!(attributes(tree(runner), html).len(), 1_024);
             // 1,024 x (80 + 1,000) + 4,010, the bytes of the names a0 to a1023.
-            let live = 1_024 * (ATTRIBUTE_BYTES as u64 + 1_000) + numbered_bytes("a", 1_024);
+            // and the room beyond the new records of the eight doublings from 4 to 1,024.
+            let live = 1_024 * (ATTRIBUTE_BYTES as u64 + 1_000)
+                + numbered_bytes("a", 1_024)
+                + room_beyond(0, 0, 1_024);
+            assert_eq!(room_beyond(0, 0, 1_024), 1_012 * ATTRIBUTE_BYTES as u64);
             assert_eq!(numbered_bytes("a", 1_024), 4_010);
             assert_eq!(after.live, live);
             assert_eq!(after.charged, 2 * live);

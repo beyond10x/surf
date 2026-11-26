@@ -329,7 +329,20 @@ impl<'e> DomCx<'_, 'e> {
             Some(held) => match engine.resize_host_bytes(held, bytes) {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(Abrupt::Throw(_) | Abrupt::Terminated(_))) => Err(spent()),
-                Err(_) => Err(DomEnd::Fault),
+                // A faulted agent, or a handle of another one: surf's own defect.
+                Err(HostError::Faulted | HostError::ForeignHandle) => Err(DomEnd::Fault),
+                // Ends faulted: the state frees no handle while it runs. A limit or an
+                // interrupt is never this outer error: the budget answers the inner completion.
+                Err(HostError::StaleHandle) => Err(DomEnd::Fault),
+                // End faulted: a resize takes no value, no module and no evaluation, so these
+                // answer only a defect; a limit is the inner MemoryBudget, an interrupt the
+                // termination the next step reads, never this outer error.
+                Err(
+                    HostError::WrongKind { .. }
+                    | HostError::ModuleStatus { .. }
+                    | HostError::ModuleTerminated
+                    | HostError::EvaluationInProgress,
+                ) => Err(DomEnd::Fault),
             },
         }
     }

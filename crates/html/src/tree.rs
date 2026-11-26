@@ -789,6 +789,60 @@ impl Tree {
         names
     }
 
+    /// The bytes by which the allocation of the attribute list of `element` grows, beyond the
+    /// new record's own (which [`Attribute::stored_bytes`] counts), when one attribute is
+    /// added: 0 while the list has room, and 0 while it holds fewer than four records, where
+    /// the adding writes reserve one record at a time; else the records of the room they then
+    /// reserve, as many again as the list holds, less the new record, times
+    /// [`ATTRIBUTE_BYTES`]. A list the parser built has no room, so the first add to a list of
+    /// `c` records takes room for `2 * c`, `c - 1` records beyond the new one. 0 for a node
+    /// that is no element.
+    ///
+    /// Cost: a constant number of steps; no pass over the list.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_room_grown(&self, element: NodeId) -> usize {
+        let Ok((_, attributes)) = self.element_attributes(element) else {
+            return 0;
+        };
+        grown_capacity(attributes.len(), attributes.capacity())
+            .saturating_sub(attributes.capacity())
+            .saturating_sub(1)
+            .saturating_mul(ATTRIBUTE_BYTES)
+    }
+
+    /// The bytes of room the allocation of the attribute list of `element` gives back when one
+    /// attribute is removed: 0 when the list keeps its allocation, else the records of room it
+    /// held past its entries and the removed record, times [`ATTRIBUTE_BYTES`] (a list left
+    /// with room for more than twice its entries, and more than four, is shrunk to its
+    /// entries). The removed record's own bytes, which [`Attribute::stored_bytes`] counts, are
+    /// not in it. 0 for a node that is no element or has no attribute.
+    ///
+    /// Cost: a constant number of steps; no pass over the list.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_room_freed(&self, element: NodeId) -> usize {
+        let Ok((_, attributes)) = self.element_attributes(element) else {
+            return 0;
+        };
+        let Some(left) = attributes.len().checked_sub(1) else {
+            return 0;
+        };
+        if must_shrink(left, attributes.capacity()) {
+            attributes
+                .capacity()
+                .saturating_sub(left)
+                .saturating_sub(1)
+                .saturating_mul(ATTRIBUTE_BYTES)
+        } else {
+            0
+        }
+    }
+
     /// Whether the DOM's "validate and extract" throws `NamespaceError` for the namespace URL
     /// `namespace` (`None` for null), the prefix `prefix` and the local name `local_name` of a
     /// qualified name its caller split at its first colon: a prefix with a null namespace;
@@ -887,8 +941,28 @@ fn lower_byte(byte: u8) -> u8 {
 /// Gives a list back the room it holds past twice its entries, so that a list a write shrank
 /// keeps the heap bound of [`Limits::max_stored_bytes`].
 fn shrink<T>(list: &mut Vec<T>) {
-    if list.capacity() > (2 * list.len()).max(4) {
+    if must_shrink(list.len(), list.capacity()) {
         list.shrink_to_fit();
+    }
+}
+
+/// Whether a list of `len` entries with room for `capacity` is shrunk to its entries: room for
+/// more than twice its entries, and for more than four.
+fn must_shrink(len: usize, capacity: usize) -> bool {
+    capacity > len.saturating_mul(2).max(4)
+}
+
+/// The room of an attribute list of `len` records with room for `capacity` once one more is
+/// added: the same while it has room; else one more while it holds fewer than four, so that
+/// a short list holds no record the stored bytes do not count, and twice its records beyond,
+/// so that a run of adds moves each record a bounded number of times.
+fn grown_capacity(len: usize, capacity: usize) -> usize {
+    if len < capacity {
+        capacity
+    } else if len < 4 {
+        len + 1
+    } else {
+        len.saturating_mul(2)
     }
 }
 
@@ -1699,11 +1773,11 @@ impl Tree {
                 self.admit(0, bytes)?;
                 self.stored_bytes += bytes;
                 let attributes = self.attributes_mut(element);
-                // Exact room while the list is short: a push into an empty list would reserve
-                // four records, which the stored bytes do not count.
-                if attributes.len() < 4 {
-                    attributes.reserve_exact(1);
-                }
+                // The room of `grown_capacity`, which `attribute_room_grown` reports before the
+                // write: one record at a time while the list is short (a push into an empty list
+                // would reserve four records), then as many again as it holds.
+                let wanted = grown_capacity(attributes.len(), attributes.capacity());
+                attributes.reserve_exact(wanted.saturating_sub(attributes.len()));
                 attributes.push(attribute);
             }
         }

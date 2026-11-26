@@ -77,28 +77,34 @@ fn split<'n>(
 ) -> DomResult<(Option<&'n str>, &'n str)> {
     reads::charge(cx, byte_steps(qualified_name.len()))?;
     let mut colon = None;
-    let mut prefix_valid = true;
-    let mut local_valid = true;
+    // Before the first colon a byte is the prefix's when a colon follows, and the local
+    // name's when none does: it is held to both sets, and the split picks the answer.
+    let mut head_prefix = true;
+    let mut head_local = true;
+    let mut tail_local = true;
     for (at, byte) in qualified_name.bytes().enumerate() {
         match colon {
             None if byte == b':' => colon = Some(at),
             None => {
-                prefix_valid &= prefix_byte(byte);
-                local_valid &= local_byte(byte);
+                head_prefix &= prefix_byte(byte);
+                head_local &= local_byte(byte);
             }
-            Some(_) => local_valid &= local_byte(byte),
+            Some(_) => tail_local &= local_byte(byte),
         }
     }
-    let (prefix, local_name) = match colon {
-        Some(at) => (Some(&qualified_name[..at]), &qualified_name[at + 1..]),
-        None => (None, qualified_name),
+    let (prefix, local_name, local_valid) = match colon {
+        Some(at) => (
+            Some(&qualified_name[..at]),
+            &qualified_name[at + 1..],
+            tail_local,
+        ),
+        None => (None, qualified_name, head_local),
     };
     if let Some(prefix) = prefix
-        && (prefix.is_empty() || !prefix_valid)
+        && (prefix.is_empty() || !head_prefix)
     {
         return Err(invalid_character(SET_NS_NAME));
     }
-    // With no colon every byte is the local name's, and `local_valid` read each of them.
     if local_name.is_empty() || !local_valid {
         return Err(invalid_character(SET_NS_NAME));
     }
@@ -125,15 +131,27 @@ fn ended(error: WriteError) -> DomEnd {
 /// The bytes a write adds and removes by the tree's count, from what [`attribute_reads::find`]
 /// found: a value replaced adds the new value's bytes and removes the old one's (the tree keeps
 /// the name and the prefix); an attribute added adds its record, its name's bytes (`name`, the
-/// prefix and the local name it stores) and its value's.
+/// prefix and the local name it stores), its value's, and the room the list's allocation then
+/// grows by as the tree says it ([`Scan::room_grown`]), so that a list the parser built at its
+/// exact length is charged for the records its first add makes room for.
 fn put_bytes(scan: &Scan, name: usize, value: usize) -> (usize, usize) {
     match scan.found {
         Some(found) => (value, found.value_bytes),
         None => (
-            ATTRIBUTE_BYTES.saturating_add(name).saturating_add(value),
+            ATTRIBUTE_BYTES
+                .saturating_add(name)
+                .saturating_add(value)
+                .saturating_add(scan.room_grown),
             0,
         ),
     }
+}
+
+/// The bytes a removal gives back by the tree's count: the attribute's own (`stored_bytes`),
+/// and the room the list's allocation gives back beyond its record as the tree says it
+/// ([`Scan::room_freed`]); a list that keeps its allocation gives back no room.
+fn removed_bytes(scan: &Scan, stored_bytes: usize) -> usize {
+    stored_bytes.saturating_add(scan.room_freed)
 }
 
 /// The steps of a write that puts a value, after its scan: one call for the tree's own scan,
@@ -225,7 +243,7 @@ pub(super) fn remove(cx: &mut DomCx<'_, '_>, element: NodeId, name: &str) -> Dom
         return Ok(());
     };
     reads::charge(cx, scan.steps(name.len()))?;
-    charged_write(cx, 0, found.stored_bytes, |tree| {
+    charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
         tree.remove_attribute(element, name)
     })
 }
@@ -246,7 +264,7 @@ pub(super) fn remove_ns(
         return Ok(());
     };
     reads::charge(cx, scan.steps(local_name.len()))?;
-    charged_write(cx, 0, found.stored_bytes, |tree| {
+    charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
         tree.remove_attribute_ns(element, namespace, local_name)
     })
 }
@@ -267,7 +285,7 @@ pub(super) fn toggle(
         (None, Some(false)) => Ok(false),
         (Some(found), Some(false) | None) => {
             reads::charge(cx, scan.steps(name.len()))?;
-            charged_write(cx, 0, found.stored_bytes, |tree| {
+            charged_write(cx, 0, removed_bytes(&scan, found.stored_bytes), |tree| {
                 tree.toggle_attribute(element, name, force)
             })
         }
