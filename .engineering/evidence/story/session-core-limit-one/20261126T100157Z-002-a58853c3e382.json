@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:57Z",
+  "actor": "human:operator",
+  "artifact": "story:session-core-limit-one",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one pass of the adversary review on the first commit of the unit by a reviewer who did not write it, 2026-11-26",
+    "reference": "verdict needs-change: 1 must, 2 should, 7 notes, 4 cases written; fixed by one round; the crate ran 98 of 98 and both core-item mutants were red by the unit case alone"
+  }
+}

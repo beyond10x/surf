@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:session-core-limit-one
 kind: story
-status: active
+status: implemented
 title: Start a session with a core limit of 1 in place of 0 (0 where surfd's own hard limit is 0), so that its end by a signal is seen without a wait for the host's core handler
 summary: 'surfd starts a session with --core=0:0, which on a host whose core pattern is a pipe does not stop the dump: a session that ends by SIGABRT, SIGXCPU or SIGSEGV is waitable only after the host''s core handler took it (113 to 220 ms; seven surfd tests red in a gate run). surfd now reads its own hard core limit and starts a session with --core=1:1, or --core=0:0 where that limit is 0 (prlimit cannot raise it). Tests, docs and changelog move with it; one case of first_line.rs is taken.'
 relations:
@@ -40,10 +40,11 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 22
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T06:31:44Z", actor: "human:operator", revision: 21}
 - {from: "proposed", to: "active", at: "2026-11-26T06:31:44Z", actor: "human:operator", revision: 22, executor: "agent:implementor"}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:57Z", actor: "human:operator", revision: 24, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -593,3 +594,180 @@ line of each, on the plan tree at the tip of the branch that holds this story; t
   The text of `story:tests-without-wall-time-bounds` names `hardening.rs:532` for its ledger;
   this story adds no elapsed value, edits lines of that file in place and puts its new cases
   after the last line, so no line of the ledger moves and no edge is needed.
+
+## As built
+
+The unit is on `main` at `f053154` (the merge of `impl/session-core-limit-one` at `ac1901f`;
+its own change ends at `cbf055e`, and `ac1901f` merges the tip of another unit, which goes to
+`main` before it, and changes no file of `crates/surfd`). `git diff 53ab365...cbf055e`: 13 files,
+578 lines added and 38 removed: one product file, `crates/surfd/src/daemon.rs`, the tests of
+`surfd`, `AGENTS.md`, `README.md`, `CHANGELOG.md`, `website/docs/what-works.md` and
+`docs/design/scripts.md`.
+
+- What was built.
+  - `crates/surfd/src/daemon.rs`: the constants `CORE_BOUND_ONE` (`--core=1:1`) and
+    `CORE_BOUND_ZERO` (`--core=0:0`); `hard_core_limit(&str) -> Option<u64>`, the second value of
+    the line `Max core file size` of a text such as `/proc/self/limits` (`unlimited` is
+    `u64::MAX`; `None` for no such line, one value, a word, or a number above `u64::MAX`);
+    `core_bound(&str) -> &'static str`. `SESSION_BOUNDS` is gone and `SCRIPT_SESSION_BOUNDS` has
+    three items. `Config::new` reads `/proc/self/limits` once (an unreadable file is an empty
+    text) and fills `session_bounds` with the core item alone and `script_session_bounds` with
+    the three items and then the core item.
+  - The choice: `--core=1:1` where `surfd`'s own hard core limit is `unlimited` or at least 1;
+    `--core=0:0` where it is 0, or where the limits text cannot be read or has no line `surfd`
+    can read, because `prlimit` cannot raise a hard limit of 0. A session started without
+    `setpriv` and `prlimit` gets no core item and keeps `surfd`'s own core limit.
+  - `crates/surfd/tests/common/mod.rs`: `CORE_ARGUMENT_ZERO` and `expected_core()`, the pair of
+    limits and the core argument by the test process's own hard limit, read without `surfd`'s
+    code. `adversary.rs`: `script_bounds()` in place of the constant. `adversary_2.rs` and
+    `hardening.rs`: the sets a test names take `config.session_bounds[0]`; the session program of
+    `sigxcpu_to_a_session_started_without_the_programs_reads_no_bound` is a sh script that sets
+    that item on itself with `prlimit --pid` and execs the stand-in. `tests/main.rs` declares
+    `adversary_core` and `first_line`.
+  - `README.md`, `website/docs/what-works.md`, `CHANGELOG.md` (a `### Changed` entry under
+    `## [Unreleased]`) and `docs/design/scripts.md` (the core row, the two start forms, a clause
+    on the limit a process of the session can set, and a paragraph with the record below) say
+    which sessions get the limit and what a host sees. The `AGENTS.md` entry of `crates/surfd`
+    counts 98 tests.
+  - Tests, with the defect that turns each red (each defect made in a tree and taken back):
+    - `daemon::tests::hard_core_limit_reads_the_second_value_of_the_line`: the parse over ten
+      texts. Red: the first value read in place of the second; the `Max cpu time` row read; the
+      last row read.
+    - `daemon::tests::a_hard_limit_of_at_least_1_chooses_core_1_1_and_anything_else_core_0_0`:
+      the choice over the same ten texts, against the two strings written out. Red: a choice
+      that is always `--core=0:0`; one that is always `--core=1:1`; `CORE_BOUND_ONE` changed to
+      `--core=1:unlimited` or to `--core=0:1`.
+    - `hardening::a_session_keeps_a_core_limit_of_0_under_a_hard_limit_of_0`: the test process
+      lowers its own core limit to 0, then a session without scripts and one with scripts each
+      open and read `0 0`. Red: a choice that is always `--core=1:1` (the `open` answers status 3,
+      "it ended by an exit before the session wrote its first byte").
+    - `hardening::a_process_under_the_core_bound_surfd_chose_ends_by_abort_without_a_dump`: a
+      shell under the core argument `Config::new` chose ends itself by `SIGABRT` in an empty
+      directory; signal 6, no dump, no entry. Red: a choice that is always `--core=0:0` (the
+      status reads `signal: 6 (SIGABRT) (core dumped)`).
+    - `first_line::another_first_line_then_an_exit_is_answered_as_another_line` (the file taken
+      as it is): a session that writes one line and exits gets the answer of another line. Red:
+      the arm `_ => Start::Other` written `_ => Start::Nothing`.
+    - Four cases that read the core line or the recorded arguments:
+      `hardening::a_session_without_scripts_has_no_core_file_and_no_new_privileges`,
+      `hardening::a_session_with_scripts_has_the_bounds_of_q11`,
+      `adversary::an_arg_scripts_other_than_true_takes_the_form_without_scripts` and
+      `adversary::the_wrappers_get_fixed_arguments_and_session_env_only`. Red: a choice that is
+      always `--core=0:0`, on a host whose hard limit is at least 1 (the run had `unlimited`).
+    - Three edited cases keep their claim: `hardening::bound_ends_session` (red when `.any` of
+      `sets_cpu` is `.all`), `adversary_2::sigxcpu_without_a_cpu_bound_of_surfd_reads_no_bound_
+      also_with_scripts` (red when `starts_with("--cpu=")` is `starts_with("--")`) and
+      `adversary_2::sigxcpu_to_a_session_started_without_the_programs_reads_no_bound` (red when
+      `.is_some_and` of `cpu_bound` is `.is_none_or`).
+    - Four cases of the review, in `adversary_core.rs`, listed under "The review".
+- What was shown, and on what.
+  - The kernel's rule, on one host whose core pattern is a pipe (pipe limit 16, kernel 6.18.55,
+    hard core limit `unlimited`): a shell ended by `SIGABRT`, `SIGXCPU` or `SIGSEGV` showed
+    `(core dumped)` in 15 of 15 rounds under `--core=0:0`, waitable after 79 to 2346 ms (one round
+    2346 ms, the others 79 to 174 ms); under `--core=1:1` 0 of 25 rounds over all five signals
+    (`SIGTERM` and `SIGUSR1` as well) showed it, waitable after 4 to 17 ms.
+  - The host's crash list on those ends (`coredumpctl`): 15 of 15 entries under `0:0`, 0 of 15
+    under `1:1`. The kernel's log line `RLIMIT_CORE is set to 1, aborting core` was seen for 10 of
+    the 15 ends under `1:1` (the `SIGABRT` and `SIGXCPU` ones) and for none of the 5 `SIGSEGV`
+    ones: at most one line per end.
+  - A second host, also a pipe pattern and a hard limit `unlimited`: the effect case passed with
+    `--core=1:1`; with the choice made always `--core=0:0` it failed at `core_dumped()`.
+  - A host without a pipe pattern: no run on one. The effect case prints `not shown: no pipe
+    pattern` and returns; that line was reached once on the pipe host by a hand-made change of
+    the file it reads. The start-chain case of the review prints the same line and still
+    asserts. A host with a hard limit of 0: none met; the effect case prints `not shown: hard
+    core limit 0` there, and the case that lowers the test process's own limit covers the path.
+  - The second cause of a session that keeps 0: the limits text cannot be read or has no line
+    `surfd` can read (the code takes `unwrap_or_default` and the choice `0`); the first is a hard
+    limit of 0.
+  - A process of a session cannot raise its core limit: `prlimit --pid` to 4096 and to
+    `unlimited` is refused for both forms (review case).
+  - Not shown: the rule under a file pattern or a socket pattern; the kernel's source was not
+    read; a process of a session that lowers its soft limit to 0 and dumps again through a pipe
+    handler (the docs say it, no run); a `surfd` run as root.
+- What differs from the story. Every other decision, Change line and acceptance item was built
+  as written.
+  - Decision 2 and acceptance 15 kept the shipped texts from saying that the handler is not
+    started, "not shown". The review showed it on one host (the record above), so README,
+    what-works, the changelog and the design note now say that the kernel does not start the
+    handler under a limit of 1, that the crash list has no entry and that the kernel logs at most
+    one line, "shown on one host". The two phrases of acceptance 15 still print nothing. The
+    design note gained a paragraph with the record and its evidence column for the core row says
+    what the handler records at each value.
+  - The README, what-works and changelog sentence "Its core file size limit is 1 byte" said it
+    of every session. It now says "through them", and that a session started without `setpriv`
+    and `prlimit` keeps `surfd`'s own core limit.
+  - The texts and the `Config` doc name both causes of `--core=0:0`, where Decision 2 named a hard
+    limit of 0 only.
+  - Decision 8: the effect case ends on any core pattern that does not start with `|`, not only
+    on a hard limit of 0. The check of the README's "no core file" on a relative file pattern
+    with a limit of 1 that the decision described is gone from it.
+  - A new test file `adversary_core.rs` with four cases is on the branch; the story's scope does
+    not name it. The `AGENTS.md` entry lists it (4).
+  - The unit case of the choice compares against `--core=1:1` and `--core=0:0` written out, not
+    against the constants.
+  - The module doc of `hardening.rs` was rewritten in place (3 lines out, 3 in; the first
+    `#[test]` stays at line 136), because it said each case starts one `surfd` and one session.
+  - The story's scope names `docs/badges/make.sh`, `docs/badges/tests.svg`,
+    `website/docs/how-it-is-built.md`, `website/docs/status.md` and the gate totals of
+    `README.md`; the unit changes none of them (acceptance 22 and 23 are left to the step that
+    copies the gate's numbers). `README.md` changes at one place.
+- The review: one pass on the first commit; verdict NEEDS-CHANGE; 10 findings, all introduced by
+  the unit: 1 must, 2 should, 7 notes.
+  - Must: README, what-works and the changelog gave every session a core limit of 1 byte and "no
+    core file", while a session started without `setpriv` and `prlimit` keeps `surfd`'s own limit.
+  - Should: the changelog did not say that a session's crash no longer reaches the host's core
+    handler (no crash-list entry, one kernel log line). Should: the effect case said "not shown"
+    only for a hard limit of 0 and passed silently on a host without a pipe pattern.
+  - Notes: the unit case of the choice compared against the constants, so core items
+    `1:unlimited` and `0:1` left it green; dropping the two-space check of `hard_core_limit` left
+    all 98 tests green (infeasible: no kernel text reaches the difference); under `cargo test` in
+    one process a case that lowers the hard limit voids later ones (infeasible: the gate runs
+    nextest, one process per test); the `Config` doc and the texts named a hard limit of 0 only;
+    a hard core limit lowered after `Config::new` refuses every open, and without scripts the
+    reason blames the session's exit (accepted by the story's Out of scope; one case pins it);
+    the module doc of `hardening.rs`; the evidence `COREFILE none` of the design note's core row
+    records the value 0, not 1.
+  - The review wrote 4 cases, all green, none red: `a_session_without_scripts_cannot_raise_its_
+    core_limit`, `a_session_with_scripts_cannot_raise_its_core_limit`,
+    `the_start_chain_of_both_forms_ends_a_process_by_abort_without_a_dump` and
+    `a_hard_core_limit_lowered_after_the_read_refuses_every_open`. Red: a core item of
+    `1:unlimited` (6 cases failed) and of `0:1` (8 cases failed); both unit cases stayed green
+    under each, before the fix round.
+  - Fix round (the review's cases merged, then one commit): the false sentence in four places,
+    the crash-list sentence, the second cause, the effect case's no-pipe line, the unit case
+    against written-out strings (both mutants red by that case alone), the module doc, the
+    count 98. Where it did otherwise than its order: the log line is said "at most one" (seen
+    for 10 of 15 ends, not 15); the effect case ends on the no-pipe line, as its order's verb
+    said, though the review's start-chain case still asserts; the module doc hunk is 3 lines out
+    and 3 in.
+- Numbers:
+  - Tests of `surfd`: 89 before; 94 after the first commit; 98 after the review's cases and the
+    fix round (2 unit cases of `daemon.rs`, `first_line` 1, `hardening` 19, `adversary_core` 4).
+  - Last run on the tip's tests: `98 tests run: 98 passed, 0 skipped` in 2.514 s; the slowest
+    test 2.136 s. None over 5 s, none over 60 s.
+  - New tests in that run: parse 0.013 s, choice 0.012 s, hard-limit-0 case 0.019 s, effect case
+    0.019 s, `first_line` 0.011 s, `adversary_core` 0.020, 0.021, 0.029 and 0.020 s. The four
+    limits-line cases: 0.014 to 0.031 s (first run).
+  - The twelve cases that end a process by a signal that dumps core ran 0.014 to 1.029 s after
+    the change.
+  - Build with `-D warnings` rc 0; `clippy` rc 0; `taskfiles/test-layout.sh`: 26 test
+    directories, 246 test files, one test binary each. `cargo fmt --all -- --check` rc 1 on drift
+    in other crates; none of the unit's.
+- Left as it is:
+  - The two-space check of `hard_core_limit` is held by no test.
+  - The core limit is read once, in `Config::new`: a hard limit lowered after it refuses every
+    open, without scripts with a reason that blames the session's exit.
+  - The cases that lower the test process's hard limit need one process per test; under `cargo
+    test` they share it (not run).
+  - A process of a session can lower its soft limit to 0 and then dumps through a pipe handler
+    again, with the wait; it cannot raise the limit above 1.
+  - The doc of `CORE_BOUND_ONE` says "No core file is written." without a qualifier; under a
+    file pattern that rests on the kernel's rule, not shown.
+  - Two comments of `adversary_2.rs` say a shell is waitable only after the handler took the
+    dump: true under a limit of 0 only; those cases use `SIGUSR1`.
+  - The start-chain case of `adversary_core.rs` still asserts on a host without a pipe pattern,
+    where a choice that is always 0 stays green.
+- A later story takes up: `story:scripts-document-port` (it edits the same lines of `daemon.rs`
+  and `docs/design/scripts.md` and goes after this one); `story:tests-without-wall-time-bounds`
+  names a line of `hardening.rs` for its ledger, which no line added here moves.
