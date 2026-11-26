@@ -56,7 +56,7 @@
 //! fac53fd0bec48dd000de36b0b04b377bee2031a80ce7eae898db2f812908b0f1  crates/webidl/src/lib.rs
 //! d5ddfa7b61d568fa7618b2f0d8706808f1ca83445f1e53c6dee17c035efbf2f0  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! e153c94cce1e549a19ca492eca99716026b001f19a1901f2e5ed85173381f8e8  crates/webidl/src/prelude.rs
+//! defee3b2cf3c315cd11a389bb4bb81c618d5b7c482782deef43b60f275449286  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 95c0b4bd1f665411a2f8c208d5cfeee2c64c9d599878a9694e7d87b9df8dea14
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 042ecd2698f928348abff422b73634b6699f9689137ca747583a42bb7142e98c
 
 use std::cell::Cell;
 
@@ -507,8 +507,8 @@ pub fn throw(cx: &mut DomCx<'_, '_>, exception: &DomException) -> Abrupt {
 /// `catch` and no `finally` of the page runs after the limit, and the runner reads the
 /// recorded limit as the script's end (`Runner::document_end`). Should the charge answer `Ok`,
 /// the function answers `Terminated(Interrupted)` itself, which swell takes and makes the
-/// run's termination (`object/builtin_function.rs:497 @ 0.8.0`); that answer works at the tag
-/// but swell does not promise it there.
+/// run's termination with the agent alive (`object/builtin_function.rs:876 @ 0.10.0`); swell
+/// promises that answer since `0.9.1` (HOST-217, `conformance/host/requirements.txt:217 @ 0.10.0`).
 pub fn end_with_limit(cx: &mut DomCx<'_, '_>, limit: Limit) -> Abrupt {
     cx.state.limit = Some(limit);
     cx.state.interrupt.interrupt();

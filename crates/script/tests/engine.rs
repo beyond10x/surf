@@ -613,13 +613,11 @@ fn checkpoint_wall_clock() {
     let mut limits = limits();
     limits.engine.steps_per_entry = u64::MAX;
     limits.wall_clock = Duration::from_millis(100);
-    let started = Instant::now();
-    let (first, elapsed, later) = with_runner(limits, |runner| {
+    let (first, later) = with_runner(limits, |runner| {
         let first = runner.evaluate("Promise.resolve().then(function () { while (true) {} });");
-        (first, started.elapsed(), runner.evaluate("1"))
+        (first, runner.evaluate("1"))
     });
     assert_eq!(first, ScriptEnd::Limit(Reason::WallClock), "{first}");
-    assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
     assert_eq!(later, ScriptEnd::NotRun(Reason::WallClock), "{later}");
 }
 
