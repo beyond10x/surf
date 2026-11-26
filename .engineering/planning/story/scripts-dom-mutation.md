@@ -50,7 +50,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 53
+revision: 54
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -550,7 +550,7 @@ document's tree.
    `limit: depth`, `limit: stored-bytes`, `limit: memory`), also inside `try { } catch { }`.
    The tree after it:
    - for a refused call that wrote nothing before the refusal, the tree equals the tree just
-     before the call: serialization, node count and `writes()`;
+     before the call (compared as set out below): serialization, node count and `writes()`;
    - for a variadic or `ChildNode` member with two items or more, the tree is as after the
      convert (the standard's own order for its exceptions): the items have left their old
      parents and sit in the temporary fragment, which is a node. The by-hand form of that
@@ -577,12 +577,16 @@ document's tree.
      changes nothing; the `limit_*_title` tests parse a page that has a `title`, and one more
      case (`title_refused_leaves_the_new_title`) holds the empty `title`.
    A test sees "the tree just before the call" by a second parse of the same page that runs the
-   same script without the refused call, and compares the serializations, the node counts and
-   `writes()`. A limit ends the script, so a loop over members does not reach the second
-   member: each member has its own parse inside one `#[test]`. `Limit::Attributes` is
-   unreachable here: a source test shows `mutation_writes.rs` calls none of `put_attribute`,
-   `set_attribute`, `set_attribute_ns`, `remove_attribute`, `remove_attribute_ns`,
-   `toggle_attribute`.
+   same script without the refused call (the page for comparison). It compares the two
+   serializations with the text of every `script` element cut out of both (the two scripts
+   differ by the text of the call, so the whole serializations cannot be equal), the node counts
+   and `writes()`. Where a script is only the refused call, the page for comparison holds a
+   script of as many spaces as the call has bytes, so that both trees hold the script's text
+   node and the node counts are exact. A limit ends the script, so a loop over members does not
+   reach the second member: each member has its own parse inside one `#[test]`.
+   `Limit::Attributes` is unreachable here: a source test shows `mutation_writes.rs` calls none
+   of `put_attribute`, `set_attribute`, `set_attribute_ns`, `remove_attribute`,
+   `remove_attribute_ns`, `toggle_attribute`.
 7. The write counter and the refill. `Tree::writes()` (`tree.rs:331`) raises when a write
    changes a child list. The table below says, for each write function, whether it raises. A
    kept `childNodes` (the same object refilled) and a kept `getElementsByTagName` snapshot are
@@ -1492,12 +1496,12 @@ says it is a guard. Every command that reads the diff names its base:
    inside `try { } catch { }`, parsing goes on (in the `limit_nodes_*` and `limit_stored_*`
    cases only closing tags follow the script, see the count at the call below; in the other
    cases the rest of the page is in the tree), and the
-   tree after is as decision 6 says: for each member the test also parses the page with the
-   script without the refused call (with the convert made by hand for two items or more, as
+   tree after is as decision 6 says: for each member the test also parses the page for comparison
+   (the script without the refused call, with the convert made by hand for two items or more, as
    decision 6 gives it: `f = createDocumentFragment(); f.appendChild(a); f.appendChild(b)`,
    which makes 1 node and raises `writes()` by 2, by 4 when `a` and `b` had parents) and asserts
-   equal serialization, node count and `writes()`. The node count the tree gained equals
-   `totals().nodes` in every case that makes nodes. The `title` setter has no depth test, since
+   the comparison of decision 6. The node count the tree gained equals `totals().nodes` in every
+   case that makes nodes. The `title` setter has no depth test, since
    it cannot reach `limit: depth` (the `Document.title` member says why); a guard test,
    `title_at_the_smallest_depth`, parses `<head><script>document.title = "x"</script>` at
    `max_depth` 3 and asserts the script ran to its end and the `title` is in the tree.
@@ -1519,8 +1523,8 @@ says it is a guard. Every command that reads the diff names its base:
      hold the script last in `body` for the same reason.
    - `limit_nodes_title` and `limit_stored_title` parse a page that has a `title` element
      (`<body><title>T</title><script>document.title = "x"</script>`: the `title` and the script
-     are in `body`), so that the tree after the refusal equals the tree before (with a `title`
-     that exists the text
+     are in `body`), so that the tree after the refusal equals the tree before, compared as in
+     decision 6 (with a `title` that exists the text
      node is made first, decision 6: it is the one node and the one byte of `"x"` that the call
      makes, so the limit is the first parse's count less 1, and the new text node is refused).
      One more case,
@@ -1532,8 +1536,8 @@ says it is a guard. Every command that reads the diff names its base:
      node (the second), and then under a `max_stored_bytes` of the first parse's
      `stored_bytes()` less 1, which admits the `title` element and refuses its one byte of text.
      Each ends with the limit's word and the tree holds the empty `title` under `head`, one node
-     more than the page without the call and `writes()` raised by 1, and `totals().nodes` equals
-     the nodes the tree gained.
+     more than the page for comparison (decision 6; the script there is spaces) and `writes()`
+     raised by 1, and `totals().nodes` equals the nodes the tree gained.
    - `splitText` has a `Nodes` case only (`limit_nodes_split`: `max_nodes` the first parse's
      `node_count()` less 1, the tail being the one node the split makes, so the split is
      refused). A guard, `split_at_the_stored_limit`, parses a page whose last text node is
@@ -1637,15 +1641,17 @@ says it is a guard. Every command that reads the diff names its base:
    ended"), so the page has a second script after the first, `document.createElement("i")`,
    which costs about 5 steps by the tables, well inside the 100 of margin, and the page's list
    of ends is `limit: steps-per-script` then `Ran`. After it the case asserts the books, where
-   the tree's gain is its `node_count()` and `stored_bytes()` less those of the same page
-   parsed with each script replaced by `1` (the second script's own node is in both sides). At
-   `steps_without + 100` the convert has already made the fragment and the text node
-   (arithmetic: the glue's step, the `n` of the list, the string's step and its `b16`, the
-   fragment and the two items are 22 steps, before the climb of `p`, steps 23 to 522, where
-   the limit falls), so 2 nodes and 1 stored byte are made against the charge of 2 nodes and 3
-   stored bytes: `totals().nodes` equals the nodes the tree gained, and `totals().bytes` is 4
-   above 408 x the nodes it gained plus 2 x the stored bytes it gained (arithmetic: 822 charged,
-   818 made), the 4 bytes that the skipped settle did not give back.
+   the tree's gain is its `node_count()` and `stored_bytes()` less those of the same page parsed
+   with each script's text replaced by as many spaces as it has bytes, so that both sides hold
+   the same script text (the text mode of the parser keeps every character, `modes.rs:1157-1161
+   @ 73126a0`; the second script's own node is in both sides). At `steps_without + 100` the
+   convert has already made the fragment and the text node (arithmetic: the glue's step, the
+   `n` of the list, the string's step and its `b16`, the fragment and the two items are 22
+   steps, before the climb of `p`, steps 23 to 522, where the limit falls), so 2 nodes and 1
+   stored byte are made against the charge of 2 nodes and 3 stored bytes: `totals().nodes`
+   equals the nodes the tree gained, and `totals().bytes` is 4 above 408 x the nodes it gained
+   plus 2 x the stored bytes it gained (arithmetic: 822 charged, 818 made), the 4 bytes that
+   the skipped settle did not give back.
 10. `variadic_strings_are_charged_before_any_node`: `append` of 200,000 empty strings ends
     `limit: memory` with `totals().nodes` 0 and the tree's node count unchanged, because
     `charge_nodes(200,001, 0)` is 81,600,408 bytes (arithmetic: 200,001 x 408), over the
@@ -1772,15 +1778,22 @@ says it is a guard. Every command that reads the diff names its base:
       test names them and no source test can hold them on a small stack. The case holds them
       through the members that call them, in a script over a page of 20,000 nested `div`
       elements (the deepest has `id="deep"`) that holds one `p` with `id="s"` and 20,000 sibling
-      `<i></i>` under it, and a script after the `p` of four statements, 274 bytes with no
-      space between them (arithmetic). The script takes its three references first: `var d =
-      document.getElementById("deep"), p = document.getElementById("s"), r =
-      document.documentElement.lastChild.firstChild;` (`r` is the chain's root). Then
-      `p.insertBefore(document.createElement("u"), p.lastChild);` (`Siblings`) and
-      `d.appendChild(document.createElement("b"));` (`Climb`). The move into a fragment is the
-      last statement, `document.createDocumentFragment().appendChild(r);`
+      `<i></i>` under it. The page source has no doctype, no white space and no `html`, `head` or
+      `body` tag: 19,999 `<div>`, `<div id="deep">`, `<p id="s">`, 20,000 `<i></i>`, `</p>`,
+      `<script>`, the script, `</script>`, and the end of the input. The script is four
+      statements, 274 bytes with no space between them (arithmetic). It takes its three
+      references first: `var d = document.getElementById("deep"), p =
+      document.getElementById("s"), r = document.documentElement.lastChild.firstChild;` (`r`
+      is the chain's root). Then `p.insertBefore(document.createElement("u"), p.lastChild);`
+      (`Siblings`) and `d.appendChild(document.createElement("b"));` (`Climb`). The move into a
+      fragment is the last statement, `document.createDocumentFragment().appendChild(r);`
       (`Subtree`), because after it the chain is out of the document. Each ends the script
-      `Ran`. The case's `Limits` set `max_depth` 30,000 and `max_steps` 1 << 28 (268,435,456).
+      `Ran`. The case's `RunnerLimits` have `engine: SESSION_ENGINE_LIMITS` (`frame_depth`
+      10,000, `reentry_depth` 256, `steps_per_entry` 10,000,000, `memory_bytes` 67,108,864:
+      `runner.rs:40-48 @ 73126a0`) and a `wall_clock` of 50 s, the rest as `RunnerLimits::SESSION`;
+      the `limits()` helper of the test files (`frame_depth` 1,000, `reentry_depth` 64) is not
+      used, because it gives a smaller stack. The parse `Limits` set `max_depth` 30,000 and
+      `max_steps` 1 << 28 (268,435,456).
       Arithmetic: each `div` start tag runs `close_a_p_element_in_button_scope`, whose scan of
       the whole stack of open elements adds its visits to the parse's steps (`modes.rs:1141`,
       `tree_builder.rs:1656-1673 @ 31a6979`); the `k`-th `div` scans `html`, `body` and the
@@ -1799,26 +1812,23 @@ says it is a guard. Every command that reads the diff names its base:
       2` = 124,250 steps of scan, a parsed chain of 512 (`max_depth`) at most `512 x 515 / 2` =
       131,840 against 134,217,728, and the chain of 512 of the depth guard is built by the
       script, not parsed. The case runs on the runner's own thread, whose stack is
-      `stack_bytes()`, 8,739,584 bytes for `RunnerLimits::SESSION` (`runner.rs:109-115`), so a
+      `stack_bytes()` of those limits, 8,739,584 bytes (`runner.rs:109-115 @ 73126a0`), so a
       walk that recursed with a frame over 436 bytes a level (arithmetic: 8,739,584 / 20,000 =
       436) would overflow it; this is a bound on the frames it can notice, not a proof, and no
       claim is made about a smaller stack. The source test of decision 8 shows no function of
       the walks calls itself, which holds the rest.
       The case is measured by the implementor. When it runs over 30 s, the chain is 10,000
-      deep in place of 20,000 and nothing else is open: the page nests 10,000 `div` (the
-      deepest `id="deep"`), the `p` and its 20,000 `i` stay and the script is the same. The
+      deep in place of 20,000 and nothing else is open: the page has 9,999 `<div>` before the
+      `<div id="deep">`, the `p` and its 20,000 `i` stay and the script is the same. The
       parse costs `n (n + 3) / 2` = 50,015,000 steps for `n` = 10,000, under the default
       `max_steps` of 134,217,728 by 84,202,728, so the case sets `max_depth` 30,000 only and
       not `max_steps`. The page holds 30,007 nodes (the script adds 3), 50,462 stored bytes
       and 190,315 input bytes, all far under their limits, and the script costs about 170,075
       steps by the tables (`p` at `d` = 10,004, `deep` at 10,003). The runner's thread gives
       873 bytes a level (8,739,584 / 10,000), so the case notices a recursion with a frame
-      over 873 bytes. The story states no least size of a frame, so the claim that a recursion
-      over the depth overflows a stack rests, at 10,000, on a frame of more than 26 bytes on a
-      stack of 256 KiB (262,144 / 10,000 = 26.2), which a frame of a return address and three
-      saved words (32 bytes on a 64-bit target) exceeds and one of two saved words (24 bytes)
-      does not. `no_recursion` is a unit test of the tree alone and keeps its chain of 20,000
-      (13.1 bytes a level).
+      over 873 bytes, and that bound is all the case holds at 10,000. Small frames stay with
+      `no_recursion`, which keeps its chain of 20,000 on its thread of 256 KiB (13.1 bytes a
+      level).
 18. `dom_mutation_cost.rs` (new): worst shapes, each row one script, with the steps asserted
     exactly and never a time. A row over 5 s is named in the report with its time. A bound is
     at least ten times the time it bounds (decision 12): a row that ends its script at a step
