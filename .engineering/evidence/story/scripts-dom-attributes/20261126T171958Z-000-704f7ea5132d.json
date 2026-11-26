@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T17:19:58Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-attributes",
+  "kind": "story",
+  "revision": 56,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 6a0701d, the tip of impl/scripts-dom-attributes, through the pool on the build host, 2026-11-26 17:59 CET",
+    "reference": "task check exit 0 in 70 s at a load of 0.56 at its start; 2,208 tests: 2,206 passed, 0 failed, 2 ignored; 552 TLS tests; 72 page tests; four steps 34.0 s (test step 15.2 s); no raise line; the docs site build exit 0"
+  }
+}
