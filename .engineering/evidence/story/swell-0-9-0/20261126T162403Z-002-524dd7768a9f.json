@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:24:03Z",
+  "actor": "human:operator",
+  "artifact": "story:swell-0-9-0",
+  "kind": "story",
+  "revision": 33,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes of the adversary review on the unit by reviewers who did not write it, 2026-11-25",
+    "reference": "pass 1 on 9943d49: 1 must, 4 shoulds, 3 notes, fixed by one round; pass 2 on a37ab84: no must, 5 shoulds, 3 notes, fixed by one round"
+  }
+}

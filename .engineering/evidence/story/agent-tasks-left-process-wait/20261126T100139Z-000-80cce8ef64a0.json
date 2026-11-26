@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:39Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-left-process-wait",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one pass of the adversary review on the first commit of the unit by a reviewer who did not write it, 2026-11-26",
+    "reference": "verdict needs-change: 1 must, 1 should, 5 notes, 2 cases written; both fixed by two rounds; the crate ran 52 of 52 and both cut-bound mutants were red on the tip"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:38Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-left-process-wait",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 947eb6c, which holds 553b977 (the merge of impl/agent-tasks-left-process-wait at dea1c18), 2026-11-26",
+    "reference": "check 45786991291, Documentation validation 45786991325, Shared source gates 45786991643 and Documentation site 45788969085: each completed success"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:34Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-reading",
+  "kind": "story",
+  "revision": 48,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 73126a0, the tip of impl/scripts-dom-reading, through the pool on the build host, 2026-11-26 06:42 CET",
+    "reference": "exit 0 in 133 s at a load of 55.74 to 61.67; 2003 tests: 2000 passed, 0 failed, 3 ignored; four steps 78.1 s (test step 35.9 s); the docs site build exit 0"
+  }
+}

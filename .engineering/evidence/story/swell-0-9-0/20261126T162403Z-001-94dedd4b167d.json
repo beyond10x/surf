@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:24:03Z",
+  "actor": "human:operator",
+  "artifact": "story:swell-0-9-0",
+  "kind": "story",
+  "revision": 33,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at a7872e8, which holds a7872e8 (the merge of impl/swell-0-10-0 at e507a7b), 2026-11-26",
+    "reference": "check 45856492380, Documentation validation 45856492485, Shared source gates 45856494028 and Documentation site 45857570351: each completed success"
+  }
+}

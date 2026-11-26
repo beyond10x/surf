@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T06:14:23Z",
+  "actor": "human:operator",
+  "artifact": "story:surfd-died-session-order",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes of the adversary review on the unit by reviewers who did not write it, 2026-11-26",
+    "reference": "pass 1 on b08ca8d: one must (the signal dumps core through the host handler, so the shell is waitable late), three shoulds, one passing case added on a review branch; pass 2 on c91b313: no must, no should, four mutants (three red as expected, one green as expected), 89 of 89 cases of the package green"
+  }
+}

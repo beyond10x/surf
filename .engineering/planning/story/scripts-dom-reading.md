@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-reading
 kind: story
-status: active
+status: implemented
 title: The reading members (99 rows) and one wrapper per node
 summary: Node, Element and Document's 73 reading members, 21 of the interfaces they return and the five of Window and Document.title (S6, decided a on 2026-11-24, and Window.event) read a parsed tree as the standards say, with one wrapper per node for the document's life, memory bounded by the engine's budget, sibling reads by position hints, the snapshot and global-this deviations, the four [SameObject] collections held by the generator and Wrap (one object per node and member, refreshed only when the tree's write counter moved), the document's address as a surf_url::Url in a public DocumentInfo, compatMode from the quirks mode the parser writes into the tree where the initial insertion mode decides it (so a script in the parse reads it) and baseURI as the HTML document base URL, the case names asserted equal to the slice's rows.
 relations:
@@ -27,6 +27,8 @@ scope:
 - confidence: cited
   path: crates/html/tests/adversary_tree_state.rs
 - confidence: cited
+  path: crates/html/tests/adversary_tree_state_2.rs
+- confidence: cited
   path: crates/html/tests/main.rs
 - confidence: cited
   path: crates/html/tests/tree_state.rs
@@ -39,6 +41,8 @@ scope:
 - confidence: cited
   path: crates/script/src/dom/reading.rs
 - confidence: cited
+  path: crates/script/src/dom/reads.rs
+- confidence: cited
   path: crates/script/src/dom/wrapper.rs
 - confidence: cited
   path: crates/script/src/lib.rs
@@ -47,9 +51,17 @@ scope:
 - confidence: cited
   path: crates/script/tests/adversary_dom_reading.rs
 - confidence: cited
+  path: crates/script/tests/adversary_dom_reading_2.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading_3.rs
+- confidence: cited
+  path: crates/script/tests/adversary_dom_reading_4.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
+- confidence: cited
+  path: crates/script/tests/dom_reading_cost.rs
 - confidence: cited
   path: crates/webidl/selection.txt
 - confidence: cited
@@ -58,6 +70,10 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: crates/webidl/tests/adversary_same_object.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object_2.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object_3.rs
 - confidence: cited
   path: crates/webidl/tests/main.rs
 - confidence: cited
@@ -74,10 +90,11 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 35
+revision: 49
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:34Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -398,7 +415,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     `surf-url = { path = "../url" }` and its lock line (Context). `story:scripts-parse-run` builds
     the `DocumentInfo` of a page and calls `dom::slices(info)`; that story's own text takes the
     duty (decision 16), and which encoding name it passes when the runner is made while the
-    encoding is still tentative (`scripts-parse-run.md:72-77`) is its to decide.
+    encoding is still tentative (decision 10 of `story:scripts-parse-run`: the runner of each
+    parse gets the name its hook was made with) is its to decide.
 13. `Node.baseURI` is the document base URL as the HTML Standard defines it, read from the tree
     at each call, so a later write to the tree needs no cache. The DOM Standard's getter steps
     (`dom.html:6667-6677`): the node document's "get the base URL" result, or the document's URL
@@ -485,6 +503,114 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     - An `HTMLCollection` has no named properties: `collection["id"]` is undefined and
       `namedItem` answers. A named deviation in the notes of its rows; a later story builds
       them.
+
+18. What the review of the unit's second tip found, as rules. Each narrows decision 17 and wins
+    where the two differ.
+    - A refill that an end of the run cuts short (decision 17's first rule). The put-back is
+      for a step the object refuses with a throw. An end of the run (the memory limit met while
+      a wrapper or an index key is made, or an interrupt) that leaves the refill after its
+      first define and before the data is written is not put back: the put-back needs the
+      Strings and wrappers the limit just refused. Instead that object is read by no script
+      again: the glue records the half refill, and the runner runs no later script of the
+      document. After `limit: memory` each later script ends `not run: memory`, as after a
+      second memory end; after `limit: wall-clock`, `not run: wall-clock` holds already. No
+      new end word. A memory end outside a refill keeps its rule (the next script runs after
+      the collection).
+    - An attribute scan charges what it reads (decision 17's second rule, which this
+      replaces for the class walk). A scan for one attribute by name (`getElementsByClassName`,
+      `getElementById`, `namedItem`) charges per element one step, one per 64 attributes it
+      passes and one per 64 bytes of each value it reads or compares; no step for the bytes of
+      a value it does not read. A compare of whole attribute lists (`isEqualNode`) charges one
+      per attribute and one per 64 bytes of names and values. A walk that reads no attribute
+      charges one step a node.
+    - Three readers on one parent stay quadratic in this story (decision 9: two positions a
+      parent): every scan is charged and no answer is wrong. 500 children read by three
+      readers in turn cost 180,250 steps; 5,000 end at the step limit. The design note names
+      it; `story:scripts-dom-sibling-positions` decides the tree's own positions.
+    - The generator refuses every `[SameObject]` attribute it does not hold, whatever its
+      return form. Held: a collection on a node, and a return that is a node. A later return
+      form is refused until its story says how it is held. `MutationRecord.addedNodes` stays
+      refused; the slice that selects it changes the generator.
+    - `substringData` charges before its walk, one step per 64 of the lesser of offset plus
+      count and the data's bytes.
+    - The wall clock is read between member calls: one call of a walking member is linear in
+      the nodes it visits and bounded by the tree's node bound. The design note says so.
+
+19. What the review of the unit's third tip found, as rules. Each narrows decision 18 and wins
+    where the two differ.
+    - A step buys a bounded piece of work. The charges of decision 18 (one step per 64 bytes,
+      one per 64 attributes) hold for bytes that are only compared or copied. Where a unit of
+      work is smaller than 64 bytes, the unit is charged: a class token, an attribute passed.
+      The mark the charges are set by: for every member of the slice and every shape of a tree
+      the parser admits, the time of one call divided by its steps stays within 20 times the
+      same quotient of a walk that reads no attribute. A test asserts steps and never a time.
+    - The class walk (`getElementsByClassName`) charges, for each element whose `class` it
+      reads, one step for the element, one per 64 bytes of the value and one per class token
+      of the value, all before the first lookup of that element; in quirks mode the fold of a
+      token is paid by the token's step. The wanted set is charged one step per 64 bytes of
+      the argument and one per token, before it is built.
+    - A scan for one attribute by name charges one step per 4 attributes it passes (where
+      decision 18 said 64) and passes the list once: the charge comes from the list's length,
+      before the scan.
+    - A member charges a value only where it reads it. `namedItem` charges an element's `name`
+      on an HTML element and not on another. `lookupNamespaceURI` is a scan for one attribute
+      by name and charges the one value it reads; `lookupPrefix` charges the values it
+      compares. `baseURI` charges for the `href` before it copies it.
+    - The glue charges what it makes. A collection made or refilled costs 8 steps a node (a
+      wrapper and an index define), and a String answer one step per 16 bytes it copies (8
+      UTF-16 units), charged before the copy. Measured before the two weights: the collection
+      walks ran 23 to 54 times the plain walk's time a step and String answers of 1 MiB 32 to
+      43 times; after them every member measured stays within 13 times. A call of a handful
+      of steps (`item`, `isDefaultNamespace`) is the script's own entry and parse and gets no
+      charge for it.
+    - One call of a walking member is linear in the nodes it visits and in the bytes and
+      attributes it reads; the parser's node bound and its bound of stored bytes bound it. The
+      design note says so, where decision 18 named the node bound alone.
+    - The record of a cut refill (decision 18's first rule) is made in the refill's first step
+      too. No test holds that place at the swell tag this unit pins (`0.8.0`): the memory
+      limit cannot be placed there, and no call inside a host function takes the interrupt.
+      The record is conservative there: it stops a document's scripts and gives no wrong
+      answer.
+
+20. What the review of the unit's fourth tip found, as rules. Each narrows decision 19 and wins
+    where the two differ. Four reviews each found one more member that read bytes or walked a
+    list without a charge, or charged after the walk, because the charge was written member by
+    member. So the charge moves to the read, and a byte gets one price.
+    - The reads of the tree are one file. `crates/script/src/dom/reads.rs` holds every function
+      that reads the tree for the reading slice. Each does work bounded by a constant (a
+      node's kind, name, parent, first child, one sibling step), or charges before its loop
+      for everything the loop reads. Where the count is not known before a walk (a scan that
+      stops at the first match), the charge goes step by step inside the walk, before each
+      node is read. `crates/script/src/dom/reading.rs` keeps the members and holds no call of
+      `tree()`; a test reads its source and fails when one is added. The slices after this
+      one follow the same form.
+    - No walk of `reads.rs` builds its stack from a copy of a child list. A walk reads
+      `Tree::children(parent)[index]` one step at a time and charges before each node, so that
+      the first step of a walk over a 100,000-child list is not preceded by a copy of it. At
+      `83e6b8a` the property is false (`find`, `text_content` and `is_equal` extend a stack from
+      a child list; `children` and `whole_text` copy one); at `14f8a2a`, with the fix round
+      `cd43273`, it holds. This unit owns it. `story:scripts-dom-mutation` checks it at its
+      start with two `git grep` commands over `reads.rs` and builds its `Document.title` setter
+      on `find`. Since its sixth fix round (`50a4239`) the unit holds the property by a source
+      test over `reads.rs`: `no_walk_of_the_reads_copies_a_child_list`
+      (`dom_reading_cost.rs:618`); `story:scripts-dom-mutation` keeps its two `git grep` gates.
+    - One price for a byte: one step per 16 bytes (8 UTF-16 units), for every byte a member or
+      the glue reads, compares, folds, collapses or copies, charged before the work. The
+      64-byte rate of decisions 17 to 19 is gone. A String argument is charged at the same
+      price; at swell `0.8.0` a String was read only by copying it and charged after the copy;
+      the sixth fix round (`50a4239`) charges it before the copy, by `string_length`.
+    - A piece costs a step beside its bytes: a class token (decision 19) and a word of a title.
+    - `title` charges the bytes of every text child before the collapse reads them, and a step
+      a word. The fold of a class token in quirks mode is paid by the bytes' price.
+    - `isDefaultNamespace` with a null prefix charges no attributes, since it scans none.
+    - A script's step limit and these charges on an ordinary page: the design note's Q4 holds
+      the measured steps of one `textContent` read of a page of 50,003 nodes and 950,000
+      bytes of text, and of `getElementsByTagName('*')` walked by index over 25,003 elements.
+      The limit's value is `story:scripts-parse-run`'s to measure again.
+    - Closed by `story:scripts-dom-mutation` (decision 7): the generated getter reads the tree's
+      child count and the kept list's length in constant time and charges `8 x (kept_len +
+      child_count)` before the child list is copied and the old list cloned. Open, for the
+      attributes slice: an array of Strings charges no step an element (`getAttributeNames`).
 
 ## Change
 
@@ -851,6 +977,71 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     i. The generator's run on a selection with a `[SameObject]` collection attribute of the
        global ends with an error that names the row.
 
+18. The second review's rules (decision 18), in the modules `adversary_dom_reading_2` of
+    `crates/script/tests`, `adversary_tree_state_2` of `crates/html/tests` and
+    `adversary_same_object_2` of `crates/webidl/tests`.
+    a. A read of `childNodes` whose refill the memory limit ends half way ends `limit: memory`;
+       each later script of that document ends `not run: memory`; a new document of the same
+       session runs. A script that ends `limit: memory` outside a refill is followed by a
+       script that runs.
+    b. A refill that the step limit ends changes nothing: `length`, `item(0)`, `c[0]` and
+       `c[1]` answer the old list.
+    c. Over 413 kept objects (two members, five changes of the list, nine shapes of an index
+       and the object's own freezes) each refused refill leaves the old list index by index
+       and no accessor of the script is called.
+    d. On 10,000 elements with ten attributes of 100 bytes and a class of one byte,
+       `getElementsByClassName` charges under 150,000 steps with the charges of decision 19
+       (120,021 measured: a step an element, one per 4 attributes passed, one per class
+       token, eight per node of the collection); the test prints the four numbers.
+    e. A class repeated on an element counts once (`class="a a"` does not match `'a b'`); the
+       wanted set and `substringData`'s walk are charged.
+    f. Three readers on one parent of 500 children end `Ran`; the test prints the steps.
+    g. The generator's run on a made-up `[SameObject]` row whose return form is neither a
+       node nor a held collection ends with an error that names the row.
+    h. Over 60 seeds of the writes the first review did not draw, and over 40 hooked parses,
+       no child list changes with the counter left.
+
+19. The third review's rules (decision 19), in the modules `adversary_dom_reading_3` and
+    `dom_reading_cost` of `crates/script/tests` and `adversary_same_object_3` of
+    `crates/webidl/tests`.
+    a. `getElementsByClassName` over elements whose `class` holds many one-letter classes
+       charges at least one step per class token of each element it reads; the test prints
+       the steps and the time.
+    b. A scan by name over elements of 1,024 and more attributes charges at least one step per
+       4 attributes of each element it passes.
+    c. `namedItem` over SVG elements with a long `name` charges nothing for the `name`; over
+       HTML elements it charges the `name` it compares.
+    d. `lookupNamespaceURI` over an element of many long attributes charges for the one value
+       it reads; one test fails when the attribute charge of `lookupNamespaceURI` is removed
+       and one when that of `lookupPrefix` is removed.
+    e. A list that is not extensible and whose last index a script deleted shrinks on its
+       refill.
+    f. The module `dom_reading_cost` runs, for each member that reads more than its own node,
+       the worst shape the parser admits and prints its steps and its time; each case asserts
+       a floor of steps that follows from decision 19; no case runs over 5 s.
+    g. A collection of 100,000 nodes charges at least 8 steps a node when it is made and when
+       it is refilled; a String answer of 1 MiB charges at least one step per 16 bytes.
+    h. `baseURI` of a `href` of 64,000 bytes charges about 6,000 steps more than of 64 bytes
+       (the read, the member's String and the glue's copy), each before its work.
+
+20. The fourth review's rules (decision 20), in the modules `adversary_dom_reading_4` and
+    `dom_reading_cost` of `crates/script/tests`.
+    a. `document.title` of whitespace around one letter charges at least one step per 16 bytes
+       of the title's text, at 2 MiB and at 4 MiB; the steps double with the bytes.
+    b. `document.title` of one-letter words charges at least one step a word.
+    c. The class walk in quirks mode over tokens of 256 KiB charges at least one step per 16
+       bytes of each value it folds.
+    d. A member called with a String argument of 4 Mi units charges at least one step per 16
+       bytes of the argument.
+    e. `dom_reading_cost::the_members_read_the_tree_only_through_the_reads` fails when
+       `crates/script/src/dom/reading.rs` holds a call of `tree()`.
+    f. The wanted set of `getElementsByClassName` charges the bytes of one long token.
+    g. `dom_reading_cost` holds a case for `title`, for the quirks fold and for a String
+       argument, each with a floor of steps and no assertion on a time, and prints the two
+       counts of the ordinary page that the design note's Q4 states.
+    h. Every answer, exception and end of the tests before this round is unchanged; a test
+       whose asserted step count changed is named in the report with both numbers.
+
 ## Out of scope
 
 Writes (the three other slices); the hook and the parse that runs scripts
@@ -894,7 +1085,10 @@ this pair. This story adds the line `surf-url` right after
 next line.
 
 The generator, `selection.txt` and `bindings.rs` are on `main` since `6bd9bc9`: this story changes
-them, and nothing else of the epic changes them in the same wave. This story edits `runner.rs`
+them. `story:scripts-parse-run` changes `prelude.rs` and writes `bindings.rs` again after this
+story (it depends on it); `story:scripts-dom-attributes`, `story:scripts-utf16-length` and
+`story:scripts-dom-collection-names` also change that set, and whichever merges second writes
+`bindings.rs` again from the merged sources. This story edits `runner.rs`
 only where `ScriptHost` is made (the Change); `story:swell-0-9-0` edits other lines of the file
 and the second merge keeps both. `crates/script/src/lib.rs` and
 `runner.rs` are written after it by `story:scripts-parse-run`, ordered by that story's edge; that
@@ -913,3 +1107,95 @@ scope and regenerate the file; its present scope lists neither.
 ## Why `epic:scripts-in-a-page`
 
 The first members with behaviour, the reading the epic's two examples rest on.
+
+## As built
+
+The unit is on `main` at `53ab365` (the merge of `impl/scripts-dom-reading` at `73126a0`).
+It changes 43 files, 13,610 lines added and 274 removed: the reading members of the DOM for
+page scripts, the wrapper table, the generator's `[SameObject]` support, and their tests.
+
+- What differs from the story. Every decision not named here was built as written.
+  - 1d: `Runner` has no `document()`; the helper reads
+    `runner.agent_and_realm().0.host().document().and_then(|d| d.limit())`.
+  - 4c: a second read of a kept collection with no write adds 7 steps, as a second `nodeType`
+    read does (10 steps for one, 17 for two), and visits no node; it does not add one.
+  - 8a with 8c is one test, `wrapper_charge_and_reuse`; 8e with 8f is one test,
+    `steps_in_proportion`, in absolute steps (`contains` measured 999 beyond one child).
+  - 8h was not shown at the first tip: the pinned engine does not apply `string_length` to a
+    String a host member answers, so the case ran with 16,777,217 units. Fix round 1
+    (`0420e36`) put the check in the glue and it now shows (1.572 s). The case at the limit
+    builds its text with `Tree::create_text_node` and `append_child`; parsing took 4.9 s alone.
+  - Decision 4 gave 256 bytes a wrapper and 262,144 wrappers to fill the budget; measured, it
+    is 423 bytes and 158,649. `docs/design/scripts.md:329-330` holds the measured numbers.
+  - 16a: two runs of the tests of the crates took 179.4 s and 151.1 s at host load 79 to 110;
+    the same step took 5.674 s on the build host.
+  - 13d: the 232 tests of the `crates/script` entry of `AGENTS.md` come from
+    `cargo nextest list` per module; the gate log holds one total.
+  - 14: the gate block of `README.md` and `how-it-is-built.md` is the log of the run on
+    `5664184` (test step 17.0 s); the run on the tip has the same 2,003 tests and a 35.9 s step.
+  - Beyond the story's list: `adversary_dom_reading_5.rs` and `_6.rs`, and the `AGENTS.md`
+    entries of `crates/html` (253 tests) and `crates/webidl` (131 tests).
+  - `ownerDocument` of a node in a fragment-parse tree rooted at a fragment answers `null`.
+  - The last merge of `main` (`73126a0`) touches `crates/surfd/tests/adversary_2.rs` only.
+- The reviews. Per pass: commit covered, musts and shoulds, cases added; the round after fixed:
+  - 1, `ace7176`: 4, 9, 21. A refill all or nothing, the class walk's charge, a `data:` base,
+    two hints a parent, `substringData` in code units, an unheld `[SameObject]`.
+  - 2, `fc55e35`: 2, 4, 16. A refill cut by the memory limit (later scripts end `not run:
+    memory`), the attribute scan's charge, every unheld `[SameObject]` refused.
+  - 3, `8086a30`: 1, 9, 12. A step a class token and per four attributes, 8 steps a collection
+    node, String copies at 16 bytes a step; it added the `dom_reading_cost` sweep.
+  - 4, `db0e535`: 4, 5, 14. `title` charged before its collapse, one price for a String of 16
+    bytes a step; the reads moved into `reads.rs`.
+  - 5, `14f8a2a`: 1, 8, 10. A compare charged on both nodes, `substringData` charged by bytes,
+    a String argument charged before its copy.
+  - 6, `50a4239`: 0, 7, 12. The final round changed no `src/` file: it merged the cases and
+    `main` and set the counts of `AGENTS.md`; `31a6979` set the public numbers.
+- Numbers on the tip `73126a0`, from the gate run (`task check-runner`, exit 0 in 133 s):
+  - 2,003 tests: 2,000 passed, 0 failed, 3 ignored. Test step 35.9 s of 120 s; four steps
+    78.1 s; load 55.74 at the start, 61.67 at the end.
+  - The selection holds 100 rows with the slice `reading`: 99 members and `NodeList iterable`.
+  - Tests per crate: `surf-script` 232, `surf-html` 253, `surf-webidl` 131. The reviews wrote
+    85 cases; the gate's count rose from 1,845 to 2,003.
+  - Over 5 s in the gate: `a_memory_end_at_every_point_of_a_shrinking_refill` 5.088 s (this
+    unit) and `adversary_5::the_code_getter_in_a_loop...` 5.332 s (on `main`); none over 60 s.
+  - Over 5 s in the final round's run (613 tests, 9.288 s): that refill test 6.835 s,
+    `a_wanted_set_of_many_tokens_against_classes_of_many_tokens` 5.485 s,
+    `a_sibling_walk_is_linear` 5.328 s, `a_backward_sibling_walk_is_linear` 5.197 s,
+    `hostile_shapes_of_a_kept_collection` 5.011 s.
+- Left as it is, each seen by a review (lines at `50a4239` unless a tip is named):
+  - `data_copies` is a public thread-local counter in the product, read by tests only
+    (`crates/script/src/dom/mod.rs:48`).
+  - `Copies::copy` writes UTF-8 beside the charged UTF-16 copy, at most 2.5 times unpaid
+    (`crates/webidl/src/prelude.rs:562`); two heap allocations per String argument are not
+    measured against `memory_bytes` (`:928`); its doc says "the one copy" and `prefix_units`
+    copies too (`:546`, `:403`).
+  - `refresh_collection` clones the old list before its charge
+    (`crates/script/src/bindings.rs:1446`); no page reaches it, the `mutation` slice is empty.
+  - `isEqualNode` charges a step an attribute where the ruling said one per four
+    (`crates/script/src/dom/reads.rs:970`): an over-charge.
+  - The charge-before-copy order of a String argument is held by a source test only
+    (`bindings.rs:630`); `webidl-check` sees it by digest.
+  - The guard against a copied child list misses `.into()` and a push loop
+    (`crates/script/tests/dom_reading_cost.rs:618`); `reads.rs:705` rests on that guard alone.
+  - No test cuts in the first step of a refill or by wall clock inside one (`bindings.rs:1469`
+    at `8086a30`).
+  - Three readers on one parent stay quadratic: 500 children cost 180,250 steps.
+  - `HTMLCollection` has no named properties: `collection["id"]` is `undefined`.
+  - `strings_value` charges no step an element (`prelude.rs:1441-1453` at `db0e535`).
+  - Two tests on `main` run at 5.6 to 7.6 times their time alone: `adversary_5::the_code_getter
+    _in_a_loop...` (20 s) and `script_hook::a_hook_that_keeps_every_element_open_ends_at_the_
+    step_limit` (10 s).
+  - `cargo fmt --all -- --check` fails on 445 blocks in 41 files, none of them the unit's.
+  - Six time-to-step quotients of review 6 were not measured: host load was 57 to 58.
+- A later story takes up:
+  - `story:scripts-dom-mutation`: the clone before the charge in `refresh_collection`, two
+    `git grep` gates against a copied child list, and the `Document.title` setter on `find`.
+  - `story:scripts-dom-attributes`: `getAttributeNames` through `strings_value`; it and
+    `story:scripts-dom-selectors` use `charge`, `ATTRIBUTES_A_STEP`, `attribute_count`,
+    `scan_for`, `positions` and `value_at` of `reads.rs`, whose names stay.
+  - `story:scripts-dom-sibling-positions`: positions in the tree, so readers are linear.
+  - `story:scripts-dom-collection-names`: the named properties of `HTMLCollection`.
+  - `story:scripts-parse-run`: the page's `DocumentInfo`, and the step limit measured again
+    (59 whole-page `textContent` reads fit in one script's 10,000,000 steps).
+  - `story:scripts-utf16-length`: named by round 5 for the argument's charge.
+  - `story:tests-without-wall-time-bounds`: the two timed tests on `main` named above.

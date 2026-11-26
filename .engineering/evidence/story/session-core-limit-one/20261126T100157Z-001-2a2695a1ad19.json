@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:57Z",
+  "actor": "human:operator",
+  "artifact": "story:session-core-limit-one",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 947eb6c, which holds f053154 (the merge of impl/session-core-limit-one at ac1901f), 2026-11-26",
+    "reference": "check 45786991291, Documentation validation 45786991325, Shared source gates 45786991643 and Documentation site 45788969085: each completed success"
+  }
+}

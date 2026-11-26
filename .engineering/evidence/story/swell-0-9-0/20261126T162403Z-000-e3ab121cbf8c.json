@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T16:24:03Z",
+  "actor": "human:operator",
+  "artifact": "story:swell-0-9-0",
+  "kind": "story",
+  "revision": 33,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on e507a7b, the tip of impl/swell-0-10-0, through the pool on the build host, 2026-11-26 11:11 CET",
+    "reference": "task check exit 0 in 138 s at a load of 52.07 at its start; 2,050 tests: 2,048 passed, 0 failed, 2 ignored; 552 TLS tests; 72 page tests; four steps 76.6 s (test step 41.2 s); no raise line; the docs site build exit 0"
+  }
+}
