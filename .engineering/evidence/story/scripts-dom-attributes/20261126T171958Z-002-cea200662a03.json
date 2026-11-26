@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T17:19:58Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-attributes",
+  "kind": "story",
+  "revision": 56,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes of the adversary review on the unit by reviewers who did not write it, 2026-11-26",
+    "reference": "pass 1 on 51e148a: 6 musts, 4 shoulds, fixed by two rounds (5645d4d, c7bbd05); pass 2 on c7bbd05: 1 must (a statement no test held, held by its cases since), 2 shoulds, 4 notes, fixed by one round (b14899f)"
+  }
+}

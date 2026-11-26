@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T17:19:58Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-dom-attributes",
+  "kind": "story",
+  "revision": 56,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 5b20b8a, which holds 5b20b8a (the merge of impl/scripts-dom-attributes at 6a0701d), 2026-11-26",
+    "reference": "check 45864067955, Documentation validation 45864067895, Shared source gates 45864068685 and Documentation site 45866326026: each completed success"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-attributes
 kind: story
-status: active
+status: implemented
 title: The attribute members (14 rows), held to the attribute, stored-byte and memory limits and priced by what they scan
 summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the attribute functions of the tree's write surface after the standard's name checks and reads through three public reads and four owners of shared rules that the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned and a read of a value charging its bytes before any count, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in existing nodes charged to the memory budget through one handle that the engine resizes to twice the live bytes, so that a write that removes bytes refunds them, a cost module with a floor of steps on the worst shape of each member and one budget row for each writer and each read that returns a value, a namespace outside the six of the tree named as a deviation, the TrustedType deviation tested, the brand check of the members tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
 relations:
@@ -44,10 +44,11 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 55
+revision: 57
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-26T07:10:09Z", actor: "human:operator", revision: 55, executor: "agent:implementor"}
+- {from: "active", to: "implemented", at: "2026-11-26T17:19:58Z", actor: "human:operator", revision: 57, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -1982,3 +1983,371 @@ not creating the element and putting it in the tree, and it holds every script's
 to the parser's attribute and stored-byte limits, as the epic's "Security" section asks (line
 234 @ a14e3b0), and to the agent's memory budget, as a node's bytes are, and every read and
 write to a price that a step buys a bounded amount of work.
+
+## As built
+
+The unit is the branch `impl/scripts-dom-attributes`, tip 6a0701d, merged into `main` as 5b20b8a.
+Its code is that of `13cd92a`. It was built on `53ab365` and took `main` once, at `21b09df`
+(`3e7296f`, which brings the engine's pin at swell 0.10.0 and the selector members); `13cd92a`
+repairs what that merge broke. Against `21b09df` it changes 21 files, 6,905 lines added and 116
+removed. Sixteen are paths of the story's scope; five are not (the two review modules of
+`crates/script/tests`, the two review modules of `crates/html/tests` and
+`crates/html/tests/main.rs`). Seven files are new: `attribute_reads.rs` (271 lines),
+`attribute_writes.rs` (320), `dom_attributes_cost.rs` (765) and the four review modules (609,
+441, 247 and 48). `attributes.rs` was an empty `impl` of 8 lines and is 154;
+`dom_attributes.rs` holds 2,291 lines. The story has 1,984 lines; its lines are cited by
+that revision.
+
+- What was built.
+  - The 14 rows of `selection.txt` for the slice `attributes` as 17 methods of the
+    `Attributes` trait, answered by `SurfAttributes` (a unit struct that keeps nothing):
+    `id`, `className` and `slot`, each a getter and a setter (6 methods), and `hasAttributes`,
+    `getAttributeNames`, `getAttribute`, `getAttributeNS`, `setAttribute`, `setAttributeNS`,
+    `removeAttribute`, `removeAttributeNS`, `toggleAttribute`, `hasAttribute`, `hasAttributeNS`.
+    Each member of `attributes.rs` is one call into one of the two files below.
+  - The DOM's rules. In `crates/html/src/tree.rs`, once each: the name a member is given is
+    lower-cased byte by byte for an element of the HTML namespace and compared with the stored
+    qualified name (prefix, a colon, local name), which is passed on its length when it differs
+    (`position_of`); a match by namespace is the pair (namespace, local name), the prefix
+    playing no part (`position_of_ns`); `Tree::namespace_error` is the DOM's `NamespaceError`
+    table: a prefix with no namespace, the prefix `xml` outside the XML namespace, the name or
+    prefix `xmlns` outside the XMLNS namespace, the XMLNS namespace with neither.
+    In `attribute_writes.rs`: a local name is valid when it is not empty and holds no ASCII
+    whitespace, NUL, `/`, `=` or `>` (`local_byte`); a prefix is valid when it is not empty
+    and holds none of those but may hold `=` (`prefix_byte`); `split` cuts a qualified name at
+    its first colon in one pass. `setAttributeNS` in a namespace that is none of the six the
+    tree knows throws `NotSupportedError` after validate and extract and before the attribute
+    is looked up; the row of `selection.txt` says so (lifted by `story:html-open-namespace`).
+    `toggleAttribute` reads `undefined` as no force. `getAttributeNode` and the other
+    attribute-node members still throw.
+  - The files, and which of them may name a writable tree:
+    - `attribute_reads.rs` (new, 271 lines) holds every read: `Wanted`, `Found`, `Scan`,
+      `find`, `copy_value`, `reflected`, `any`, `names`, `get`, `get_ns`, `has`, `has_ns`,
+      `namespace_of` and the helpers `byte_steps`, `pass_steps`, `compare_steps`, `attributes_of`
+      and `value_at`. It names no writable tree and no `charge_stored`.
+    - `attribute_writes.rs` (new, 320 lines) holds every write: `local_byte`, `prefix_byte`,
+      `invalid_character`, `validate`, `split`, `ended`, `put_bytes`, `removed_bytes`,
+      `charge_put`, `set_reflected`, `set`, `set_ns`, `remove`, `remove_ns`, `toggle` and
+      `charged_write`. It is the one file of the slice that names a
+      writable tree (`tree_mut`, `&mut Tree`, `&mut surf_html::Tree`, `host_mut`, `DomState`);
+      a test holds the list `WRITERS_OF_THE_TREE` at one file.
+    - `attributes.rs` (154 lines) holds the 17 members, each one call.
+    - `reads.rs` is not in the diff against `21b09df`: the three `pub(super)` tokens the
+      slice needs (`charge`, `ATTRIBUTES_A_STEP`, `attribute_count`) came with the selectors.
+      `runner.rs` and `generate.rs` are not in the diff. `dom/mod.rs`: two lines.
+  - The charges, in steps against the entry's 10,000,000, each before the work it pays:
+    - The unit of a string is 16 bytes a step (`STRING_BYTES_A_STEP`); of a scan, 4 attributes
+      a step (`ATTRIBUTES_A_STEP`). A scan by name costs `c / 4 + k * n / 16` for `c`
+      attributes, `k` of them of the length wanted and `n` bytes of the wanted name.
+    - A returned value costs `v / 16`; it is then held to `string_length` (`L`): a value of
+      more than `3 * L` bytes is the `RangeError` at once; one of more than `L` and at most
+      `3 * L` bytes is charged `v / 16` again before its units are counted; then the value is
+      copied. `getAttributeNames` costs `c` plus the names' bytes / 16, and the glue's 8 steps
+      a name (`STRING_ELEMENT_STEPS`).
+    - A write: the validation pass `n / 16` (charged before it runs), the `find`, one charge for
+      the tree's own scan `c / 4 + k * n / 16`, `(n + v) / 16` for the bytes the tree copies (none
+      for a removal), then the memory charge, then the write.
+  - The memory charge, in bytes. One engine handle (`HostBytes`) is resized through
+    `Cx::resize_host_bytes`. `live` is the net rise of what the tree holds since the parse and
+    stops at 0; the handle holds `charged = 2 * live` (`STORED_FACTOR`).
+    - `charged_write` runs `cx.charge_stored(added, removed)?`, then the write on
+      `cx.tree_mut()`; if the tree refuses, `cx.settle_stored(0, 0)?` puts the handle back and
+      the error is answered; else `cx.settle_stored(added, removed)?`.
+    - `live` counts what `Tree::held_bytes` counts: the strings and every 80-byte record slot
+      (`ATTRIBUTE_BYTES`) the list holds. An add charges its name, its value and the room the
+      list grows by (`room_grown`); a removal gives back the strings and the room the list
+      frees (`room_freed`); a replacement moves only the difference of its values. A list that
+      is emptied gives back its whole room (`kept_capacity` is 0).
+    - `DomEnd::Fault` ends the run faulted (`Termination::EngineFault`) and no script
+      catches it. `charge_to` names the engine's answers to a resize one by one: `Faulted`,
+      `ForeignHandle`, `StaleHandle`, `WrongKind`, `ModuleStatus`, `ModuleTerminated`,
+      `EvaluationInProgress` and `MemoryBudget` (8 variants) end the run through `Fault`. A
+      resize over the budget ends the run `Terminated(MemoryBudget)`; surf's answer is then a
+      throw the engine does not deliver.
+    - The accessors the tests read: `stored_live`, `stored_charged`, `stored_handles` and
+      `node_charges` of `DomState`; `stored_live` and `stored_charged` of `DomCx`.
+  - The tree's side, `crates/html/src/tree.rs` (363 lines added, 55 removed):
+    - The story's three reads, `attribute_position`, `attribute_position_ns` and
+      `attribute_names`, and its four owners, `Namespace::from_url`, `Tree::namespace_error`,
+      `Attribute::stored_bytes` and `Attribute::qualified_len`. Beyond the story:
+      `Attribute::string_bytes`, `Tree::held_bytes`, `Tree::attribute_room_grown` and
+      `Tree::attribute_room_freed` (deviation 5). Private: `position_of`, `position_of_ns`,
+      `lower_byte`.
+    - The list grows one record at a time below 4 records and by doubling above
+      (`grown_capacity`); it shrinks when its capacity is above `max(2 * len, 4)`
+      (`must_shrink`) and to nothing when emptied. `put_attribute` reserves by that rule with
+      `reserve_exact`. A list the parser built has no room past its records (the parser collects
+      it at its length; `add_attributes` reserves exactly). `Tree::stored_bytes` (the parser's
+      limit count, 80 a record) is unchanged. `held_bytes` has no caller in any `src` file; only
+      the tests read it.
+    - `Tree::add_attributes`, the parser's merge of the attributes of a second `html` or
+      `body` start tag, reserves exactly on every merge (deviation 6).
+    - 11 doc comments of the new public functions carry a line that starts with `Cost:`.
+  - `crates/webidl/selection.txt`: the row of `setAttributeNS` gained the note above;
+    `bindings.rs` is regenerated (`charge_stored` occurs 7 times in it). `docs/design/scripts.md`:
+    two places (the paragraph on the charge and the `memory_bytes` bullet). `AGENTS.md`: the
+    entry of `crates/script` and of `crates/html`.
+- Acceptance. Each item "shown" by what, or "not shown" and why. A name is a test of
+  `crates/script/tests/dom_attributes.rs` (module `dom_attributes`) unless a module is given.
+  - 1a. Shown: `cases_are_the_rows` (the rows of `selection.txt`; `awk '$3=="attributes"'
+    crates/webidl/selection.txt | wc -l` prints 14). 1f. Shown: `run_case` (a runner of its own
+    for each entry, the end `Ran`, no limit recorded), run through `reflected_rows`, `read_rows`
+    and `write_rows`.
+  - 1b and 1c. Shown by the table `CASES` (85 entries) through `reflected_rows`, `read_rows`
+    and `write_rows`; the entries of 1c are held by the table, not one by one by a test of
+    their own.
+  - 1d. Shown: `exceptions_leave_the_tree_and_the_charges`.
+  - 1e. Shown: `a_namespace_outside_the_six_scans_nothing`.
+  - 1g. Shown: `a_member_of_another_brand_throws_a_type_error`.
+  - 1h. Shown: `a_message_holds_no_argument`.
+  - 2a to 2c. Shown: `the_attribute_limit_ends_the_script` (2a, and 2c for the attribute
+    limit) and `the_stored_byte_limit_ends_the_script` (2b, and 2c).
+  - 2d. Shown by the two commands of the story: `attribute_writes.rs` is tracked and
+    `git grep` for `Limit::Nodes`, `Limit::Depth`, `Limit::InputBytes` and `Limit::Steps` in it
+    prints nothing.
+  - 3. Shown: `a_link_set_by_script`.
+  - 4a and 4b. Shown: `the_reading_members_see_the_writes`, `no_member_moves_the_write_counter`.
+  - 5a. Shown: `a_scan_costs_a_step_per_four_attributes`. 5b: shown by
+    `a_value_costs_a_step_per_16_bytes_each_time_it_is_copied`. 5c: shown by the 19 `budget_*`
+    rows (`budget_set_attribute` to `budget_get_attribute_names`; the helper is `budget_row`).
+    5d: `a_loop_of_writes_over_children_is_linear`. 5e: `get_attribute_names_of_1_000`.
+  - 6a. Shown: `the_stored_charge_follows_each_write`, against `Tree::held_bytes`
+    (deviation 7). 6b. Shown: `memory_first_r0_one_element_new_names` to `memory_first_r7_slot`
+    (8 rows, bound 837, 838 for r2; deviation 9). 6c. Shown: `attributes_first`.
+    6d. Shown: `a_repeat_is_a_grow_and_a_refund`. 6e. Shown: `growth_by_replacement`.
+    6f. Shown: `bindings::the_stored_charge_functions`. 6g. Shown:
+    `a_removal_of_parser_bytes_refunds_what_was_charged` (deviation 8). 6h. Shown:
+    `bindings::a_fault_ends_the_run`; the source check prints 5 lines, not 3 (deviation 2).
+    Beyond the story's items, the slot rule has its own cases:
+    `a_seeded_sequence_is_charged_by_the_slots_and_the_strings`,
+    `a_slot_a_removal_keeps_is_charged_once` and
+    `a_removal_from_a_parsed_list_gives_back_down_to_zero`.
+  - 7a to 7e. Shown in the module `script_hook` of `crates/html/tests`: `read_attribute_position`,
+    `read_attribute_position_ns`, `read_attribute_names` (7c, the non-element answers, is held
+    inside these three), `attribute_stored_bytes`, `attribute_qualified_len`,
+    `namespace_from_url`, `namespace_error_conditions` (7d),
+    `one_matching_rule_for_reads_and_writes` (7b), `removals_copy_no_name`, `read_attribute_room`,
+    `every_list_the_parser_builds_has_no_room_past_its_records`. 7e: the check of the `Cost:`
+    line is `assert_cost_line`; it covers 10 of the 11 lines (not `Attribute::string_bytes`).
+    7f. Shown: `tree::tests::put_attribute_reserves_exactly` (in `crates/html/src/tree.rs`).
+  - 8. Shown: `dom_reading::other_slices_still_throw` and `the_attribute_node_members_still_throw`.
+    `dom_reading.rs` changed by one line: `getAttribute("id")` became `getAttributeNode("id")`,
+    message "Element.getAttributeNode is not supported: attribute nodes".
+  - 9. Shown: `slot task webidl-check` rc 0 and `webidl-slow` rc 0 in the build and round 1
+    (rounds 1b and 2: `webidl-check` only); the merge regenerated `bindings.rs` with the
+    generator's command (rc 0) and ran `webidl-check` (rc 0); `webidl-slow` was not run again
+    after the merge. The digest-line diff names the digests of `selection.txt` and of
+    `prelude.rs` only; `git grep -c charge_stored` prints 7.
+  - 10. Shown with deviations 10 and 11: the files are 21, of which 5 are not of the Change; the
+    source test is replaced by four guards in three modules and a test of the lexer.
+    `the_members_touch_the_tree_only_through_the_files` holds the order inside `charged_write`;
+    `only_the_writes_file_names_a_writable_tree` and
+    `adversary_dom_attributes::the_members_file_names_no_tree_and_no_charge_in_any_spelling`
+    hold who may name a tree;
+    `adversary_dom_attributes_2::the_members_files_hide_no_call_behind_a_slash_pair_in_a_string`
+    holds that a call after a string with `//` is seen; the lexer is held by
+    `the_comment_cut_keeps_what_a_string_holds` (module `dom_attributes_cost`).
+  - 11a to 11g. Shown in `dom_attributes_cost`: `scans_of_long_names_and_of_many_names` (11a to
+    11c), `values_at_and_over_string_length` (11d), `writes_and_removals_over_16_384_attributes`
+    (11e, 11f), `four_thousand_new_names_on_one_element` (11g). 11h: the floors fail when their
+    charge is removed, shown per round by the hand-made defects (see the reviews); no run of
+    every defect at `13cd92a` exists.
+  - 12. Not shown: `slot task check`; no gate was run.
+  - 13. Not shown: the public surfaces (`README.md`, `docs/badges`, `website/docs`) are not in
+    this unit; their numbers are written from a gate run in a commit after it. 13c: shown in
+    part; the entry of `AGENTS.md` counts 409 tests, read from `cargo nextest list` by module
+    plus the 2 ignored tests, not from a gate log (deviation 12).
+  - 14. Shown in part. No test of the unit runs over 5 s at the tip (slowest 3.344 s); no test
+    asserts a time; `test-clocks-check` rc 0 at the merge; the test step of the gate was not
+    run.
+  - 15. Shown: this note holds the items.
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written. 12 deviations.
+  1. `find` answers `DomResult<Scan>`, with `Scan { found, count, same_length, room_grown,
+     room_freed }` and `Found { at, value_bytes, string_bytes }`. The story (lines 338-341) has
+     `Option<Found>` with `stored_bytes` and `same_length`. Reason: a write that finds nothing
+     still owes the tree's scan over `k`, and the room rule needs the room numbers.
+  2. `charge_to` names the variants of the engine's answer instead of `Err(_) =>
+     Err(DomEnd::Fault)` (decision 8, lines 623-632; the source check of 6h, lines 1410-1424,
+     expects three code lines with `DomEnd::Fault`). The check prints 5 lines at `13cd92a`:
+     `prelude.rs` 333, 336, 349, 389 and 1036, all inside `charge_to`, `settle_stored` and
+     `answered`; `crates/script/src/dom` prints nothing. Reason: the first review asked
+     that `charge_to` name the variants; `MemoryBudget`, new in swell 0.9.0, joined the arm at
+     the merge.
+  3. The tests read the tree through `runner.agent_and_realm().0.host().document()`. The story
+     (decision 12, line 812; Context, line 174) names `runner.document()` and
+     `Runner::document, runner.rs:191`. The function is `ScriptHost::document`, `runner.rs:196`.
+  4. The list's room and the slice's charge by capacity. The story (decisions 3 and 8, lines
+     431-434 and 766-770) has `put_attribute` reserve exactly below 4 records, the factor 2
+     cover the `Vec` rule beyond, and `live` count `Attribute::stored_bytes`. Built: `live`
+     counts strings and record slots, the tree has `grown_capacity`, `kept_capacity` and
+     `must_shrink`, and the slice charges `room_grown` and gives back `room_freed`. Reason: the
+     first review showed a push into a parser-built list holding bytes the handle did not
+     charge (capacity 512 to 1,024, 40,961 bytes held, 162 charged); round 1b followed because
+     the slots a list keeps after a removal were not charged consistently.
+  5. Public additions beyond the story's three reads and four owners: `Tree::held_bytes`,
+     `Tree::attribute_room_grown`, `Tree::attribute_room_freed` and `Attribute::string_bytes`.
+     The `Cost:` lines are 11 (7e, line 1508: 7); a test checks 10 of them by name.
+  6. `Tree::add_attributes` reserves exactly on every merge of the parser. The story says no
+     answer of an existing function changes (lines 834-835). Reason: the second review found
+     the doc of `attribute_room_grown` false for a list the parser merged. Each merge now
+     allocates the list anew; no timing was taken, the bound is derived (see "Left as it is").
+     64 merged start tags cost 124 steps before and after.
+  7. The assertions of 6a and 6b are against `Tree::held_bytes`; the story (lines 1212-1213
+     and 1241-1242) compares with the rise of `stored_bytes()`. The test also checks that an
+     added attribute's `stored_bytes()` equals the `stored` rise.
+  8. 6g step 2: the story (1,000, 2,000), built (1,080, 2,160). The removal of the parser's
+     attribute `p` leaves its record slot in the list, so the slot stays charged. Steps 1 and 3
+     are as the story: (2,081, 4,162) and (0, 0).
+  9. 6b, measured writes and heap, bounds held on every row. r0: 825 writes (build), 823
+     (round 1), 824 (round 1b and at the tip); r1: 817, then 816 at swell 0.10.0; heap of r0 and
+     r2 to r7 +21,008 at swell 0.10.0 (the realm with the bindings is 484,183 bytes against
+     463,175). The story gives bounds (837, 838 for r2) and "about" step figures, not these
+     counts; 6c moved to 1,190,890 in round 1 and is the story's 1,109,930 again since round
+     1b (so it is not a deviation at the tip).
+  10. The source test of acceptance 10 (the story's lines 1555-1592) is replaced by four
+     guards in three modules and a test of the lexer (named under 10 above), after the first
+     review (a source test that saw tokens, not calls, passed 3 defects) and the second (a rule
+     that cut a line at the first `//`, even inside a string).
+  11. Files beyond the Change: five outside the scope list (first paragraph).
+     `crates/script/tests/main.rs` gains 3 lines, the story says 1 (`mod dom_attributes_cost;`,
+     lines 897 and 1905). `crates/html/tests/main.rs` gains 2 lines; the story (lines
+     1546-1548) names nothing else under `crates/html/` than `tree.rs` and `script_hook.rs`.
+  12. The count of `AGENTS.md` (409 tests; dom_attributes 53, dom_attributes_cost 7,
+     adversary_dom_attributes 10, `_2` 6, bindings 22) comes from `nextest list` by module,
+     not from a gate log (13c, lines 1728-1730), because no gate was run.
+- The two reviews, and the three fix rounds. Each review by a reader who did not write the
+  unit; both ended with change wanted.
+  - First review (the unit at `51e148a`, cases merged as `1ceac00`): verdict "not ready"; 15
+    findings, 6 must, 4 should, 5 note.
+    - Must: `setAttributeNS` threw for a valid prefix that holds `=`; a push into a list the
+      parser built held bytes the handle did not charge; no test held the `k * n / 16` term of
+      the tree's own scan; none held "no ASCII whitespace" beyond the space; none the
+      3 x `string_length` edge of `copy_value`; none the length rule of `position_of`.
+    - Should: the source test saw tokens, not calls (3 defects passed); the counts in
+      `AGENTS.md` were false; a test's time was misattributed (6.06 s, mostly set-up
+      scripts); `charge_to` should name the variants.
+    - Note: a sentence of `scripts.md` on "twice what scripts hold"; a large-value write over
+      the attribute limit ends `limit: memory`; the shift of `drop_attribute` is not measured;
+      `page` and `page-text` match an attribute by local name without its namespace; swell
+      0.8.0 has no `Proxy`.
+    - 12 cases written: 10 in `adversary_dom_attributes` (surf-script), 2 in
+      `adversary_tree_writes` (surf-html); 2 were red on the unit (the prefix and the room,
+      commit `de2065c`). Eight hand-made defects passed every test of the unit (one was
+      equivalent until the prefix was fixed); two others (the brand check, `getAttributeNode`)
+      went red on the unit's own tests.
+    - Round 1 (`5645d4d`): the prefix set fixed; `attribute_room_grown`/`attribute_room_freed`
+      and `grown_capacity`; the source test narrowed to the order inside `charged_write`;
+      `charge_to` names the variants; the 6 s test cut to 2.889 s by reading its arguments
+      from parsed markup; four of the review's defects shown red on the code; the sentences of
+      the docs updated. surf-script 296 passed, surf-html 266.
+    - Round 1b (`c7bbd05`): the record slots charged by capacity (`held_bytes`,
+      `Attribute::string_bytes`, `kept_capacity`); 8 hand-made defects, all red; three tests
+      (the seeded sequence, the slot a removal keeps, the parsed list); a type alias `Write`
+      for clippy. A loop of 16,384 adds: `live` 2,723,738 to 1,414,298, charged 5,447,476 to
+      2,828,596, steps 108,385,298 unchanged. surf-script 299, surf-html 266.
+  - Second review (the unit at `c7bbd05`, failing case `d221618`, cases `b93fdbf`, merged as
+    `c19804f`): verdict NEEDS-CHANGE; 7 findings, 1 must, 2 should, 4 note.
+    - Must: no test read the engine's side of the handle (a defect there passed every test).
+    - Should: the doc of `attribute_room_grown` was false for a list the parser merged; the
+      source rule cut a line at the first `//` even inside a string.
+    - Note: shrink steps are not charged; `charge_to` names 7 variants, none reachable;
+      `ATTRIBUTE_BYTES` equals `size_of::<Attribute>()` held at 80; the charge stops at 0 for
+      each write. A defect that puts the slot at 64 bytes: 20 cases red.
+    - 7 cases written: 1 in `adversary_tree_writes_2` (red on the unit: "the parser left 6 records
+      in room for 10; the first add takes 0 bytes of record slots, the document says 480") and 6
+      in `adversary_dom_attributes_2`.
+    - Round 2 (`b14899f`): `add_attributes` reserves exactly (a test red on the old code); a
+      lexer `code_lines` for the source tests and two new source tests; the engine's refund
+      needed no change in the code; a sentence for the stop at 0; the review's clippy line
+      left in its patch. surf-script 307, surf-html 268.
+  - The merge round (`3e7296f`, `13cd92a`): conflicts in 5 files (`tests/main.rs`,
+    `dom_reading.rs`, `AGENTS.md`, `scripts.md`, `bindings.rs`); `bindings.rs` regenerated
+    with the generator's command. The merge broke one thing: `HostError::MemoryBudget` (new in
+    swell 0.9.0) was not covered in `charge_to` (E0004); it joined the arm of the answers that
+    end the run through `Fault`. The review's clippy line (`is_multiple_of`) applied.
+- Numbers.
+  - Tests at `13cd92a`, by module, counted by `#[test]`: `dom_attributes` 53,
+    `dom_attributes_cost` 7, `adversary_dom_attributes` 10, `adversary_dom_attributes_2` 6:
+    76; `bindings` 22 (20 at `21b09df`, 18 at the base); `script_hook` 73 (62 at the base);
+    `adversary_tree_writes` 2, `_2` 1; `tree::tests` 3 (2 at the base). `dom_reading` 48.
+    `surf-script`: 407 run and 2 ignored, 409; `surf-html`: 268 (20 unit and 248 in the binary;
+    253 before the unit); `surf-webidl` 131. Test files: 257 in 26 test directories (`test-layout`).
+  - The crate's run count through the rounds, surf-script: 229 before the unit; 286 (build);
+    296 (first review); 296 (round 1); 299 (round 1b); 305 (second review); 307 (round 2);
+    407 at the merge with the other units' modules. surf-html: 253, 263, 265, 266, 266, 267
+    (one red), 268.
+  - Step counts at the tip (the same at the build, none moved with the engine's pin):
+    - 5a: `getAttribute` over 1,024 attributes 288, over 4 attributes 26; `hasAttribute` 288 and
+      26; `getAttributeNS` 289 and 27; `hasAttributeNS` 289 and 27; `id` 279 and 23;
+      `getAttributeNames` of 1,024: 9,491 (story floors 255 and 9,216).
+    - 5b: a value of 64,000 bytes: read 8,025 (of 64 bytes: 33), set 12,026 (of 64 bytes: 38);
+      story floors 7,992 and 11,988.
+    - 5c, examples (S0, S1, C, M, parts, B): `e.className` 17, 131,095, 131,078, 6,
+      [65,536, 65,536], 98,327; `getAttributeNames()` of 4,096 attributes 17, 38,100, 38,083, 9,
+      [5,306, 32,768], 21,716; `removeAttribute(n)` 1,048,606, 1,318,951, 270,345, 9, [131,072,
+      4,096, 65,536, 69,632], 1,284,135; `setAttributeNS(SVG, n, "")` 2,097,182, 2,359,339,
+      262,157, 11, [131,075, 65,536, 65,535], 2,326,571; `toggleAttribute(n)` removing
+      1,048,606, 1,384,487, 335,881, 9, [131,072, 65,536, 4,096, 65,536, 69,632], 1,349,671.
+    - 5d: 5,000 children 220,045 steps, 500 children 22,045. 5e: 9,270 (floor 9,243).
+    - 6b: r0 824 writes (bound 837), 6,510,272 steps, heap 67,048,556; r1 816 (837), 6,145,470,
+      66,971,648; r2 818 (838), 6,160,514, 66,997,820; r3 816, 6,148,738, 66,973,280; r4 822,
+      8,247,279, 67,016,800; r5 822, 6,188,133, 67,020,088; r6 822, 6,188,133, 67,025,020;
+      r7 822, 6,188,133, 67,023,376.
+    - 6c: 683,054 steps, `live` 1,109,930, charged 2,219,860. 6d: 40 rounds, 7,865,666 steps.
+      6e: 10,219,842 steps.
+    - 11a: 257,161 (floor 257,024). 11b: 4,109 (4,096), `id` 4,106 (4,097). 11c: 152,917
+      (152,905). 11d: 524,302 (524,288); the `RangeError` 524,318 (524,288); 786,462 (786,432).
+      11e: 794,637 (794,624), `id` 794,636, `setAttributeNS` 270,352 (270,338), `toggle` 270,348
+      and `setAttribute` of a name 270,349 (270,336). 11f: 12,992, 12,993 and 12,992 (12,980).
+      11g: 7,510,619 (floor 4,190,208).
+    - A namespace outside the six: 38 steps, for 4 and for 1,024 attributes. A seeded run of
+      2,400 writes: most 64 records, 260 short, 123 empty. The engine's refund: a set +2,096,834,
+      the removal -2,093,396, the record 2,097,314; a refused write 1,543.
+  - Times. The load beside a time is given only for the build: the local load was 29 to 48
+    and the crate's step took 41.929 s (286 tests). Without a load number: round 1 58.583 s
+    (296 passed), round 1b 69.343 s (299), second review 11.465 s (305), round 2 6.823 s
+    (307), the merge 7.908 s and the tip 7.229 s (407 run), `surf-html` 1.645 s (268),
+    `surf-webidl` 0.466 s (131). The first review's run of the whole step took 80.638 s (296
+    run, 2 failed). Slowest tests of the unit at the tip:
+    `memory_first_r4_toggle_attribute` 3.344 s, `a_repeat_is_a_grow_and_a_refund` 3.268 s,
+    `writes_and_removals_over_16_384_attributes` 2.643 s; the crate's slowest is
+    `adversary_5` 4.741 s. At the build
+    `writes_and_removals_over_16_384_attributes` took 6.062 s (named: over 5 s), 2.889 s after
+    round 1. The largest time of a step against the plain walk's step of `dom_reading_cost`:
+    4.0 times at the build, 5.6 times at the tip (`getAttributeNames`, 673.6 ns a step against
+    121.3 ns). No test of the unit ran over 5 s at the tip.
+  - Checks at the merge: clippy `-D warnings` on `surf-script`, `surf-html` and `surf-webidl`
+    rc 0; `fmt` rc 1 before the clippy line was formatted and rc 0 after; `lock-check`,
+    `doc-tests-check`, `webidl-check`, `html-conformance` ("9107 cases, 9095 run, 9095
+    passed", as before the round), `test-clocks-check` and `test-clocks-check-test` rc 0;
+    `test-layout` rc 0. No gate run.
+  - Hand-made defects, each shown red once in the round that wrote it: round 1 four of the
+    first review's; round 1b eight; round 2 the removal of `add_attributes`'s reservation (2
+    red), three of the source rules (a `?` between the tree call and a settle, green on the
+    old cut and red on the new; a helper in `reads.rs` that names `tree_mut`; the review's
+    `//` defect) and, for the engine's refund, the removal of the resize in `settle_stored`
+    (red). The second review's defect that puts the slot at 64 bytes: 20 red. No run of all
+    of them at `13cd92a`.
+- Left as it is.
+  - The note that a large-value write over the attribute limit ends `limit: memory`; the shift
+    of `drop_attribute` not measured; `page` and `page-text` match an attribute by local name
+    without its namespace; swell has no `Proxy` at 0.8.0 (checked only there).
+  - The second review's notes: shrink steps are not charged; `charge_to` names variants that no
+    path reaches (7 at the review, 8 with `MemoryBudget`); `ATTRIBUTE_BYTES` is
+    `size_of::<Attribute>()` held at 80 by a test;
+    the charge stops at 0 for each write (a sentence in the docs says so).
+  - `Tree::held_bytes` has no caller outside the tests. `Tree::stored_bytes`, the parser's limit
+    count, still counts 80 a record, not the slots.
+  - The text of 6h names `Err(_) => Err(DomEnd::Fault)`; the code has named arms.
+  - Each parser merge of an `html` or `body` start tag allocates the list anew, bounded by
+    1,024 attributes an element; derived, not measured. A cycle of one add and two removals at
+    a shrink edge reallocates twice (the second review's reading of the code, not measured).
+  - `webidl-slow` was not run after the merge. No gate was run; no number of the public surfaces
+    is written; the unit wrote no line of `CHANGELOG.md`.
+- A later story takes up:
+  - `story:scripts-dom-mutation` calls `charge_stored`, `settle_stored`, `charge_to` and
+    `DomEnd::Fault` (Placement, lines 1818-1849).
+  - `story:html-open-namespace` lifts the deviation of `setAttributeNS`.
+  - `story:scripts-html-conformance` and `story:scripts-document-port` depend on the slice
+    (line 1974).
