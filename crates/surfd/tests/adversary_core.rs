@@ -171,11 +171,11 @@ fn the_start_chain_of_both_forms_ends_a_process_by_abort_without_a_dump() {
 }
 
 /// `surfd` reads its hard core limit once, in `Config::new`. When that limit is lowered to 0
-/// after the read (`prlimit --pid <surfd> --core=0:0`, from outside), `prlimit` cannot set the
-/// item it chose, and every `open` fails: without scripts with status 3 and `cannot start
-/// <program>: ...`, with scripts with `did refused scripts-unavailable`. Release `0.9.0`, with
-/// a core limit of 0, opened a session there. It needs one process per test, which
-/// cargo-nextest gives.
+/// after the read (`prlimit --pid <surfd>` with [`CORE_ARGUMENT_ZERO`], from outside), `prlimit`
+/// cannot set the item it chose, and every `open` fails: without scripts with status 3 and
+/// `cannot start <program>: ...`, with scripts with `did refused scripts-unavailable`. Release
+/// `0.9.0`, with a core limit of 0, opened a session there. It needs one process per test,
+/// which cargo-nextest gives.
 #[test]
 fn a_hard_core_limit_lowered_after_the_read_refuses_every_open() {
     let dir = TestDir::new();
