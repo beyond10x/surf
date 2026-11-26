@@ -58,10 +58,28 @@ pub enum DomEnd {
     /// A write would go over a limit of the parser: nothing is written,
     /// [`end_with_limit`] records the limit and ends the script there.
     Limit(Limit),
+    /// The String the member would answer has more UTF-16 code units than the agent's
+    /// `string_length`: the realm's `RangeError`, as for a String answered whole.
+    StringLength,
 }
 
 /// What every method of a slice answers.
 pub type DomResult<T> = Result<T, DomEnd>;
+
+/// The message of the `RangeError` for a String longer than `string_length`: swell's own for a
+/// String its operations would make too long.
+pub const STRING_LENGTH_MESSAGE: &str = "the string would be longer than string_length";
+
+/// The UTF-16 code units of `text`.
+pub fn utf16_units(text: &str) -> u64 {
+    u64::try_from(text.encode_utf16().count()).unwrap_or(u64::MAX)
+}
+
+/// Whether `text` has more UTF-16 code units than `limit`. A text of at most `limit` bytes has
+/// at most that many units and is not counted; a longer one is counted once.
+pub fn longer_than(text: &str, limit: u64) -> bool {
+    u64::try_from(text.len()).unwrap_or(u64::MAX) > limit && utf16_units(text) > limit
+}
 
 /// The `NotSupportedError` a member answers until its slice gives it behaviour: its message
 /// names the member, `<interface>.<member> is not supported`.
@@ -88,6 +106,8 @@ pub struct DomState {
     limits: Limits,
     totals: Totals,
     limit: Option<Limit>,
+    /// Whether an end of the run left a kept collection half refilled ([`DomState::cut_refill`]).
+    cut_refill: bool,
     interrupt: InterruptHandle,
     charges: Vec<HostBytes>,
     /// The message of a `TypeError` noted while the bindings are out of the host
@@ -103,6 +123,7 @@ impl DomState {
             limits,
             totals: Totals::default(),
             limit: None,
+            cut_refill: false,
             interrupt,
             charges: Vec::new(),
             type_error: None,
@@ -122,6 +143,14 @@ impl DomState {
     /// The limit recorded, if any.
     pub fn limit(&self) -> Option<Limit> {
         self.limit
+    }
+
+    /// Whether an end of the run (`Abrupt::Terminated`) cut a refill of a kept collection after
+    /// its first define and before its data was written, so that the object may show two lists.
+    /// Set once and never cleared: no script of the document reads that object again, because
+    /// the runner runs no later script of the document.
+    pub fn cut_refill(&self) -> bool {
+        self.cut_refill
     }
 
     /// The totals of the node charges.
@@ -171,6 +200,12 @@ impl<'e> DomCx<'_, 'e> {
         &self.state.interrupt
     }
 
+    /// The agent's `string_length`: a String a member answers with more UTF-16 code units is
+    /// the `RangeError` of [`DomEnd::StringLength`].
+    pub fn string_length(&self) -> u64 {
+        self.engine.host().string_length()
+    }
+
     /// The engine, for a wrapper's host object.
     pub fn engine(&mut self) -> &mut Cx<'e, ScriptHost> {
         &mut *self.engine
@@ -201,14 +236,43 @@ impl<'e> DomCx<'_, 'e> {
 }
 
 /// The wrapper hook (decision 8): every node a member returns goes through `wrap`, and every
-/// `this` and node argument through `unwrap` after its brand check. `story:scripts-dom-reading`
-/// writes the real one; until then `crate::dom::wrapper` throws `NotSupportedError`.
+/// `this` and node argument through `unwrap` after its brand check. surf's own is
+/// `crate::dom::wrapper`.
+///
+/// It also holds `[SameObject]` for the attributes that return a `NodeList` or an
+/// `HTMLCollection` ([`SameObject`]): the getter asks `same_object` for the object kept for the
+/// node and the member, and hands a new one to `keep_same_object`. The getter makes and
+/// refreshes the object; the hook only finds and keeps it. With the provided methods, which
+/// keep nothing, such a getter makes a new object at each read.
 pub trait Wrap {
     /// The wrapper of `node`.
     fn wrap(&mut self, cx: &mut DomCx<'_, '_>, node: NodeId) -> Completion<Value>;
 
     /// The node of a wrapper, `None` for any other value.
     fn unwrap(&self, cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId>;
+
+    /// The object kept for `node` and `member` by [`Wrap::keep_same_object`], if any.
+    fn same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+    ) -> Completion<Option<ObjectRef>> {
+        let _ = (cx, node, member);
+        Ok(None)
+    }
+
+    /// Keeps `object` as the object of `node` and `member`.
+    fn keep_same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+        object: ObjectRef,
+    ) -> Completion<()> {
+        let _ = (cx, node, member, object);
+        Ok(())
+    }
 }
 
 /// The data of a node's wrapper made by [`new_wrapper`].
@@ -227,6 +291,9 @@ impl HostData for NodeData {
 pub struct CollectionData {
     /// The nodes, in order.
     pub nodes: Vec<NodeId>,
+    /// The tree's `writes()` when the nodes were taken: a kept `[SameObject]` collection whose
+    /// count is the tree's is up to date.
+    pub written: u64,
 }
 
 impl HostData for CollectionData {
@@ -479,16 +546,22 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per 64 bytes copied.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units to
+    /// be copied (8 units), the price of a String answer's copy, before the copy: the length
+    /// is read first as [`string_length`] reads it, which copies nothing, so a call past its
+    /// steps ends before any unit is copied.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
-        let text = cx
-            .to_utf16(string)
-            .map(|units| String::from_utf16_lossy(&units))
-            .map_err(defect)?;
+        let length = string_length(cx, string)?;
+        let count = if length.is_finite() && length > 0.0 {
+            length as u64
+        } else {
+            0
+        };
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
+        let units = cx.to_utf16(string).map_err(defect)?;
+        let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let units = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(units / 64)?;
         Ok(text)
     }
 }
@@ -529,11 +602,22 @@ fn realm_of(cx: &Cx<'_, ScriptHost>) -> Completion<RealmRef> {
 
 /// A `TypeError` of the realm with `message`, thrown.
 fn type_error(cx: &mut Cx<'_, ScriptHost>, message: &str) -> Abrupt {
-    let realm = match realm_of(cx) {
-        Ok(realm) => realm,
-        Err(abrupt) => return abrupt,
-    };
-    match engine(cx.new_error(realm, ErrorKind::TypeError, message)) {
+    match realm_of(cx) {
+        Ok(realm) => error_of(cx, realm, ErrorKind::TypeError, message),
+        Err(abrupt) => abrupt,
+    }
+}
+
+/// The `RangeError` of the realm for a String longer than the agent's `string_length`, thrown,
+/// with swell's message ([`STRING_LENGTH_MESSAGE`]).
+fn string_length_error(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::RangeError, STRING_LENGTH_MESSAGE)
+}
+
+/// An error of `kind` of `realm` with `message`, thrown.
+fn error_of(cx: &mut Cx<'_, ScriptHost>, realm: RealmRef, kind: ErrorKind, message: &str) -> Abrupt {
+    match engine(cx.new_error(realm, kind, message)) {
         Ok(error) => Abrupt::Throw(Value::Object(error)),
         Err(abrupt) => abrupt,
     }
@@ -679,18 +763,72 @@ fn this_global(cx: &mut Cx<'_, ScriptHost>, this: Value, member: &str) -> Comple
     }
 }
 
-/// The nodes of a `NodeList` or `HTMLCollection` `this`, after its brand check.
+/// A `NodeList` or `HTMLCollection` `this`, after its brand check, whose data holds its nodes.
 fn this_collection(
     cx: &mut Cx<'_, ScriptHost>,
     this: Value,
     interface: Interface,
     member: &str,
-) -> Completion<Vec<NodeId>> {
+) -> Completion<ObjectRef> {
     let object = this_object(cx, this, interface, member)?;
     let brand = interface.brand();
     match cx.host_data::<CollectionData>(object, brand).map_err(defect)? {
-        Some(data) => Ok(data.nodes.clone()),
+        Some(_) => Ok(object),
         None => Err(type_error(cx, &format!("{member}: `this` holds no nodes"))),
+    }
+}
+
+/// The nodes of the collection `object`, taken out of its data for a slice's call: the slice
+/// reads them in place, and [`restore_nodes`] puts them back after it, whatever it answered.
+/// Nothing is copied.
+fn take_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<Vec<NodeId>> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(std::mem::take(&mut data.nodes)),
+        None => Err(missing()),
+    }
+}
+
+/// Puts the nodes [`take_nodes`] took back into the data of `object`.
+fn restore_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// The `written` of the collection `object`.
+fn collection_written(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<u64> {
+    match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(data.written),
+        None => Err(missing()),
     }
 }
 
@@ -722,10 +860,17 @@ fn finish<T>(
     answer: DomResult<T>,
     convert: impl FnOnce(&mut DomCx<'_, '_>, &mut Slices, T) -> Completion<Value>,
 ) -> Completion<Value> {
+    let value = answered(cx, answer)?;
+    convert(cx, slices, value)
+}
+
+/// A slice's answer, or its end thrown.
+fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
     match answer {
-        Ok(value) => convert(cx, slices, value),
+        Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
+        Err(DomEnd::StringLength) => Err(string_length_error(cx)),
     }
 }
 
@@ -1004,13 +1149,46 @@ fn number(value: f64) -> Value {
     Value::Number(value)
 }
 
-/// A new String of `text`.
-fn string_value(cx: &mut Cx<'_, ScriptHost>, text: &str) -> Completion<Value> {
-    cx.new_string(text).map(Value::String)
+/// The steps of one node of a collection made or refilled: its wrapper, found or made, and the
+/// define of its index. One step a node bought work of about forty steps of a plain walk in the
+/// test profile (measured on the reading slice), so a node is charged as eight.
+pub const COLLECTION_NODE_STEPS: u64 = 8;
+
+/// The bytes of a String answer whose copy into the engine is charged one step: the copy
+/// converts each byte to UTF-16 code units, about the time of a plain walk's step for 16 bytes
+/// in the test profile (measured on the reading slice). The member charges its own reading of
+/// the bytes beside this.
+pub const STRING_BYTES_A_STEP: u64 = 16;
+
+/// A new String of `text`: the one conversion of a member's String answer, charged one step per
+/// [`STRING_BYTES_A_STEP`] bytes before its code units are counted and before the copy. swell
+/// applies `string_length` to a String its own operations create, not to one `Cx::new_string`
+/// makes, so a text longer than the agent's `string_length` is the realm's `RangeError` here,
+/// before the engine copies it.
+fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
+    if longer_than(text, cx.string_length()) {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string(text).map(Value::String)
+}
+
+/// A new String of the UTF-16 code units `units`: the answer of a member whose String is code
+/// units, so a lone half of a surrogate pair stays as it is. Held to `string_length` as
+/// [`string_value`]; the count of units is the length.
+fn units_value(cx: &mut DomCx<'_, '_>, units: &[u16]) -> Completion<Value> {
+    let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
+    if count > cx.string_length() {
+        return Err(string_length_error(cx));
+    }
+    cx.engine
+        .charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
+    cx.engine.new_string_utf16(units).map(Value::String)
 }
 
 /// `DOMString?` returned.
-fn nullable_string_value(cx: &mut Cx<'_, ScriptHost>, text: Option<String>) -> Completion<Value> {
+fn nullable_string_value(cx: &mut DomCx<'_, '_>, text: Option<String>) -> Completion<Value> {
     match text {
         Some(text) => string_value(cx, &text),
         None => Ok(Value::Null),
@@ -1036,31 +1214,233 @@ fn nullable_node_value(
 
 /// A `NodeList` or an `HTMLCollection` returned: a new host object of the interface's brand
 /// holding the snapshot of `nodes`, with an indexed own property for each, its wrapper (the
-/// deviation of decision 6, until swell's slice 9). A step is charged per node.
+/// deviation of decision 6, until swell's slice 9). [`COLLECTION_NODE_STEPS`] are charged a
+/// node.
 fn collection_value(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<Value> {
+    collection_object(cx, slices, interface, nodes).map(Value::Object)
+}
+
+/// The object of [`collection_value`], its `written` the tree's `writes()`.
+fn collection_object(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<ObjectRef> {
     let prototype = prototype_object(cx.engine, cx.installed, interface)?;
     let count = u64::try_from(nodes.len()).unwrap_or(u64::MAX);
-    cx.engine.charge_steps(count)?;
+    cx.engine
+        .charge_steps(count.saturating_mul(COLLECTION_NODE_STEPS))?;
     let object = engine(cx.engine.new_host_object(HostObjectSpec {
         prototype: Prototype::Object(prototype),
         brand: interface.brand(),
         data: Some(Box::new(CollectionData {
             nodes: nodes.clone(),
+            written: cx.state.tree.writes(),
         })),
         error_kind: None,
     }))?;
-    for (index, node) in nodes.into_iter().enumerate() {
-        let wrapper = slices.wrap.wrap(cx, node)?;
+    define_indices(cx, slices, object, &nodes)?;
+    Ok(object)
+}
+
+/// The index properties of a collection: `nodes[index]`'s wrapper at each index.
+fn define_indices(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    nodes: &[NodeId],
+) -> Completion<()> {
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(wrapper, false, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
     }
-    Ok(Value::Object(object))
+    Ok(())
+}
+
+/// The message of the `TypeError` a `[SameObject]` getter throws when the script changed its
+/// kept collection so that it cannot be refreshed.
+pub const NOT_REFRESHED: &str = "the kept collection cannot be refreshed";
+
+/// The key of the index `index`.
+fn index_key(cx: &mut DomCx<'_, '_>, index: usize) -> Completion<PropertyKey> {
+    Ok(PropertyKey::String(cx.engine.new_string(&index.to_string())?))
+}
+
+/// Defines the index `index` of `object` as the glue's data property of `value`: define, never
+/// set, so no accessor a script put there runs. `Ok(false)` when the object refuses it.
+fn define_index(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    index: usize,
+    value: Value,
+) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    let descriptor = data_property(value, false, true, true);
+    refused(engine(cx.engine.define_property_or_throw(object, key, descriptor)))
+}
+
+/// Deletes the index `index` of `object`. `Ok(false)` when the object refuses it.
+fn delete_index(cx: &mut DomCx<'_, '_>, object: ObjectRef, index: usize) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    refused(engine(cx.engine.delete_property_or_throw(object, key)))
+}
+
+/// `Ok(true)` for a step the object took, `Ok(false)` for one it refused with a throw; an end
+/// of the run stays an end.
+fn refused(step: Completion<()>) -> Completion<bool> {
+    match step {
+        Ok(()) => Ok(true),
+        Err(Abrupt::Throw(_)) => Ok(false),
+        Err(end @ Abrupt::Terminated(_)) => Err(end),
+    }
+}
+
+/// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
+/// properties and its data always show the same list. [`COLLECTION_NODE_STEPS`] are charged per
+/// old and per new node, before the work. In this order:
+///   1. each old index at or past the new length is defined again as the glue's property of
+///      its old node, which fails at once on an index the script made non-configurable, and
+///      makes every such index one the glue can delete;
+///   2. the new nodes are defined over the indices `0..new` (define, never set);
+///   3. the indices `new..old` are deleted, which cannot fail after step 1;
+///   4. the data and `written` change last.
+///
+/// All or nothing holds for a step the object refuses: such a step (frozen, sealed,
+/// non-extensible, an index the script made non-configurable) puts back what step 2 wrote (the
+/// old node at an old index, nothing past the old length), leaves the data and `written` as
+/// they were, and throws a `TypeError` ([`NOT_REFRESHED`]): the object is the old snapshot,
+/// whole, and the next read tries again. No index is deleted before every define has
+/// succeeded, so a put-back never has to add a property to an object that may refuse new ones.
+///
+/// An end of the run inside a refill ends the document's scripts instead: an
+/// `Abrupt::Terminated` between the first define and the write of the data (the memory limit,
+/// met by a wrapper or a key String) is not put back, since a put-back needs the Strings and
+/// wrappers the limit just refused. It is recorded ([`DomState::cut_refill`]), and the runner
+/// runs no later script of the document, so no script reads the object again.
+fn refresh_collection(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    let old_nodes = match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => data.nodes.clone(),
+        None => return Err(missing()),
+    };
+    let count = old_nodes.len().saturating_add(nodes.len());
+    cx.engine
+        .charge_steps(
+            u64::try_from(count)
+                .unwrap_or(u64::MAX)
+                .saturating_mul(COLLECTION_NODE_STEPS),
+        )?;
+    let mut changed = false;
+    match refill(cx, slices, object, &old_nodes, &nodes, &mut changed) {
+        Ok(()) => {}
+        Err(end @ Abrupt::Terminated(_)) if changed => {
+            cx.state.cut_refill = true;
+            return Err(end);
+        }
+        Err(abrupt) => return Err(abrupt),
+    }
+    let written = cx.state.tree.writes();
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            data.written = written;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// Steps 1 to 3 of [`refresh_collection`]. `changed` is true from the first define the object
+/// took until a put-back has restored the old snapshot: while it is, the object may differ from
+/// its data.
+fn refill(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    nodes: &[NodeId],
+    changed: &mut bool,
+) -> Completion<()> {
+    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
+        let key = index_key(cx, index)?;
+        if !engine(cx.engine.has_property(object, key))? {
+            continue;
+        }
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            return Err(not_refreshed(cx));
+        }
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            put_back(cx, slices, object, old_nodes, index)?;
+            *changed = false;
+            return Err(not_refreshed(cx));
+        }
+    }
+    for index in nodes.len()..old_nodes.len() {
+        if !delete_index(cx, object, index)? {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// Puts back what a refill wrote over the indices `0..failed`: the old node at each index of
+/// the old list, nothing at an index past it. Each of these indices holds the glue's
+/// configurable property the refill just defined, so the object takes every step.
+fn put_back(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    failed: usize,
+) -> Completion<()> {
+    for index in 0..failed {
+        let taken = match old_nodes.get(index) {
+            Some(node) => {
+                let wrapper = slices.wrap.wrap(cx, *node)?;
+                define_index(cx, object, index, wrapper)?
+            }
+            None => delete_index(cx, object, index)?,
+        };
+        if !taken {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// The `TypeError` of a kept collection the script changed so that it cannot be refreshed.
+fn not_refreshed(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::TypeError, NOT_REFRESHED)
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String
@@ -1072,7 +1452,7 @@ fn strings_value(cx: &mut DomCx<'_, '_>, strings: Vec<String>) -> Completion<Val
         return Err(missing());
     };
     for (index, text) in strings.iter().enumerate() {
-        let value = string_value(cx.engine, text)?;
+        let value = string_value(cx, text)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(value, true, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
@@ -1249,7 +1629,7 @@ pub fn install(
         }
         define(cx, object, "prototype", data_property(Value::Object(prototype), false, false, false))?;
         define(cx, prototype, "constructor", data_property(Value::Object(object), true, false, true))?;
-        let name = string_value(cx, interface.name())?;
+        let name = Value::String(cx.new_string(interface.name())?);
         engine(cx.define_property_or_throw(
             prototype,
             PropertyKey::Symbol(tag),
@@ -1456,7 +1836,7 @@ const LEGACY_NAME_UNITS: f64 = 26.0;
 
 /// The legacy code of the name. A name longer than [`LEGACY_NAME_UNITS`] code units, read with
 /// [`string_length`], which copies nothing, has none: 0 without a copy. A shorter name is
-/// copied for the comparison with the ledger of [`Copies`] (a step per 64 bytes), and the copy
+/// copied for the comparison with the ledger of [`Copies`] (a step per 16 bytes), and the copy
 /// is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;

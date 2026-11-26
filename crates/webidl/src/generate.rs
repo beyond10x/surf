@@ -52,6 +52,11 @@ pub struct Digest {
 /// element the HTML Standard defines, wrapped as a node.
 const NODE_TYPES_OUTSIDE_MODEL: &[&str] = &["HTMLSlotElement"];
 
+/// The rows whose `DOMString` answer the slice gives as UTF-16 code units, made into a String
+/// with `Cx::new_string_utf16`: a member whose standard counts code units, so its answer may
+/// hold a lone half of a surrogate pair, which a Rust string cannot.
+const UNITS_ANSWERS: &[(&str, &str)] = &[("CharacterData", "substringData")];
+
 /// Web IDL's table of error names with a legacy code: each name and the constant of
 /// `DOMException` that holds its code.
 const ERROR_NAMES: &[(&str, &str)] = &[
@@ -186,6 +191,8 @@ enum Return {
     Unsigned16,
     Unsigned32,
     String,
+    /// A `DOMString` the slice gives as UTF-16 code units (`UNITS_ANSWERS`).
+    Units,
     NullableString,
     Node,
     NullableNode,
@@ -202,6 +209,7 @@ impl Return {
             Return::Unsigned16 => "u16",
             Return::Unsigned32 => "u32",
             Return::String => "String",
+            Return::Units => "Vec<u16>",
             Return::NullableString => "Option<String>",
             Return::Node => "NodeId",
             Return::NullableNode => "Option<NodeId>",
@@ -218,9 +226,10 @@ impl Return {
             Return::Unsigned16 | Return::Unsigned32 => {
                 "|_, _, value| Ok(number(f64::from(value)))".to_string()
             }
-            Return::String => "|dcx, _, value| string_value(dcx.engine(), &value)".to_string(),
+            Return::String => "|dcx, _, value| string_value(dcx, &value)".to_string(),
+            Return::Units => "|dcx, _, value| units_value(dcx, &value)".to_string(),
             Return::NullableString => {
-                "|dcx, _, value| nullable_string_value(dcx.engine(), value)".to_string()
+                "|dcx, _, value| nullable_string_value(dcx, value)".to_string()
             }
             Return::Node => "node_value".to_string(),
             Return::NullableNode => "nullable_node_value".to_string(),
@@ -271,6 +280,9 @@ struct Generator<'m> {
     /// ([`Generator::take_items`]), each with what it is.
     items: BTreeMap<String, String>,
     specs: String,
+    /// The variants of the enum `SameObject`, each with its member's label: one per attribute
+    /// marked `[SameObject]` that returns a `NodeList` or an `HTMLCollection`.
+    same_objects: Vec<(String, String)>,
 }
 
 impl PartialOrd for Conversion {
@@ -350,6 +362,7 @@ pub fn generate_bindings(
         names: BTreeMap::new(),
         items,
         specs: String::new(),
+        same_objects: Vec::new(),
     };
     generator.order_interfaces()?;
     for index in 0..generator.interfaces.len() {
@@ -516,8 +529,8 @@ fn imported_names(text: &str) -> Result<Vec<String>, String> {
 /// them: each item of [`crate::prelude`]'s text written at the start of a line (`fn`,
 /// `struct`, `enum`, `trait`, `type`, `const`, `static`, after an optional `pub`), each name
 /// its `use` declarations import (read from the text by [`imported_names`], in both
-/// namespaces), the names of [`RUST_PRELUDE`], the enum `Interface` with `GLOBAL` and
-/// `legacy_code`, the table `INTERFACES` and the slices' traits. `Err` for a glob import of the
+/// namespaces), the names of [`RUST_PRELUDE`], the enums `Interface` (with `GLOBAL` and
+/// `legacy_code`) and `SameObject`, the table `INTERFACES` and the slices' traits. `Err` for a glob import of the
 /// prelude, whose names it cannot hold.
 fn fixed_items() -> Result<BTreeMap<String, String>, String> {
     let mut items = BTreeMap::new();
@@ -551,6 +564,7 @@ fn fixed_items() -> Result<BTreeMap<String, String>, String> {
     }
     let written = [
         "type Interface",
+        "type SameObject",
         "value GLOBAL",
         "value legacy_code",
         "value INTERFACES",
@@ -637,6 +651,89 @@ fn doc_text(text: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The field of `Slices` that holds the trait of `slice`.
+fn slice_field(slice: Slice) -> &'static str {
+    match slice {
+        Slice::Reading => "reading",
+        Slice::Attributes => "attributes",
+        Slice::Mutation => "mutation",
+        Slice::Selectors => "selectors",
+        Slice::Throws | Slice::Exception => "reading",
+    }
+}
+
+/// Whether the getter of an attribute marked `[SameObject]` that answers `ret` on a `this` of
+/// that kind answers the same object at each read: a collection of a node, which the wrapper
+/// hook keeps ([`same_object_getter`]), and a node, whose wrapper is one per node. Every other
+/// return form is refused until it is named here with how it is held.
+fn same_object_held(ret: &Return, this: This) -> bool {
+    match ret {
+        Return::Collection(_) => this == This::Node,
+        Return::Node => true,
+        Return::Undefined
+        | Return::Boolean
+        | Return::Unsigned16
+        | Return::Unsigned32
+        | Return::String
+        | Return::Units
+        | Return::NullableString
+        | Return::NullableNode
+        | Return::Strings
+        | Return::Window => false,
+    }
+}
+
+/// The getter of an attribute marked `[SameObject]` that returns a `NodeList` or an
+/// `HTMLCollection` (`collection`), the key `key` of the enum `SameObject`: one object per node
+/// and member, as long as the wrapper hook keeps it. After the brand check and its one step,
+/// the getter asks `Wrap::same_object` for the kept object; one whose `written` equals the
+/// tree's `writes()` is the answer, and the slice is not asked. A kept object that is behind
+/// the tree is refreshed with the slice's answer, and without a kept object the slice's answer
+/// makes a new one, handed to `Wrap::keep_same_object`.
+fn same_object_getter(
+    function: &str,
+    label: &str,
+    variant: &str,
+    slice: Slice,
+    method: &Method,
+    key: &str,
+    collection: &str,
+) -> String {
+    let field = slice_field(slice);
+    let name = &method.name;
+    format!(
+        "fn {function}(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {{
+const MEMBER: &str = {label:?};
+cx.charge_steps(1)?;
+let this = this_object(cx, call.this, Interface::{variant}, MEMBER)?;
+in_dom(cx, |dcx, slices| {{
+let this = unwrap_node(dcx, slices, this, MEMBER)?;
+let writes = dcx.tree().writes();
+let kept = slices.wrap.same_object(dcx, this, SameObject::{key})?;
+if let Some(object) = kept
+&& collection_written(dcx, object, Interface::{collection})? == writes
+{{
+return Ok(Value::Object(object));
+}}
+let answer = slices.{field}.{name}(dcx, this);
+let nodes = answered(dcx, answer)?;
+match kept {{
+Some(object) => {{
+refresh_collection(dcx, slices, object, Interface::{collection}, nodes)?;
+Ok(Value::Object(object))
+}}
+None => {{
+let object = collection_object(dcx, slices, Interface::{collection}, nodes)?;
+slices.wrap.keep_same_object(dcx, this, SameObject::{key}, object)?;
+Ok(Value::Object(object))
+}}
+}}
+}})
+}}
+"
+    )
 }
 
 fn has_attribute(member: &Member, name: &str) -> bool {
@@ -1067,6 +1164,16 @@ impl Generator<'_> {
 
     /// How a value of `ty` is returned.
     fn ret(&self, row: &Row, ty: &Type) -> Result<Return, SelectionError> {
+        let units = UNITS_ANSWERS.contains(&(row.interface.as_str(), row.member.as_str()));
+        if units && !(matches!(ty.kind, TypeKind::DomString) && !ty.nullable) {
+            return Err(self.refuse(
+                row,
+                format!(
+                    "an answer of code units for a return type that is no DOMString: {}",
+                    type_text(ty)
+                ),
+            ));
+        }
         let refuse = || {
             self.refuse(
                 row,
@@ -1093,6 +1200,7 @@ impl Generator<'_> {
                 },
                 false,
             ) => Return::Unsigned32,
+            (TypeKind::DomString, false) if units => Return::Units,
             (TypeKind::DomString | TypeKind::UsvString, false) => Return::String,
             (TypeKind::DomString | TypeKind::UsvString, true) => Return::NullableString,
             (TypeKind::Sequence(inner), false)
@@ -1345,9 +1453,42 @@ impl Generator<'_> {
                                 ret,
                                 setter: false,
                             };
-                            let body = self.member_function(
-                                &getter, &label, &variant, this, row.slice, &method, false,
-                            );
+                            if has_attribute(&member, "SameObject")
+                                && !same_object_held(&method.ret, this)
+                            {
+                                return Err(self.refuse(
+                                    row,
+                                    format!(
+                                        "`[SameObject]` on an attribute whose object the \
+                                         generator does not hold, `{}` of a `this` that is {}: \
+                                         it holds a collection of a node (the wrapper hook \
+                                         keeps an object per node) and a node (one wrapper \
+                                         per node)",
+                                        type_text(ty),
+                                        if this == This::Node {
+                                            "a node"
+                                        } else {
+                                            "no node"
+                                        },
+                                    ),
+                                ));
+                            }
+                            let body = match &method.ret {
+                                Return::Collection(collection)
+                                    if has_attribute(&member, "SameObject")
+                                        && this == This::Node =>
+                                {
+                                    let key = format!("{variant}{}", camel(&row.member));
+                                    self.same_objects.push((key.clone(), label.clone()));
+                                    same_object_getter(
+                                        &getter, &label, &variant, row.slice, &method, &key,
+                                        collection,
+                                    )
+                                }
+                                _ => self.member_function(
+                                    &getter, &label, &variant, this, row.slice, &method, false,
+                                ),
+                            };
                             self.functions.push_str(&body);
                             self.methods.entry(row.slice).or_default().push(method);
                             if replaceable {
@@ -1603,7 +1744,7 @@ impl Generator<'_> {
                     );
                     call_args.push("this".to_string());
                 }
-                This::Collection => call_args.push("&this".to_string()),
+                This::Collection => call_args.push("&nodes".to_string()),
                 This::Global | This::Exception | This::Brand => {}
             }
         }
@@ -1640,6 +1781,14 @@ impl Generator<'_> {
             }
             call_args.push(format!("a{index}"));
         }
+        if !constructor && this == This::Collection {
+            // Taken after every fallible step before the call, so that the restore after it
+            // always runs: the slice reads the list in place (take and restore, no copy).
+            let _ = writeln!(
+                finishing,
+                "let nodes = take_nodes(dcx, this, Interface::{variant})?;"
+            );
+        }
         let copies = if finishing.contains("copies") {
             "let mut copies = Copies::new();"
         } else {
@@ -1647,13 +1796,7 @@ impl Generator<'_> {
         };
         let _ = writeln!(out, "{copies}");
         out.push_str(&finishing);
-        let field = match slice {
-            Slice::Reading => "reading",
-            Slice::Attributes => "attributes",
-            Slice::Mutation => "mutation",
-            Slice::Selectors => "selectors",
-            Slice::Throws | Slice::Exception => "reading",
-        };
+        let field = slice_field(slice);
         let mut all = vec!["dcx".to_string()];
         all.extend(call_args);
         let _ = writeln!(
@@ -1662,6 +1805,12 @@ impl Generator<'_> {
             method.name,
             all.join(", ")
         );
+        if !constructor && this == This::Collection {
+            let _ = writeln!(
+                out,
+                "restore_nodes(dcx, this, Interface::{variant}, nodes)?;"
+            );
+        }
         let _ = writeln!(out, "drop(copies);");
         let _ = writeln!(
             out,
@@ -1766,6 +1915,16 @@ impl Generator<'_> {
     }
 
     fn write_interfaces(&self, out: &mut String) {
+        let _ = writeln!(
+            out,
+            "/// The attributes marked `[SameObject]` that return a `NodeList` or an \
+             `HTMLCollection`: the key, with the node, of the one object `Wrap` keeps for each \
+             (`Wrap::same_object`).\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\npub enum SameObject {{"
+        );
+        for (key, label) in &self.same_objects {
+            let _ = writeln!(out, "/// `{label}`.\n{key},");
+        }
+        let _ = writeln!(out, "}}");
         let _ = writeln!(
             out,
             "/// The generated interfaces, parents first. Each is the brand of the objects that \

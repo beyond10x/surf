@@ -43,20 +43,20 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! 9b355fa6fa753f930e321be6f7d0a57e41cbce61c84bcf40850b2251f664cb79  crates/webidl/selection.txt
+//! 4e9074c2caea97504e2e6ca9b7f67318d07059c6451dfda54ad443c4ca1081ba  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
 //! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! fb1eb4d44a918e37011a1cc2880d91de11ca4d904121911814a540a210816a57  crates/webidl/src/generate.rs
+//! bd7ad49af55281f3d8b2722b1a34a4465ed8b119a9359a1344392fb7afc69a96  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 57699ee05d4e9ae15deafbcc61e4634f45e8e44ac21f3eabda074cd4d79dcd70  crates/webidl/src/prelude.rs
+//! e153c94cce1e549a19ca492eca99716026b001f19a1901f2e5ed85173381f8e8  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 4916e19da89d6e49c4fa84c307030f421b43c59c8c596bf8d135aa7c6fe40986
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 32277900367f651b0909502f8d969adc485b60b059124e6d6bef1b393e194974
 
 use std::cell::Cell;
 
@@ -123,10 +123,28 @@ pub enum DomEnd {
     /// A write would go over a limit of the parser: nothing is written,
     /// [`end_with_limit`] records the limit and ends the script there.
     Limit(Limit),
+    /// The String the member would answer has more UTF-16 code units than the agent's
+    /// `string_length`: the realm's `RangeError`, as for a String answered whole.
+    StringLength,
 }
 
 /// What every method of a slice answers.
 pub type DomResult<T> = Result<T, DomEnd>;
+
+/// The message of the `RangeError` for a String longer than `string_length`: swell's own for a
+/// String its operations would make too long.
+pub const STRING_LENGTH_MESSAGE: &str = "the string would be longer than string_length";
+
+/// The UTF-16 code units of `text`.
+pub fn utf16_units(text: &str) -> u64 {
+    u64::try_from(text.encode_utf16().count()).unwrap_or(u64::MAX)
+}
+
+/// Whether `text` has more UTF-16 code units than `limit`. A text of at most `limit` bytes has
+/// at most that many units and is not counted; a longer one is counted once.
+pub fn longer_than(text: &str, limit: u64) -> bool {
+    u64::try_from(text.len()).unwrap_or(u64::MAX) > limit && utf16_units(text) > limit
+}
 
 /// The `NotSupportedError` a member answers until its slice gives it behaviour: its message
 /// names the member, `<interface>.<member> is not supported`.
@@ -153,6 +171,8 @@ pub struct DomState {
     limits: Limits,
     totals: Totals,
     limit: Option<Limit>,
+    /// Whether an end of the run left a kept collection half refilled ([`DomState::cut_refill`]).
+    cut_refill: bool,
     interrupt: InterruptHandle,
     charges: Vec<HostBytes>,
     /// The message of a `TypeError` noted while the bindings are out of the host
@@ -168,6 +188,7 @@ impl DomState {
             limits,
             totals: Totals::default(),
             limit: None,
+            cut_refill: false,
             interrupt,
             charges: Vec::new(),
             type_error: None,
@@ -187,6 +208,14 @@ impl DomState {
     /// The limit recorded, if any.
     pub fn limit(&self) -> Option<Limit> {
         self.limit
+    }
+
+    /// Whether an end of the run (`Abrupt::Terminated`) cut a refill of a kept collection after
+    /// its first define and before its data was written, so that the object may show two lists.
+    /// Set once and never cleared: no script of the document reads that object again, because
+    /// the runner runs no later script of the document.
+    pub fn cut_refill(&self) -> bool {
+        self.cut_refill
     }
 
     /// The totals of the node charges.
@@ -236,6 +265,12 @@ impl<'e> DomCx<'_, 'e> {
         &self.state.interrupt
     }
 
+    /// The agent's `string_length`: a String a member answers with more UTF-16 code units is
+    /// the `RangeError` of [`DomEnd::StringLength`].
+    pub fn string_length(&self) -> u64 {
+        self.engine.host().string_length()
+    }
+
     /// The engine, for a wrapper's host object.
     pub fn engine(&mut self) -> &mut Cx<'e, ScriptHost> {
         &mut *self.engine
@@ -268,14 +303,43 @@ impl<'e> DomCx<'_, 'e> {
 }
 
 /// The wrapper hook (decision 8): every node a member returns goes through `wrap`, and every
-/// `this` and node argument through `unwrap` after its brand check. `story:scripts-dom-reading`
-/// writes the real one; until then `crate::dom::wrapper` throws `NotSupportedError`.
+/// `this` and node argument through `unwrap` after its brand check. surf's own is
+/// `crate::dom::wrapper`.
+///
+/// It also holds `[SameObject]` for the attributes that return a `NodeList` or an
+/// `HTMLCollection` ([`SameObject`]): the getter asks `same_object` for the object kept for the
+/// node and the member, and hands a new one to `keep_same_object`. The getter makes and
+/// refreshes the object; the hook only finds and keeps it. With the provided methods, which
+/// keep nothing, such a getter makes a new object at each read.
 pub trait Wrap {
     /// The wrapper of `node`.
     fn wrap(&mut self, cx: &mut DomCx<'_, '_>, node: NodeId) -> Completion<Value>;
 
     /// The node of a wrapper, `None` for any other value.
     fn unwrap(&self, cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId>;
+
+    /// The object kept for `node` and `member` by [`Wrap::keep_same_object`], if any.
+    fn same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+    ) -> Completion<Option<ObjectRef>> {
+        let _ = (cx, node, member);
+        Ok(None)
+    }
+
+    /// Keeps `object` as the object of `node` and `member`.
+    fn keep_same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+        object: ObjectRef,
+    ) -> Completion<()> {
+        let _ = (cx, node, member, object);
+        Ok(())
+    }
 }
 
 /// The data of a node's wrapper made by [`new_wrapper`].
@@ -294,6 +358,9 @@ impl HostData for NodeData {
 pub struct CollectionData {
     /// The nodes, in order.
     pub nodes: Vec<NodeId>,
+    /// The tree's `writes()` when the nodes were taken: a kept `[SameObject]` collection whose
+    /// count is the tree's is up to date.
+    pub written: u64,
 }
 
 impl HostData for CollectionData {
@@ -549,16 +616,22 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per 64 bytes copied.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units to
+    /// be copied (8 units), the price of a String answer's copy, before the copy: the length
+    /// is read first as [`string_length`] reads it, which copies nothing, so a call past its
+    /// steps ends before any unit is copied.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
-        let text = cx
-            .to_utf16(string)
-            .map(|units| String::from_utf16_lossy(&units))
-            .map_err(defect)?;
+        let length = string_length(cx, string)?;
+        let count = if length.is_finite() && length > 0.0 {
+            length as u64
+        } else {
+            0
+        };
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
+        let units = cx.to_utf16(string).map_err(defect)?;
+        let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let units = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(units / 64)?;
         Ok(text)
     }
 }
@@ -599,11 +672,32 @@ fn realm_of(cx: &Cx<'_, ScriptHost>) -> Completion<RealmRef> {
 
 /// A `TypeError` of the realm with `message`, thrown.
 fn type_error(cx: &mut Cx<'_, ScriptHost>, message: &str) -> Abrupt {
-    let realm = match realm_of(cx) {
-        Ok(realm) => realm,
-        Err(abrupt) => return abrupt,
-    };
-    match engine(cx.new_error(realm, ErrorKind::TypeError, message)) {
+    match realm_of(cx) {
+        Ok(realm) => error_of(cx, realm, ErrorKind::TypeError, message),
+        Err(abrupt) => abrupt,
+    }
+}
+
+/// The `RangeError` of the realm for a String longer than the agent's `string_length`, thrown,
+/// with swell's message ([`STRING_LENGTH_MESSAGE`]).
+fn string_length_error(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(
+        cx.engine,
+        realm,
+        ErrorKind::RangeError,
+        STRING_LENGTH_MESSAGE,
+    )
+}
+
+/// An error of `kind` of `realm` with `message`, thrown.
+fn error_of(
+    cx: &mut Cx<'_, ScriptHost>,
+    realm: RealmRef,
+    kind: ErrorKind,
+    message: &str,
+) -> Abrupt {
+    match engine(cx.new_error(realm, kind, message)) {
         Ok(error) => Abrupt::Throw(Value::Object(error)),
         Err(abrupt) => abrupt,
     }
@@ -762,21 +856,75 @@ fn this_global(cx: &mut Cx<'_, ScriptHost>, this: Value, member: &str) -> Comple
     }
 }
 
-/// The nodes of a `NodeList` or `HTMLCollection` `this`, after its brand check.
+/// A `NodeList` or `HTMLCollection` `this`, after its brand check, whose data holds its nodes.
 fn this_collection(
     cx: &mut Cx<'_, ScriptHost>,
     this: Value,
     interface: Interface,
     member: &str,
-) -> Completion<Vec<NodeId>> {
+) -> Completion<ObjectRef> {
     let object = this_object(cx, this, interface, member)?;
     let brand = interface.brand();
     match cx
         .host_data::<CollectionData>(object, brand)
         .map_err(defect)?
     {
-        Some(data) => Ok(data.nodes.clone()),
+        Some(_) => Ok(object),
         None => Err(type_error(cx, &format!("{member}: `this` holds no nodes"))),
+    }
+}
+
+/// The nodes of the collection `object`, taken out of its data for a slice's call: the slice
+/// reads them in place, and [`restore_nodes`] puts them back after it, whatever it answered.
+/// Nothing is copied.
+fn take_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<Vec<NodeId>> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(std::mem::take(&mut data.nodes)),
+        None => Err(missing()),
+    }
+}
+
+/// Puts the nodes [`take_nodes`] took back into the data of `object`.
+fn restore_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// The `written` of the collection `object`.
+fn collection_written(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<u64> {
+    match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(data.written),
+        None => Err(missing()),
     }
 }
 
@@ -808,10 +956,17 @@ fn finish<T>(
     answer: DomResult<T>,
     convert: impl FnOnce(&mut DomCx<'_, '_>, &mut Slices, T) -> Completion<Value>,
 ) -> Completion<Value> {
+    let value = answered(cx, answer)?;
+    convert(cx, slices, value)
+}
+
+/// A slice's answer, or its end thrown.
+fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
     match answer {
-        Ok(value) => convert(cx, slices, value),
+        Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
+        Err(DomEnd::StringLength) => Err(string_length_error(cx)),
     }
 }
 
@@ -1096,13 +1251,46 @@ fn number(value: f64) -> Value {
     Value::Number(value)
 }
 
-/// A new String of `text`.
-fn string_value(cx: &mut Cx<'_, ScriptHost>, text: &str) -> Completion<Value> {
-    cx.new_string(text).map(Value::String)
+/// The steps of one node of a collection made or refilled: its wrapper, found or made, and the
+/// define of its index. One step a node bought work of about forty steps of a plain walk in the
+/// test profile (measured on the reading slice), so a node is charged as eight.
+pub const COLLECTION_NODE_STEPS: u64 = 8;
+
+/// The bytes of a String answer whose copy into the engine is charged one step: the copy
+/// converts each byte to UTF-16 code units, about the time of a plain walk's step for 16 bytes
+/// in the test profile (measured on the reading slice). The member charges its own reading of
+/// the bytes beside this.
+pub const STRING_BYTES_A_STEP: u64 = 16;
+
+/// A new String of `text`: the one conversion of a member's String answer, charged one step per
+/// [`STRING_BYTES_A_STEP`] bytes before its code units are counted and before the copy. swell
+/// applies `string_length` to a String its own operations create, not to one `Cx::new_string`
+/// makes, so a text longer than the agent's `string_length` is the realm's `RangeError` here,
+/// before the engine copies it.
+fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
+    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
+    if longer_than(text, cx.string_length()) {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string(text).map(Value::String)
+}
+
+/// A new String of the UTF-16 code units `units`: the answer of a member whose String is code
+/// units, so a lone half of a surrogate pair stays as it is. Held to `string_length` as
+/// [`string_value`]; the count of units is the length.
+fn units_value(cx: &mut DomCx<'_, '_>, units: &[u16]) -> Completion<Value> {
+    let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
+    if count > cx.string_length() {
+        return Err(string_length_error(cx));
+    }
+    cx.engine
+        .charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
+    cx.engine.new_string_utf16(units).map(Value::String)
 }
 
 /// `DOMString?` returned.
-fn nullable_string_value(cx: &mut Cx<'_, ScriptHost>, text: Option<String>) -> Completion<Value> {
+fn nullable_string_value(cx: &mut DomCx<'_, '_>, text: Option<String>) -> Completion<Value> {
     match text {
         Some(text) => string_value(cx, &text),
         None => Ok(Value::Null),
@@ -1128,31 +1316,236 @@ fn nullable_node_value(
 
 /// A `NodeList` or an `HTMLCollection` returned: a new host object of the interface's brand
 /// holding the snapshot of `nodes`, with an indexed own property for each, its wrapper (the
-/// deviation of decision 6, until swell's slice 9). A step is charged per node.
+/// deviation of decision 6, until swell's slice 9). [`COLLECTION_NODE_STEPS`] are charged a
+/// node.
 fn collection_value(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<Value> {
+    collection_object(cx, slices, interface, nodes).map(Value::Object)
+}
+
+/// The object of [`collection_value`], its `written` the tree's `writes()`.
+fn collection_object(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<ObjectRef> {
     let prototype = prototype_object(cx.engine, cx.installed, interface)?;
     let count = u64::try_from(nodes.len()).unwrap_or(u64::MAX);
-    cx.engine.charge_steps(count)?;
+    cx.engine
+        .charge_steps(count.saturating_mul(COLLECTION_NODE_STEPS))?;
     let object = engine(cx.engine.new_host_object(HostObjectSpec {
         prototype: Prototype::Object(prototype),
         brand: interface.brand(),
         data: Some(Box::new(CollectionData {
             nodes: nodes.clone(),
+            written: cx.state.tree.writes(),
         })),
         error_kind: None,
     }))?;
-    for (index, node) in nodes.into_iter().enumerate() {
-        let wrapper = slices.wrap.wrap(cx, node)?;
+    define_indices(cx, slices, object, &nodes)?;
+    Ok(object)
+}
+
+/// The index properties of a collection: `nodes[index]`'s wrapper at each index.
+fn define_indices(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    nodes: &[NodeId],
+) -> Completion<()> {
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(wrapper, false, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
     }
-    Ok(Value::Object(object))
+    Ok(())
+}
+
+/// The message of the `TypeError` a `[SameObject]` getter throws when the script changed its
+/// kept collection so that it cannot be refreshed.
+pub const NOT_REFRESHED: &str = "the kept collection cannot be refreshed";
+
+/// The key of the index `index`.
+fn index_key(cx: &mut DomCx<'_, '_>, index: usize) -> Completion<PropertyKey> {
+    Ok(PropertyKey::String(
+        cx.engine.new_string(&index.to_string())?,
+    ))
+}
+
+/// Defines the index `index` of `object` as the glue's data property of `value`: define, never
+/// set, so no accessor a script put there runs. `Ok(false)` when the object refuses it.
+fn define_index(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    index: usize,
+    value: Value,
+) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    let descriptor = data_property(value, false, true, true);
+    refused(engine(
+        cx.engine.define_property_or_throw(object, key, descriptor),
+    ))
+}
+
+/// Deletes the index `index` of `object`. `Ok(false)` when the object refuses it.
+fn delete_index(cx: &mut DomCx<'_, '_>, object: ObjectRef, index: usize) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    refused(engine(cx.engine.delete_property_or_throw(object, key)))
+}
+
+/// `Ok(true)` for a step the object took, `Ok(false)` for one it refused with a throw; an end
+/// of the run stays an end.
+fn refused(step: Completion<()>) -> Completion<bool> {
+    match step {
+        Ok(()) => Ok(true),
+        Err(Abrupt::Throw(_)) => Ok(false),
+        Err(end @ Abrupt::Terminated(_)) => Err(end),
+    }
+}
+
+/// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
+/// properties and its data always show the same list. [`COLLECTION_NODE_STEPS`] are charged per
+/// old and per new node, before the work. In this order:
+///   1. each old index at or past the new length is defined again as the glue's property of
+///      its old node, which fails at once on an index the script made non-configurable, and
+///      makes every such index one the glue can delete;
+///   2. the new nodes are defined over the indices `0..new` (define, never set);
+///   3. the indices `new..old` are deleted, which cannot fail after step 1;
+///   4. the data and `written` change last.
+///
+/// All or nothing holds for a step the object refuses: such a step (frozen, sealed,
+/// non-extensible, an index the script made non-configurable) puts back what step 2 wrote (the
+/// old node at an old index, nothing past the old length), leaves the data and `written` as
+/// they were, and throws a `TypeError` ([`NOT_REFRESHED`]): the object is the old snapshot,
+/// whole, and the next read tries again. No index is deleted before every define has
+/// succeeded, so a put-back never has to add a property to an object that may refuse new ones.
+///
+/// An end of the run inside a refill ends the document's scripts instead: an
+/// `Abrupt::Terminated` between the first define and the write of the data (the memory limit,
+/// met by a wrapper or a key String) is not put back, since a put-back needs the Strings and
+/// wrappers the limit just refused. It is recorded ([`DomState::cut_refill`]), and the runner
+/// runs no later script of the document, so no script reads the object again.
+fn refresh_collection(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    let old_nodes = match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => data.nodes.clone(),
+        None => return Err(missing()),
+    };
+    let count = old_nodes.len().saturating_add(nodes.len());
+    cx.engine.charge_steps(
+        u64::try_from(count)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(COLLECTION_NODE_STEPS),
+    )?;
+    let mut changed = false;
+    match refill(cx, slices, object, &old_nodes, &nodes, &mut changed) {
+        Ok(()) => {}
+        Err(end @ Abrupt::Terminated(_)) if changed => {
+            cx.state.cut_refill = true;
+            return Err(end);
+        }
+        Err(abrupt) => return Err(abrupt),
+    }
+    let written = cx.state.tree.writes();
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            data.written = written;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// Steps 1 to 3 of [`refresh_collection`]. `changed` is true from the first define the object
+/// took until a put-back has restored the old snapshot: while it is, the object may differ from
+/// its data.
+fn refill(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    nodes: &[NodeId],
+    changed: &mut bool,
+) -> Completion<()> {
+    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
+        let key = index_key(cx, index)?;
+        if !engine(cx.engine.has_property(object, key))? {
+            continue;
+        }
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            return Err(not_refreshed(cx));
+        }
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        let taken = define_index(cx, object, index, wrapper)?;
+        *changed |= taken;
+        if !taken {
+            put_back(cx, slices, object, old_nodes, index)?;
+            *changed = false;
+            return Err(not_refreshed(cx));
+        }
+    }
+    for index in nodes.len()..old_nodes.len() {
+        if !delete_index(cx, object, index)? {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// Puts back what a refill wrote over the indices `0..failed`: the old node at each index of
+/// the old list, nothing at an index past it. Each of these indices holds the glue's
+/// configurable property the refill just defined, so the object takes every step.
+fn put_back(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    failed: usize,
+) -> Completion<()> {
+    for index in 0..failed {
+        let taken = match old_nodes.get(index) {
+            Some(node) => {
+                let wrapper = slices.wrap.wrap(cx, *node)?;
+                define_index(cx, object, index, wrapper)?
+            }
+            None => delete_index(cx, object, index)?,
+        };
+        if !taken {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// The `TypeError` of a kept collection the script changed so that it cannot be refreshed.
+fn not_refreshed(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::TypeError, NOT_REFRESHED)
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String
@@ -1164,7 +1557,7 @@ fn strings_value(cx: &mut DomCx<'_, '_>, strings: Vec<String>) -> Completion<Val
         return Err(missing());
     };
     for (index, text) in strings.iter().enumerate() {
-        let value = string_value(cx.engine, text)?;
+        let value = string_value(cx, text)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(value, true, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
@@ -1362,7 +1755,7 @@ pub fn install(
             "constructor",
             data_property(Value::Object(object), true, false, true),
         )?;
-        let name = string_value(cx, interface.name())?;
+        let name = Value::String(cx.new_string(interface.name())?);
         engine(cx.define_property_or_throw(
             prototype,
             PropertyKey::Symbol(tag),
@@ -1612,7 +2005,7 @@ const LEGACY_NAME_UNITS: f64 = 26.0;
 
 /// The legacy code of the name. A name longer than [`LEGACY_NAME_UNITS`] code units, read with
 /// [`string_length`], which copies nothing, has none: 0 without a copy. A shorter name is
-/// copied for the comparison with the ledger of [`Copies`] (a step per 64 bytes), and the copy
+/// copied for the comparison with the ledger of [`Copies`] (a step per 16 bytes), and the copy
 /// is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;
@@ -1660,6 +2053,18 @@ fn throws(cx: &mut Cx<'_, ScriptHost>, member: &str, reason: &str) -> Completion
     ))
 }
 
+/// The attributes marked `[SameObject]` that return a `NodeList` or an `HTMLCollection`: the key, with the node, of the one object `Wrap` keeps for each (`Wrap::same_object`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SameObject {
+    /// `Node.childNodes`.
+    NodeChildNodes,
+    /// `Element.children`.
+    ElementChildren,
+    /// `Document.children`.
+    DocumentChildren,
+    /// `DocumentFragment.children`.
+    DocumentFragmentChildren,
+}
 /// The generated interfaces, parents first. Each is the brand of the objects that implement it, `Brand(index + 1)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Interface {
@@ -2059,7 +2464,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("Node.nodeName"))
     }
-    /// The getter of `Node.baseURI`, `USVString`.
+    /// The getter of `Node.baseURI`, `USVString`; deviation: no check of a Content Security Policy base-uri directive, surf reads none; deviation: no creator base URL for a document at about:blank or about:srcdoc, surf has no nested document; deviation: the base href parsed as UTF-8 whatever the document's encoding.
     fn node_base_uri(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<String> {
         let _ = (cx, this);
         Err(not_supported("Node.baseURI"))
@@ -2111,7 +2516,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("Node.hasChildNodes"))
     }
-    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn node_child_nodes(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Node.childNodes"))
@@ -2308,7 +2713,7 @@ pub trait Reading {
         let _ = (cx, this, class_names);
         Err(not_supported("Element.getElementsByClassName"))
     }
-    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn element_children(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Element.children"))
@@ -2469,7 +2874,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("Document.getElementById"))
     }
-    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn document_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2527,7 +2932,7 @@ pub trait Reading {
         this: NodeId,
         offset: u32,
         count: u32,
-    ) -> DomResult<String> {
+    ) -> DomResult<Vec<u16>> {
         let _ = (cx, this, offset, count);
         Err(not_supported("CharacterData.substringData"))
     }
@@ -2605,7 +3010,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("DocumentFragment.getElementById"))
     }
-    /// The getter of `DocumentFragment.children`, `HTMLCollection`.
+    /// The getter of `DocumentFragment.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn document_fragment_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2656,7 +3061,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("NodeList.length"))
     }
-    /// The getter of `HTMLCollection.length`, `unsigned long`.
+    /// The getter of `HTMLCollection.length`, `unsigned long`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_length(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2665,7 +3070,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("HTMLCollection.length"))
     }
-    /// `HTMLCollection.item`: `Element? item(unsigned long index)`.
+    /// `HTMLCollection.item`: `Element? item(unsigned long index)`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_item(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2675,7 +3080,7 @@ pub trait Reading {
         let _ = (cx, this, index);
         Err(not_supported("HTMLCollection.item"))
     }
-    /// `HTMLCollection.namedItem`: `Element? namedItem(DOMString name)`.
+    /// `HTMLCollection.namedItem`: `Element? namedItem(DOMString name)`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_named_item(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3556,7 +3961,7 @@ fn getter_node_node_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.node_node_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -3570,7 +3975,7 @@ fn getter_node_base_uri(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Comp
         let answer = slices.reading.node_base_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -3665,13 +4070,31 @@ fn getter_node_child_nodes(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Node, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::NodeChildNodes)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::NodeList)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.node_child_nodes(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::NodeList, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::NodeList, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::NodeList, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::NodeChildNodes, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_node_first_child(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
@@ -3735,7 +4158,7 @@ fn getter_node_node_value(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Co
         let answer = slices.reading.node_node_value(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -3766,7 +4189,7 @@ fn getter_node_text_content(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
         let answer = slices.reading.node_text_content(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -3916,7 +4339,7 @@ fn operation_node_lookup_prefix(
         let answer = slices.reading.node_lookup_prefix(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -3939,7 +4362,7 @@ fn operation_node_lookup_namespace_uri(
         let answer = slices.reading.node_lookup_namespace_uri(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4059,7 +4482,7 @@ fn getter_element_namespace_uri(
         let answer = slices.reading.element_namespace_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4073,7 +4496,7 @@ fn getter_element_prefix(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.element_prefix(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4087,7 +4510,7 @@ fn getter_element_local_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.reading.element_local_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4101,7 +4524,7 @@ fn getter_element_tag_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
         let answer = slices.reading.element_tag_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4115,7 +4538,7 @@ fn getter_element_id(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Complet
         let answer = slices.attributes.element_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4143,7 +4566,7 @@ fn getter_element_class_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.attributes.element_class_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4187,7 +4610,7 @@ fn getter_element_slot(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Compl
         let answer = slices.attributes.element_slot(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -4261,7 +4684,7 @@ fn operation_element_get_attribute(
         let answer = slices.attributes.element_get_attribute(dcx, this, a0);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4288,7 +4711,7 @@ fn operation_element_get_attribute_ns(
             .element_get_attribute_ns(dcx, this, a0, a1);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            nullable_string_value(dcx.engine(), value)
+            nullable_string_value(dcx, value)
         })
     })
 }
@@ -4742,13 +5165,31 @@ fn getter_element_children(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Element, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::ElementChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.element_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::ElementChildren, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_element_first_element_child(
@@ -5042,7 +5483,7 @@ fn getter_document_url(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Compl
         let answer = slices.reading.document_url(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5059,7 +5500,7 @@ fn getter_document_document_uri(
         let answer = slices.reading.document_document_uri(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5076,7 +5517,7 @@ fn getter_document_compat_mode(
         let answer = slices.reading.document_compat_mode(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5093,7 +5534,7 @@ fn getter_document_character_set(
         let answer = slices.reading.document_character_set(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5107,7 +5548,7 @@ fn getter_document_charset(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
         let answer = slices.reading.document_charset(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5124,7 +5565,7 @@ fn getter_document_input_encoding(
         let answer = slices.reading.document_input_encoding(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5141,7 +5582,7 @@ fn getter_document_content_type(
         let answer = slices.reading.document_content_type(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5575,13 +6016,31 @@ fn getter_document_children(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Document, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::DocumentChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.document_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::DocumentChildren, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_document_first_element_child(
@@ -5793,7 +6252,7 @@ fn getter_document_title(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Com
         let answer = slices.reading.document_title(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5824,7 +6283,7 @@ fn getter_character_data_data(
         let answer = slices.reading.character_data_data(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -5883,7 +6342,7 @@ fn operation_character_data_substring_data(
             .character_data_substring_data(dcx, this, a0, a1);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            units_value(dcx, &value)
         })
     })
 }
@@ -6117,7 +6576,7 @@ fn getter_text_whole_text(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Co
         let answer = slices.reading.text_whole_text(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6198,7 +6657,7 @@ fn getter_processing_instruction_target(
         let answer = slices.reading.processing_instruction_target(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6352,7 +6811,7 @@ fn getter_document_type_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
         let answer = slices.reading.document_type_name(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6369,7 +6828,7 @@ fn getter_document_type_public_id(
         let answer = slices.reading.document_type_public_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6386,7 +6845,7 @@ fn getter_document_type_system_id(
         let answer = slices.reading.document_type_system_id(dcx, this);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx.engine(), &value)
+            string_value(dcx, &value)
         })
     })
 }
@@ -6503,13 +6962,34 @@ fn getter_document_fragment_children(
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::DocumentFragment, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::DocumentFragmentChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.document_fragment_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices.wrap.keep_same_object(
+                    dcx,
+                    this,
+                    SameObject::DocumentFragmentChildren,
+                    object,
+                )?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_document_fragment_first_element_child(
@@ -6693,7 +7173,9 @@ fn operation_node_list_item(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
     let a0 = to_unsigned(cx, argument(&call, 0), 32)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.node_list_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::NodeList)?;
+        let answer = slices.reading.node_list_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::NodeList, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })
@@ -6704,7 +7186,9 @@ fn getter_node_list_length(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     let this = this_collection(cx, call.this, Interface::NodeList, MEMBER)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.node_list_length(dcx, &this);
+        let nodes = take_nodes(dcx, this, Interface::NodeList)?;
+        let answer = slices.reading.node_list_length(dcx, &nodes);
+        restore_nodes(dcx, this, Interface::NodeList, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, |_, _, value| {
             Ok(number(f64::from(value)))
@@ -6723,7 +7207,9 @@ fn getter_html_collection_length(
     let this = this_collection(cx, call.this, Interface::HtmlCollection, MEMBER)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.html_collection_length(dcx, &this);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_length(dcx, &nodes);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, |_, _, value| {
             Ok(number(f64::from(value)))
@@ -6741,7 +7227,9 @@ fn operation_html_collection_item(
     let a0 = to_unsigned(cx, argument(&call, 0), 32)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.html_collection_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })
@@ -6758,7 +7246,9 @@ fn operation_html_collection_named_item(
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
         let a0 = copies.copy(dcx.engine(), a0)?;
-        let answer = slices.reading.html_collection_named_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_named_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })
