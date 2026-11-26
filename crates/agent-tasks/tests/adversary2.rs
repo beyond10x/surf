@@ -11,7 +11,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use surf_agent_tasks::agent::{Agent, Step};
@@ -23,6 +23,7 @@ use surf_agent_tasks::report::{Lane, shown_binaries};
 use surf_agent_tasks::{Run, Verdict, judge, tasks_file};
 
 use surf_answer::{Answer, Form, Head, SessionState, render, text_page};
+use surf_test_process::ended_within;
 
 use crate::model_driver::{ONE_TASK, assert_one_task};
 
@@ -237,19 +238,92 @@ fn model(name: &str, body: &str) -> PathBuf {
     path
 }
 
-/// The processes named in `pids` that are still running a `sleep`; each is sent SIGKILL.
-fn sleeping(pids: &Path) -> Vec<u32> {
+/// The processes named in `pids` that run a `sleep` and have not ended within `bound`; each is
+/// sent SIGKILL. Decided by a wait, `ended_within`, never by one read: a process sent SIGKILL
+/// keeps its entry and its name under /proc until its parent has collected it.
+fn sleeping(pids: &Path, bound: Duration) -> Vec<u32> {
     let listed = fs::read_to_string(pids).unwrap_or_default();
     let _ = fs::remove_file(pids);
-    let alive: Vec<u32> = listed
+    let left: Vec<u32> = listed
         .lines()
         .filter_map(|line| line.trim().parse().ok())
         .filter(|&pid| comm(pid).as_deref() == Some("sleep"))
+        .filter(|&pid| ended_within(pid, bound).is_err())
         .collect();
-    for &pid in &alive {
+    for &pid in &left {
         signal_kill(pid);
     }
-    alive
+    left
+}
+
+/// A child the test started: dropping it sends it SIGKILL and collects it, so a test that
+/// panics leaves no process behind.
+struct Spawned(Child);
+
+impl Drop for Spawned {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// `/bin/sleep 30`, none of its standard streams the test's.
+fn spawn_sleep() -> Spawned {
+    let child = Command::new("/bin/sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("/bin/sleep starts");
+    Spawned(child)
+}
+
+#[test]
+fn a_killed_process_nobody_has_collected_is_not_left() {
+    let mut child = spawn_sleep();
+    let pid = child.0.id();
+    let pids = tmp().join(format!(
+        "adversary2-a_killed_process_nobody_has_collected_is_not_left-{}",
+        std::process::id()
+    ));
+    fs::write(&pids, format!("{pid}\n")).unwrap();
+    signal_kill(pid);
+    // The test is its parent and has not collected it: it ends as a zombie.
+    ended_within(pid, END_BOUND).expect("the child ends after SIGKILL");
+    assert_eq!(
+        comm(pid).as_deref(),
+        Some("sleep"),
+        "an ended child keeps its name until its parent collects it"
+    );
+    assert_eq!(
+        sleeping(&pids, END_BOUND),
+        Vec::<u32>::new(),
+        "sleeping took a killed process nobody has collected for one left"
+    );
+    let _ = child.0.wait();
+}
+
+#[test]
+fn a_process_that_still_runs_is_left_and_ended() {
+    let mut child = spawn_sleep();
+    let pid = child.0.id();
+    let pids = tmp().join(format!(
+        "adversary2-a_process_that_still_runs_is_left_and_ended-{}",
+        std::process::id()
+    ));
+    fs::write(&pids, format!("{pid}\n")).unwrap();
+    assert_eq!(
+        sleeping(&pids, Duration::ZERO),
+        vec![pid],
+        "sleeping did not take a process that runs for one left"
+    );
+    let ended = ended_within(pid, END_BOUND);
+    assert!(
+        ended.is_ok(),
+        "sleeping did not end what it found: {ended:?}"
+    );
+    let _ = child.0.wait();
 }
 
 #[test]
@@ -264,7 +338,7 @@ fn a_model_that_leaves_a_child_leaves_no_process() {
         ),
     );
     let (output, written) = drive(&stand_in, "child", &[("AGENT_TASKS_FILE", ONE_TASK)]);
-    let left = sleeping(&pids);
+    let left = sleeping(&pids, END_BOUND);
     let _ = fs::remove_file(&stand_in);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_one_task(&written.expect("the out file is written"));
@@ -283,7 +357,7 @@ fn a_model_over_its_bound_leaves_no_process() {
         ),
     );
     let (output, written) = drive(&stand_in, "session", &[("AGENT_TASKS_MODEL_TIMEOUT", "1")]);
-    let left = sleeping(&pids);
+    let left = sleeping(&pids, END_BOUND);
     let _ = fs::remove_file(&stand_in);
     assert_ne!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(written, None);
