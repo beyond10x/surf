@@ -368,14 +368,18 @@ above, and the list of standards itself was written from memory.
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
     swell 0.10.0 agent under surf's limits, and a document's scripts over the generated DOM
-    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`); no
-    crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 266
-    tests in one test binary: `engine` 29 (2 of them ignored until swell reaches HOST-26 and
-    HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,
-    `adversary_5` 7, `adversary_6` 5, `adversary_checkpoint` 10, `adversary_checkpoint_2` 5,
-    `bindings` 20, `dom_reading` 48, `dom_reading_cost` 19, `adversary_dom_reading` 17,
-    `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11, `adversary_dom_reading_4` 14,
-    `adversary_dom_reading_5` 10, `adversary_dom_reading_6` 12 and `run_end` 6; the modules `dom_attributes`, `dom_mutation`, `dom_selectors` and `parse_run` hold none yet.
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`) and
+    whose slice `selectors` answers the selector members over a subset of Selectors Level 4
+    (`story:scripts-dom-selectors`); no crate depends on it. Depends on swell, `surf-html`,
+    `surf-secret` and `surf-url`. 331 tests in one test binary: `engine` 29 (2 of them ignored
+    until swell reaches HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3`
+    19, `adversary_4` 10, `adversary_5` 7, `adversary_6` 5, `adversary_checkpoint` 10,
+    `adversary_checkpoint_2` 5, `bindings` 20, `dom_reading` 48, `dom_reading_cost` 19,
+    `adversary_dom_reading` 17, `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11,
+    `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10, `adversary_dom_reading_6` 12,
+    `dom_selectors` 42, `adversary_dom_selectors` 9, `adversary_dom_selectors_2` 8,
+    `adversary_dom_selectors_3` 6 and `run_end` 6; the modules `dom_attributes`, `dom_mutation`
+    and `parse_run` hold none yet.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.

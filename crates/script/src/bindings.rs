@@ -43,7 +43,7 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! 4e9074c2caea97504e2e6ca9b7f67318d07059c6451dfda54ad443c4ca1081ba  crates/webidl/selection.txt
+//! cd8530ea93f2bababe90d2e6f1aa43b61066688291acd209e5f2f90b28a51897  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
 //! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 042ecd2698f928348abff422b73634b6699f9689137ca747583a42bb7142e98c
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 88e3405de9f2c795a7057d5fb6109f035dd2f58bd1354f834425827fdbd77224
 
 use std::cell::Cell;
 
@@ -3795,7 +3795,7 @@ pub trait Mutation {
 }
 /// The members of the slice `selectors`: each method's default answers `NotSupportedError` naming the member, until the slice's story writes it in `crate::dom::selectors`.
 pub trait Selectors {
-    /// `Element.closest`: `Element? closest(DOMString selectors)`.
+    /// `Element.closest`: `Element? closest(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn element_closest(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3805,7 +3805,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Element.closest"))
     }
-    /// `Element.matches`: `boolean matches(DOMString selectors)`.
+    /// `Element.matches`: `boolean matches(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn element_matches(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3815,7 +3815,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Element.matches"))
     }
-    /// `Element.webkitMatchesSelector`: `boolean webkitMatchesSelector(DOMString selectors)`.
+    /// `Element.webkitMatchesSelector`: `boolean webkitMatchesSelector(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn element_webkit_matches_selector(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3825,7 +3825,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Element.webkitMatchesSelector"))
     }
-    /// `Element.querySelector`: `Element? querySelector(DOMString selectors)`.
+    /// `Element.querySelector`: `Element? querySelector(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn element_query_selector(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3835,7 +3835,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Element.querySelector"))
     }
-    /// `Element.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`.
+    /// `Element.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn element_query_selector_all(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3845,7 +3845,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Element.querySelectorAll"))
     }
-    /// `Document.querySelector`: `Element? querySelector(DOMString selectors)`.
+    /// `Document.querySelector`: `Element? querySelector(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn document_query_selector(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3855,7 +3855,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Document.querySelector"))
     }
-    /// `Document.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`.
+    /// `Document.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn document_query_selector_all(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3865,7 +3865,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("Document.querySelectorAll"))
     }
-    /// `DocumentFragment.querySelector`: `Element? querySelector(DOMString selectors)`.
+    /// `DocumentFragment.querySelector`: `Element? querySelector(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn document_fragment_query_selector(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3875,7 +3875,7 @@ pub trait Selectors {
         let _ = (cx, this, selectors);
         Err(not_supported("DocumentFragment.querySelector"))
     }
-    /// `DocumentFragment.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`.
+    /// `DocumentFragment.querySelectorAll`: `NodeList querySelectorAll(DOMString selectors)`; deviation: a valid selector outside the subset, and a selector over the bounds, throws a SyntaxError whose message says surf does not support it, where a browser runs it; deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name or a bad argument gets that message, not the one of an invalid selector.
     fn document_fragment_query_selector_all(
         &mut self,
         cx: &mut DomCx<'_, '_>,
