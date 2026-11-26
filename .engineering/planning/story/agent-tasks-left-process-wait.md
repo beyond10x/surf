@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks-left-process-wait
 kind: story
-status: proposed
+status: active
 title: Decide that a model's processes ended by a wait, in the three tests that read /proc once
 summary: The two model tests read /proc once after a group SIGKILL and take a zombie for a left process (one red run in ten observed); the story makes them, and the same read in bounded.rs, wait with ended_within and shows the fix with two tests that make a zombie themselves.
 scope:
@@ -12,9 +12,10 @@ scope:
   path: crates/agent-tasks/tests/adversary2.rs
 - confidence: cited
   path: crates/agent-tasks/tests/bounded.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-26T03:56:23Z", actor: "human:operator", revision: 12}
 ---
 ## Context
 
