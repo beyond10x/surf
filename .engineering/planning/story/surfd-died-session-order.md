@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:surfd-died-session-order
 kind: story
-status: proposed
+status: active
 title: Order the session's end and its child's line by an event in two surfd tests
 summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. In the first case the child waits until the shell is waitable; the second keeps two clocks with margins of 1 s and more. No product file changes.
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-26T04:38:51Z", actor: "human:operator", revision: 10}
 ---
 ## Context
 
@@ -106,7 +107,7 @@ factor makes that safe.
    by nothing (the child writes `x` at once) and `/usr/bin/sleep 1` before the `kill`, the
    case is red. Shown once, taken back.
 5. The first case is red when the loop never sees the shell's end: with the state letter the
-   loop waits for changed to one no process has (`X`), the child gives up and the case fails
+   loop waits for changed to a letter no state has (`Q`), the child gives up and the case fails
    at its assertion on `gave-up`, not at an assertion on the answer; the report gives the
    case's time. Shown once, taken back.
 6. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
@@ -117,7 +118,7 @@ factor makes that safe.
 7. One pool job after `slot cargo build --workspace --all-targets --locked`, with
    `RUSTFLAGS="-D warnings"` and `SURF_BIN_DIR=<tree>/target/debug` as `task test` sets them:
    `slot cargo nextest run -p surfd --locked` is all green; the two cases are named with their
-   times, the second about 3 s, none over 5 s.
+   times, the second about 3 s, neither over 5 s.
 8. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
    its time with `slot --timeout` (at most 30 minutes), none started again unchanged. Every
    command that compiles or tests carries `slot`; none carries `--local`, `--here`,
