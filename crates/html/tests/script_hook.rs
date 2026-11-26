@@ -2657,3 +2657,797 @@ fn random_markup_and_writes_keep_the_depth_limit_a_tree_and_one_call() {
         &faults[..faults.len().min(5)]
     );
 }
+
+// The reads of an element's attributes and the owners of the rules the writes share
+// (story `scripts-dom-attributes`, decision 3).
+
+/// A page with an HTML element `p` and an SVG element whose names the parser keeps in mixed
+/// case, and an SVG `use` with an `xlink:href`.
+const READS: &str = "<!DOCTYPE html><body><p id=p class=c data-x=1>text</p>\
+<svg id=s viewBox=\"0 0 1 1\"><use id=u xlink:href=\"#a\"></use></svg>";
+
+fn reads() -> Tree {
+    parse_document(READS, &scripted())
+}
+
+/// The source of the tree with every line comment, and the rest of a line after `//`, cut.
+fn tree_code() -> String {
+    include_str!("../src/tree.rs")
+        .lines()
+        .map(|line| line.find("//").map_or(line, |at| &line[..at]))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The text of the function whose line holds `head`, from that line to the next line that
+/// starts a function (`fn ` or `pub fn ` after its blanks).
+fn function_text(code: &str, head: &str) -> String {
+    let lines: Vec<&str> = code.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.contains(head))
+        .unwrap_or_else(|| panic!("tree.rs holds no `{head}`"));
+    let end = lines[start + 1..]
+        .iter()
+        .position(|line| {
+            let line = line.trim_start();
+            line.starts_with("fn ") || line.starts_with("pub fn ")
+        })
+        .map_or(lines.len(), |at| start + 1 + at);
+    lines[start..end].join("\n")
+}
+
+/// Asserts that the doc comment right above the function `head` has a line that starts with
+/// the token of a cost (`Cost:`).
+fn assert_cost_line(head: &str) {
+    let source = include_str!("../src/tree.rs");
+    let lines: Vec<&str> = source.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.contains(head))
+        .unwrap_or_else(|| panic!("tree.rs holds no `{head}`"));
+    let comment: Vec<&str> = lines[..at]
+        .iter()
+        .rev()
+        .map(|line| line.trim_start())
+        .take_while(|line| line.starts_with("///") || line.starts_with("#["))
+        .collect();
+    let token = ["Cost", ":"].concat();
+    assert!(
+        comment.iter().any(|line| line
+            .trim_start_matches('/')
+            .trim_start()
+            .starts_with(&token)),
+        "the doc comment of `{head}` has no line that starts with the cost token: {comment:#?}"
+    );
+}
+
+#[test]
+fn read_attribute_position() {
+    let mut tree = reads();
+    let p = by_id(&tree, "p");
+    let s = by_id(&tree, "s");
+    assert_eq!(tree.attribute_position(p, "id"), Some(0));
+    assert_eq!(
+        tree.attribute_position(p, "CLASS"),
+        Some(1),
+        "lowered on HTML"
+    );
+    assert_eq!(tree.attribute_position(p, "Data-X"), Some(2));
+    assert_eq!(tree.attribute_position(p, "none"), None);
+    assert_eq!(tree.attribute_position(s, "viewBox"), Some(1));
+    assert_eq!(
+        tree.attribute_position(s, "viewbox"),
+        None,
+        "not lowered on SVG"
+    );
+    tree.set_attribute_ns(p, None, "FOO", "1").unwrap();
+    assert_eq!(
+        tree.attribute_position(p, "FOO"),
+        None,
+        "the stored byte is not folded"
+    );
+    assert_eq!(tree.attribute_position(p, "foo"), None);
+    assert_eq!(tree.attribute_position_ns(p, None, "FOO"), Some(3));
+    let u = by_id(&tree, "u");
+    assert_eq!(tree.attribute_position(u, "xlink:href"), Some(1));
+    assert_eq!(tree.attribute_position(u, "href"), None);
+    let text = tree.children(p)[0];
+    assert_eq!(tree.attribute_position(text, "id"), None, "a text node");
+    assert_eq!(
+        tree.attribute_position(tree.root(), "id"),
+        None,
+        "the document"
+    );
+    assert_cost_line("pub fn attribute_position(");
+}
+
+#[test]
+fn read_attribute_position_ns() {
+    let mut tree = reads();
+    let u = by_id(&tree, "u");
+    assert_eq!(
+        tree.attribute_position_ns(u, Some(Namespace::XLink), "href"),
+        Some(1)
+    );
+    assert_eq!(tree.attribute_position_ns(u, None, "href"), None);
+    assert_eq!(
+        tree.attribute_position_ns(u, Some(Namespace::XLink), "xlink:href"),
+        None,
+        "by local name, not by qualified name"
+    );
+    tree.set_attribute_ns(u, Some(Namespace::XLink), "other:href", "#b")
+        .unwrap();
+    assert_eq!(
+        tree.attribute_position_ns(u, Some(Namespace::XLink), "href"),
+        Some(1),
+        "a prefix plays no part: the value was replaced in place"
+    );
+    assert_eq!(attributes_of(&tree, u)[1].value, "#b");
+    let p = by_id(&tree, "p");
+    assert_eq!(tree.attribute_position_ns(p, None, "class"), Some(1));
+    let text = tree.children(p)[0];
+    assert_eq!(tree.attribute_position_ns(text, None, "id"), None);
+    assert_eq!(tree.attribute_position_ns(tree.root(), None, "id"), None);
+    assert_cost_line("pub fn attribute_position_ns(");
+}
+
+#[test]
+fn read_attribute_names() {
+    let mut tree = reads();
+    let u = by_id(&tree, "u");
+    assert_eq!(tree.attribute_names(u), ["id", "xlink:href"]);
+    tree.set_attribute_ns(u, Some(Namespace::XLink), "id", "x")
+        .unwrap();
+    tree.set_attribute(u, "a", "1").unwrap();
+    tree.set_attribute(u, "id", "v").unwrap();
+    let names = tree.attribute_names(u);
+    assert_eq!(
+        names,
+        ["id", "xlink:href", "id", "a"],
+        "order and duplicates kept"
+    );
+    let attributes = attributes_of(&tree, u);
+    for (name, attribute) in names.iter().zip(&attributes) {
+        assert_eq!(name.len(), attribute.qualified_len());
+    }
+    let p = by_id(&tree, "p");
+    let text = tree.children(p)[0];
+    assert!(tree.attribute_names(text).is_empty());
+    assert!(tree.attribute_names(tree.root()).is_empty());
+    assert_cost_line("pub fn attribute_names(");
+}
+
+#[test]
+fn attribute_stored_bytes() {
+    let mut tree = reads();
+    let p = by_id(&tree, "p");
+    let s = by_id(&tree, "s");
+    let added = |tree: &Tree, node: NodeId| attributes_of(tree, node).last().cloned().unwrap();
+    let before = tree.stored_bytes();
+    tree.set_attribute(p, "Title", "abc").unwrap();
+    assert_eq!(added(&tree, p).stored_bytes(), tree.stored_bytes() - before);
+    assert_eq!(
+        added(&tree, p).stored_bytes(),
+        ATTRIBUTE_BYTES + "title".len() + 3
+    );
+    let before = tree.stored_bytes();
+    tree.set_attribute_ns(s, Some(Namespace::XLink), "xlink:title", "t\u{e9}")
+        .unwrap();
+    assert_eq!(added(&tree, s).stored_bytes(), tree.stored_bytes() - before);
+    assert_eq!(
+        added(&tree, s).stored_bytes(),
+        ATTRIBUTE_BYTES + "xlink".len() + "title".len() + 3
+    );
+    let before = tree.stored_bytes();
+    assert_eq!(tree.toggle_attribute(p, "hidden", None), Ok(true));
+    assert_eq!(added(&tree, p).stored_bytes(), tree.stored_bytes() - before);
+    assert_cost_line("pub fn stored_bytes(&self) -> usize");
+}
+
+#[test]
+fn attribute_qualified_len() {
+    let plain = Attribute {
+        namespace: None,
+        prefix: None,
+        local_name: "href".to_string(),
+        value: "#".to_string(),
+    };
+    let prefixed = Attribute {
+        namespace: Some(Namespace::XLink),
+        prefix: Some("xlink".to_string()),
+        ..plain.clone()
+    };
+    assert_eq!(plain.qualified_len(), 4);
+    assert_eq!(prefixed.qualified_len(), "xlink:href".len());
+    assert_cost_line("pub fn qualified_len(");
+}
+
+#[test]
+fn namespace_from_url() {
+    for namespace in [
+        Namespace::Html,
+        Namespace::MathMl,
+        Namespace::Svg,
+        Namespace::XLink,
+        Namespace::Xml,
+        Namespace::Xmlns,
+    ] {
+        assert_eq!(Namespace::from_url(namespace.url()), Some(namespace));
+        let mut near = namespace.url().as_bytes().to_vec();
+        let last = near.len() - 1;
+        near[last] ^= 1;
+        let near = String::from_utf8(near).unwrap();
+        assert_eq!(Namespace::from_url(&near), None, "{near}");
+    }
+    assert_eq!(Namespace::from_url(""), None);
+    assert_eq!(Namespace::from_url("urn:x"), None);
+    assert_cost_line("pub fn from_url(");
+}
+
+/// One rule for `NamespaceError`: the four conditions of "validate and extract" and a triple
+/// that passes, judged by `Tree::namespace_error` and by `set_attribute_ns`, which agree; and
+/// the function makes no pass over a name.
+#[test]
+fn namespace_error_conditions() {
+    let xml = Namespace::Xml.url();
+    let xmlns = Namespace::Xmlns.url();
+    let svg = Namespace::Svg.url();
+    // (namespace, prefix, local name, NamespaceError)
+    let table: [(Option<&str>, Option<&str>, &str, bool); 10] = [
+        (None, Some("a"), "b", true),
+        (Some(svg), Some("xml"), "b", true),
+        (Some(xml), Some("xml"), "b", false),
+        (Some(svg), None, "xmlns", true),
+        (Some(svg), Some("xmlns"), "a", true),
+        (Some(xmlns), None, "a", true),
+        (Some(xmlns), Some("p"), "a", true),
+        (Some(xmlns), None, "xmlns", false),
+        (Some(xmlns), Some("xmlns"), "a", false),
+        (Some(svg), Some("p"), "a", false),
+    ];
+    for (namespace, prefix, local_name, error) in table {
+        assert_eq!(
+            Tree::namespace_error(namespace, prefix, local_name),
+            error,
+            "{namespace:?} {prefix:?} {local_name}"
+        );
+        let mut tree = reads();
+        let p = by_id(&tree, "p");
+        let qualified = match prefix {
+            Some(prefix) => format!("{prefix}:{local_name}"),
+            None => local_name.to_string(),
+        };
+        let namespace = namespace.map(|url| Namespace::from_url(url).unwrap());
+        let written = tree.set_attribute_ns(p, namespace, &qualified, "v");
+        assert_eq!(
+            written == Err(WriteError::Namespace),
+            error,
+            "{namespace:?} {qualified}"
+        );
+    }
+    let code = tree_code();
+    let text = function_text(&code, "pub fn namespace_error(");
+    for token in [
+        "split",
+        "find(",
+        "rfind(",
+        "chars()",
+        "char_indices(",
+        "bytes()",
+        "contains(",
+        "matches(",
+        "trim",
+    ] {
+        assert!(
+            !text.contains(token),
+            "namespace_error holds `{token}`:\n{text}"
+        );
+    }
+    assert_cost_line("pub fn namespace_error(");
+}
+
+/// One matching rule: a read finds an attribute exactly when the write of the same name finds
+/// it, at the same position.
+#[test]
+fn one_matching_rule_for_reads_and_writes() {
+    let mut tree = reads();
+    let p = by_id(&tree, "p");
+    let s = by_id(&tree, "s");
+    let u = by_id(&tree, "u");
+    tree.set_attribute_ns(p, None, "FOO", "1").unwrap();
+    tree.set_attribute_ns(p, Some(Namespace::XLink), "x:id", "2")
+        .unwrap();
+    tree.set_attribute_ns(s, Some(Namespace::XLink), "viewBox", "3")
+        .unwrap();
+    let count = |tree: &Tree, node: NodeId| attributes_of(tree, node).len();
+    let names = [
+        "id",
+        "ID",
+        "Class",
+        "FOO",
+        "foo",
+        "x:id",
+        "X:ID",
+        "viewBox",
+        "viewbox",
+        "xlink:href",
+        "href",
+        "absent",
+    ];
+    for element in [p, s, u] {
+        for name in names {
+            let found = tree.attribute_position(element, name);
+            let mut removed = tree.clone();
+            removed.remove_attribute(element, name).unwrap();
+            assert_eq!(
+                found.is_some(),
+                count(&removed, element) < count(&tree, element),
+                "{name}"
+            );
+            if let Some(at) = found {
+                let mut set = tree.clone();
+                set.set_attribute(element, name, "new").unwrap();
+                assert_eq!(attributes_of(&set, element)[at].value, "new", "{name}");
+                assert_eq!(set.attribute_names(element), tree.attribute_names(element));
+            }
+        }
+        for namespace in [None, Some(Namespace::XLink), Some(Namespace::Svg)] {
+            for local in ["id", "FOO", "foo", "viewBox", "href", "absent"] {
+                let found = tree.attribute_position_ns(element, namespace, local);
+                let mut removed = tree.clone();
+                removed
+                    .remove_attribute_ns(element, namespace, local)
+                    .unwrap();
+                assert_eq!(
+                    found.is_some(),
+                    count(&removed, element) < count(&tree, element),
+                    "{namespace:?} {local}"
+                );
+                if let Some(at) = found {
+                    let mut set = tree.clone();
+                    set.set_attribute_ns(element, namespace, local, "new")
+                        .unwrap();
+                    assert_eq!(attributes_of(&set, element)[at].value, "new");
+                    assert_eq!(set.attribute_names(element), tree.attribute_names(element));
+                }
+            }
+        }
+    }
+}
+
+/// The position rule lowers the wanted name byte by byte and copies nothing, and no removal
+/// copies the name: the texts of `position_of`, `position_of_ns`, `remove_attribute`,
+/// `remove_attribute_ns` and the removing arm of `toggle_attribute` hold no copy and call no
+/// function of the file but the few the rule needs.
+#[test]
+fn removals_copy_no_name() {
+    const FORBIDDEN: [&str; 23] = [
+        "attribute_name(",
+        "to_ascii_lowercase(",
+        "to_lowercase(",
+        "make_ascii_lowercase(",
+        ".to_owned(",
+        ".to_string(",
+        "ToString::to_string(",
+        "to_vec(",
+        ".clone(",
+        ".cloned(",
+        ".into(",
+        ".into_owned(",
+        ".repeat(",
+        ".push_str(",
+        ".extend(",
+        "String::",
+        "Vec::",
+        "Box::",
+        "Rc::from(",
+        "Arc::from(",
+        "Cow",
+        "format!",
+        ".collect",
+    ];
+    const CALLABLE: [&str; 7] = [
+        "lower_byte",
+        "element_attributes",
+        "drop_attribute",
+        "position_of",
+        "position_of_ns",
+        "qualified_len",
+        "qualified_name_is",
+    ];
+    let code = tree_code();
+    let toggle = function_text(&code, "pub fn toggle_attribute(");
+    let lines: Vec<&str> = toggle.lines().collect();
+    let adding = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("None =>"))
+        .unwrap_or_else(|| panic!("toggle_attribute has no arm that starts `None =>`:\n{toggle}"));
+    let removing = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("Some(at) =>"))
+        .unwrap_or_else(|| {
+            panic!("toggle_attribute has no arm that starts `Some(at) =>`:\n{toggle}")
+        });
+    assert!(
+        lines[removing].trim_end().ends_with('{'),
+        "the line of `Some(at) =>` ends with no `{{`:\n{toggle}"
+    );
+    let first_lowering = lines
+        .iter()
+        .position(|line| line.contains("attribute_name("));
+    assert!(
+        first_lowering.is_some_and(|at| at > adding),
+        "toggle_attribute lowers the name before its adding arm:\n{toggle}"
+    );
+    let arm = braced(&lines[removing..].join("\n"));
+    let texts = [
+        ("position_of", function_text(&code, "fn position_of(")),
+        ("position_of_ns", function_text(&code, "fn position_of_ns(")),
+        (
+            "remove_attribute",
+            function_text(&code, "pub fn remove_attribute("),
+        ),
+        (
+            "remove_attribute_ns",
+            function_text(&code, "pub fn remove_attribute_ns("),
+        ),
+        ("the removing arm of toggle_attribute", arm),
+    ];
+    let functions = function_names(&code);
+    for (name, text) in &texts {
+        for token in FORBIDDEN {
+            assert!(!text.contains(token), "{name} holds `{token}`:\n{text}");
+        }
+        for call in calls(text) {
+            assert!(
+                !functions.contains(&call) || CALLABLE.contains(&call.as_str()),
+                "{name} calls `{call}` of tree.rs:\n{text}"
+            );
+        }
+    }
+}
+
+/// The text from the first `{` of `text` to the `}` that closes it, by counted braces.
+fn braced(text: &str) -> String {
+    let start = text.find('{').expect("a brace");
+    let mut depth = 0_usize;
+    for (at, c) in text[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text[start..start + at + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("no closing brace:\n{text}");
+}
+
+/// The names after `fn ` in `code`.
+fn function_names(code: &str) -> HashSet<String> {
+    code.match_indices("fn ")
+        .filter(|(at, _)| *at == 0 || !code.as_bytes()[at - 1].is_ascii_alphanumeric())
+        .map(|(at, _)| identifier_at(&code[at + 3..]))
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+fn identifier_at(text: &str) -> String {
+    text.chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect()
+}
+
+/// The calls in `text`: a name before `(` with no receiver, or with the receiver `self.` or
+/// `Self::`, or a path, and `.qualified_len(`; a name after `fn ` is a definition, not a call.
+fn calls(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut found = Vec::new();
+    for (open, _) in text.match_indices('(') {
+        let mut start = open;
+        while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+            start -= 1;
+        }
+        let name = &text[start..open];
+        if name.is_empty() || name.as_bytes()[0].is_ascii_digit() {
+            continue;
+        }
+        let before = &text[..start];
+        if before.ends_with("fn ") {
+            continue;
+        }
+        let method = before.ends_with('.');
+        let on_self = before.ends_with("self.");
+        if !method || on_self || name == "qualified_len" {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
+/// The room of the attribute list of `node`, in records.
+fn room_of(tree: &Tree, node: NodeId) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes.capacity(),
+        _ => 0,
+    }
+}
+
+/// The bytes the tree holds by the charge's rule, counted afresh: the strings of every node and
+/// [`ATTRIBUTE_BYTES`] for every record slot an attribute list holds room for.
+/// Every node of the tree is under its root here.
+fn held_afresh(tree: &Tree) -> usize {
+    let lists: usize = tree
+        .descendants(tree.root())
+        .into_iter()
+        .map(|node| match tree.data(node) {
+            NodeData::Element { attributes, .. } => {
+                (attributes.capacity() - attributes.len()) * ATTRIBUTE_BYTES
+            }
+            _ => 0,
+        })
+        .sum();
+    tree.stored_bytes() + lists
+}
+
+/// The bytes of the strings of the attribute `name` (no prefix) of `node`.
+fn strings_of(tree: &Tree, node: NodeId, name: &str) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes
+            .iter()
+            .find(|attribute| attribute.local_name == name)
+            .map(Attribute::string_bytes)
+            .expect("the attribute"),
+        _ => panic!("an element"),
+    }
+}
+
+/// The room reads say, before each write, what the write does to the list's allocation and to
+/// `held_bytes`: an add gains `attribute_room_grown` (a list the parser built at its exact
+/// length doubles at the first add, a short list grows by the one record, a list with room
+/// gains nothing), a removal gives back `attribute_room_freed` (all of it when the list
+/// empties), `held_bytes` moves by those and the strings, and a node that is no element has no
+/// room.
+#[test]
+fn read_attribute_room() {
+    let names: String = (0..512).map(|i| format!(" a{i}")).collect();
+    let page = format!("<!DOCTYPE html><body><p id=r{names}></p><i id=e></i>");
+    let mut tree = parse_document(&page, &scripted());
+    let p = by_id(&tree, "r");
+    assert_eq!(
+        room_of(&tree, p),
+        513,
+        "the parser builds the list at its length"
+    );
+    assert_eq!(
+        tree.held_bytes(),
+        tree.stored_bytes(),
+        "no room past a parsed list"
+    );
+    assert_eq!(tree.attribute_room_grown(p), 513 * ATTRIBUTE_BYTES);
+    let mut added = Vec::new();
+    for n in 0..400 {
+        let (before, held) = (room_of(&tree, p), tree.held_bytes());
+        let grown = tree.attribute_room_grown(p);
+        let name = format!("z{n}");
+        tree.set_attribute(p, &name, "").unwrap();
+        let after = room_of(&tree, p);
+        assert_eq!((after - before) * ATTRIBUTE_BYTES, grown, "add {n}");
+        assert_eq!(tree.held_bytes(), held + grown + name.len(), "add {n}");
+        added.push(name);
+    }
+    assert_eq!(room_of(&tree, p), 1026, "one doubling in 400 adds");
+    assert_eq!(tree.held_bytes(), held_afresh(&tree));
+    let mut shrunk = 0;
+    let all: Vec<String> = (0..512)
+        .map(|i| format!("a{i}"))
+        .chain(added)
+        .chain(["id".to_string()])
+        .collect();
+    for name in &all {
+        let (before, held) = (room_of(&tree, p), tree.held_bytes());
+        let freed = tree.attribute_room_freed(p);
+        let strings = strings_of(&tree, p, name);
+        tree.remove_attribute(p, name).unwrap();
+        let after = room_of(&tree, p);
+        assert_eq!(
+            freed,
+            (before - after) * ATTRIBUTE_BYTES,
+            "remove {name}: {before} -> {after} records"
+        );
+        assert_eq!(tree.held_bytes(), held - freed - strings, "remove {name}");
+        if after < before {
+            shrunk += 1;
+        }
+    }
+    assert!(attributes_of(&tree, p).is_empty());
+    assert_eq!(room_of(&tree, p), 0, "an emptied list gives its room back");
+    assert!(shrunk >= 3, "{shrunk} shrinks");
+    let e = by_id(&tree, "e");
+    let mut rooms = Vec::new();
+    for n in 0..6 {
+        let before = room_of(&tree, e);
+        let grown = tree.attribute_room_grown(e);
+        tree.set_attribute(e, &format!("b{n}"), "").unwrap();
+        let after = room_of(&tree, e);
+        assert_eq!((after - before) * ATTRIBUTE_BYTES, grown, "short add {n}");
+        rooms.push(after);
+    }
+    assert_eq!(
+        rooms,
+        [2, 3, 4, 8, 8, 8],
+        "1 (the id), 2, 3, 4, then 8 records"
+    );
+    // Shrunk to its entries at 3 left of 8; the last removal empties it.
+    let removals = [
+        ("b5", 8),
+        ("b4", 8),
+        ("b3", 8),
+        ("b2", 3),
+        ("b1", 3),
+        ("b0", 3),
+        ("id", 0),
+    ];
+    for (name, kept) in removals {
+        let freed = tree.attribute_room_freed(e);
+        let before = room_of(&tree, e);
+        tree.remove_attribute(e, name).unwrap();
+        assert_eq!(room_of(&tree, e), kept, "remove {name}");
+        assert_eq!(freed, (before - kept) * ATTRIBUTE_BYTES, "remove {name}");
+    }
+    assert_eq!(tree.held_bytes(), held_afresh(&tree));
+    assert_eq!(tree.attribute_room_grown(tree.root()), 0);
+    assert_eq!(tree.attribute_room_freed(tree.root()), 0);
+    assert_cost_line("pub fn attribute_room_grown(");
+    assert_cost_line("pub fn attribute_room_freed(");
+    assert_cost_line("pub fn held_bytes(");
+}
+
+/// Every element of `tree`, template contents included: its local name and the length and
+/// the room of its attribute list, in records.
+fn every_list(tree: &Tree) -> Vec<(String, usize, usize)> {
+    let mut lists = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(node) = pending.pop() {
+        pending.extend(tree.children(node));
+        if let NodeData::Element {
+            local_name,
+            attributes,
+            template_contents,
+            ..
+        } = tree.data(node)
+        {
+            lists.push((local_name.clone(), attributes.len(), attributes.capacity()));
+            pending.extend(*template_contents);
+        }
+    }
+    lists
+}
+
+/// Every way the parser builds or extends an attribute list leaves it with no room past its
+/// records, so `attribute_room_grown`'s "a list the parser built has no room" holds whichever
+/// way the parser built it: an element of one start tag, a later `html` or `body` start tag
+/// merged into the element (into an empty list, into a list of the first tag, several times,
+/// with names it has and names it lacks, or with nothing new), the adoption agency's copy of a
+/// formatting element, the reconstruction of one, an element foster parented out of a table,
+/// the `selectedcontent` copy of an option's elements, foreign elements with their adjusted
+/// names, an element in template contents and `image` read as `img`. Each page names an
+/// element and how many lists of that name with how many attributes the path leaves.
+#[test]
+fn every_list_the_parser_builds_has_no_room_past_its_records() {
+    let pages: [(&str, &str, &str, usize, usize); 13] = [
+        ("one start tag", "<!DOCTYPE html><p a b c d e>", "p", 1, 5),
+        (
+            "merged html",
+            "<html a1=1><html a2 a3 a4 a5><p>x<html a6>",
+            "html",
+            1,
+            6,
+        ),
+        ("html merged into no list", "<p>x<html a b c>", "html", 1, 3),
+        (
+            "merged body",
+            "<body b1><p>x<body b2 b3 b4 b5><body b6>",
+            "body",
+            1,
+            6,
+        ),
+        (
+            "a merge of nothing new",
+            "<body b1 b2><body b2 b1>",
+            "body",
+            1,
+            2,
+        ),
+        (
+            "a merge of names it has and lacks",
+            "<html a1 a2><html a1 a3 a2 a4 a5>",
+            "html",
+            1,
+            5,
+        ),
+        ("adoption agency", "<b x=1 y=2 z=3><p>t</b>u", "b", 2, 3),
+        ("reconstruction", "<p><i r=1 s=2 t=3>t</p><p>u", "i", 2, 3),
+        (
+            "foster parent",
+            "<table><b f=1 g=2 h=3>t</b><tr><td>x</table>",
+            "b",
+            1,
+            3,
+        ),
+        (
+            "selectedcontent copy",
+            "<select><button><selectedcontent></selectedcontent></button>\
+             <option selected><b c=1 d=2 e=3>x</b></option></select>",
+            "b",
+            2,
+            3,
+        ),
+        (
+            "foreign",
+            "<svg viewbox=\"0 0 1 1\" xlink:href=x xml:lang=y><math definitionurl=z w=1 v=2>",
+            "svg",
+            1,
+            3,
+        ),
+        (
+            "template contents",
+            "<template><p t1 t2 t3></p></template>",
+            "p",
+            1,
+            3,
+        ),
+        (
+            "image read as img",
+            "<image src=x alt=y title=z>",
+            "img",
+            1,
+            3,
+        ),
+    ];
+    // The steps of a parse with 64 merged start tags: the exact room of a merge costs no step.
+    let page: String = (0..64)
+        .map(|i| {
+            if i % 2 == 0 {
+                format!("<html h{i}=x>")
+            } else {
+                format!("<body b{i}=x>")
+            }
+        })
+        .collect();
+    let tree = parse_document(&page, &ParseOptions::default());
+    eprintln!(
+        "64 merged start tags: {} steps; lists {:?}",
+        tree.steps(),
+        every_list(&tree)
+            .into_iter()
+            .filter(|(name, ..)| name == "html" || name == "body")
+            .collect::<Vec<_>>()
+    );
+    let mut roomy = Vec::new();
+    for (path, page, name, count, len) in pages {
+        let tree = parse_document(page, &ParseOptions::default());
+        let lists = every_list(&tree);
+        let named: Vec<(usize, usize)> = lists
+            .iter()
+            .filter(|(local_name, ..)| local_name == name)
+            .map(|&(_, len, room)| (len, room))
+            .collect();
+        assert_eq!(
+            named.iter().filter(|&&(l, _)| l == len).count(),
+            count,
+            "{path}: {page}: lists of {name}: {named:?}"
+        );
+        roomy.extend(
+            lists
+                .into_iter()
+                .filter(|&(_, len, room)| room != len)
+                .map(|(local_name, len, room)| format!("{path}: {local_name} {len} in {room}")),
+        );
+    }
+    assert!(roomy.is_empty(), "lists with room: {roomy:?}");
+}

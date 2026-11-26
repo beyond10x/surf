@@ -43,7 +43,7 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! cd8530ea93f2bababe90d2e6f1aa43b61066688291acd209e5f2f90b28a51897  crates/webidl/selection.txt
+//! af3657ae55dc6ccc57b3cda0550d6826f44beb830ced5dafe37f78948db75153  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
 //! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
@@ -56,7 +56,7 @@
 //! fac53fd0bec48dd000de36b0b04b377bee2031a80ce7eae898db2f812908b0f1  crates/webidl/src/lib.rs
 //! d5ddfa7b61d568fa7618b2f0d8706808f1ca83445f1e53c6dee17c035efbf2f0  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! defee3b2cf3c315cd11a389bb4bb81c618d5b7c482782deef43b60f275449286  crates/webidl/src/prelude.rs
+//! 0795883f8cd6f1121b607e63e0ef7760420fa385a3e638084b2da684ed5f7d81  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 88e3405de9f2c795a7057d5fb6109f035dd2f58bd1354f834425827fdbd77224
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 630b9568c7d043c6c12a37164901765c5e4069170ab3ed1633ba65ce5ff009a6
 
 use std::cell::Cell;
 
@@ -126,6 +126,9 @@ pub enum DomEnd {
     /// The String the member would answer has more UTF-16 code units than the agent's
     /// `string_length`: the realm's `RangeError`, as for a String answered whole.
     StringLength,
+    /// A defect of surf's own code that no page causes: the run ends faulted, as `defect` does,
+    /// and no script can catch it.
+    Fault,
 }
 
 /// What every method of a slice answers.
@@ -159,8 +162,26 @@ pub fn not_supported(member: &str) -> DomEnd {
 pub struct Totals {
     /// The nodes charged.
     pub nodes: u64,
-    /// The bytes charged for them.
+    /// The bytes charged for them. The bytes scripts write into nodes that exist are charged
+    /// apart, through one handle ([`DomCx::charge_stored`], [`DomCx::settle_stored`]), and are
+    /// not added here.
     pub bytes: u64,
+}
+
+/// The factor of a stored byte in a memory charge: the tree's heap bound counts a stored byte
+/// twice, as the engine's String and the tree's copy may both be live. [`DomCx::charge_node`]
+/// charges a node's stored bytes with it, and the stored handle holds it times the live bytes.
+const STORED_FACTOR: u64 = 2;
+
+/// The live bytes after a write that adds `added` stored bytes and removes `removed` from
+/// `live`: `live + added` less `removed`, never below 0.
+fn next_live(live: u64, added: u64, removed: u64) -> u64 {
+    live.saturating_add(added).saturating_sub(removed)
+}
+
+/// A count as a `u64`.
+fn bytes_u64(bytes: usize) -> u64 {
+    u64::try_from(bytes).unwrap_or(u64::MAX)
 }
 
 /// The document a realm's bindings serve: its tree, the parser's limits, the totals and the
@@ -175,6 +196,16 @@ pub struct DomState {
     cut_refill: bool,
     interrupt: InterruptHandle,
     charges: Vec<HostBytes>,
+    /// The one handle of the bytes scripts wrote into nodes that exist
+    /// ([`DomCx::charge_stored`]); `None` until the first write that adds bytes. Not an entry
+    /// of `charges`.
+    stored: Option<HostBytes>,
+    /// The net rise of the stored bytes of existing nodes since the parse, by the writes that
+    /// charge them: the bytes added less the bytes removed, never below 0.
+    live: u64,
+    /// The bytes the stored handle holds: `STORED_FACTOR` times `live` after each settle the
+    /// engine took.
+    charged: u64,
     /// The message of a `TypeError` noted while the bindings are out of the host
     /// ([`unwrap_node`]), thrown by [`in_dom`] once they are back.
     type_error: Option<String>,
@@ -191,6 +222,9 @@ impl DomState {
             cut_refill: false,
             interrupt,
             charges: Vec::new(),
+            stored: None,
+            live: 0,
+            charged: 0,
             type_error: None,
         }
     }
@@ -222,6 +256,28 @@ impl DomState {
     pub fn totals(&self) -> Totals {
         self.totals
     }
+
+    /// The net rise of the stored bytes of existing nodes that the stored handle charges
+    /// ([`DomCx::charge_stored`]).
+    pub fn stored_live(&self) -> u64 {
+        self.live
+    }
+
+    /// The bytes the stored handle holds charged: twice [`DomState::stored_live`] after each
+    /// settle.
+    pub fn stored_charged(&self) -> u64 {
+        self.charged
+    }
+
+    /// The stored handles: 0 before the first write that adds bytes, then 1.
+    pub fn stored_handles(&self) -> usize {
+        usize::from(self.stored.is_some())
+    }
+
+    /// The node charges kept: one handle for each node a script made.
+    pub fn node_charges(&self) -> usize {
+        self.charges.len()
+    }
 }
 
 /// The context every member of a slice receives (decision 8): the document's tree, the
@@ -239,8 +295,10 @@ impl<'e> DomCx<'_, 'e> {
         &self.state.tree
     }
 
-    /// The tree, to write. A write that would make a node or store bytes calls
-    /// [`DomCx::charge_node`] first.
+    /// The tree, to write. A write that would make a node calls [`DomCx::charge_node`] first; a
+    /// write that adds or removes stored bytes of a node that exists calls
+    /// [`DomCx::charge_stored`] before it and [`DomCx::settle_stored`] after it, whatever the
+    /// tree answers.
     pub fn tree_mut(&mut self) -> &mut Tree {
         &mut self.state.tree
     }
@@ -253,6 +311,16 @@ impl<'e> DomCx<'_, 'e> {
     /// The totals of the node charges.
     pub fn totals(&self) -> Totals {
         self.state.totals
+    }
+
+    /// [`DomState::stored_live`].
+    pub fn stored_live(&self) -> u64 {
+        self.state.live
+    }
+
+    /// [`DomState::stored_charged`].
+    pub fn stored_charged(&self) -> u64 {
+        self.state.charged
     }
 
     /// The limit recorded by [`end_with_limit`] in the running script, if any.
@@ -282,23 +350,115 @@ impl<'e> DomCx<'_, 'e> {
     /// the budget nothing is charged and the run ends `Terminated(MemoryBudget)`; the answer is
     /// then a throw the engine does not deliver.
     pub fn charge_node(&mut self, stored_bytes: usize) -> DomResult<()> {
-        let node = u64::try_from(NODE_BYTES).unwrap_or(u64::MAX);
-        let stored = u64::try_from(stored_bytes).unwrap_or(u64::MAX);
+        let node = bytes_u64(NODE_BYTES);
+        let stored = bytes_u64(stored_bytes);
         let bytes = node
             .saturating_mul(3)
-            .saturating_add(stored.saturating_mul(2));
-        match self.engine.charge_host_bytes(bytes) {
-            Ok(charge) => {
-                self.state.charges.push(charge);
-                self.state.totals.nodes = self.state.totals.nodes.saturating_add(1);
-                self.state.totals.bytes = self.state.totals.bytes.saturating_add(bytes);
-                Ok(())
-            }
-            Err(Abrupt::Throw(_) | Abrupt::Terminated(_)) => Err(DomEnd::Throw(DomException::new(
+            .saturating_add(stored.saturating_mul(STORED_FACTOR));
+        let mut handle = None;
+        Self::charge_to(&mut *self.engine, &mut handle, bytes)?;
+        if let Some(handle) = handle {
+            self.state.charges.push(handle);
+        }
+        self.state.totals.nodes = self.state.totals.nodes.saturating_add(1);
+        self.state.totals.bytes = self.state.totals.bytes.saturating_add(bytes);
+        Ok(())
+    }
+
+    /// Makes `handle` hold `bytes` of the agent's memory budget: with no handle it makes one
+    /// (`charge_host_bytes`), with one it resizes it (`resize_host_bytes`), a grow charging the
+    /// difference first and a shrink giving it back. Over the budget nothing changes and the
+    /// run ends `Terminated(MemoryBudget)`; the answer is then a throw the engine does not
+    /// deliver. An engine call surf should not have made (a handle of another engine, a
+    /// faulted agent) answers [`DomEnd::Fault`]. It takes no `self`, so that a field of the
+    /// state can be the handle while the engine is borrowed.
+    fn charge_to(
+        engine: &mut Cx<'e, ScriptHost>,
+        handle: &mut Option<HostBytes>,
+        bytes: u64,
+    ) -> DomResult<()> {
+        let spent = || {
+            DomEnd::Throw(DomException::new(
                 "InvalidStateError",
                 "the memory budget is spent",
-            ))),
+            ))
+        };
+        match handle {
+            None => match engine.charge_host_bytes(bytes) {
+                Ok(made) => {
+                    *handle = Some(made);
+                    Ok(())
+                }
+                Err(Abrupt::Throw(_) | Abrupt::Terminated(_)) => Err(spent()),
+            },
+            Some(held) => match engine.resize_host_bytes(held, bytes) {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(Abrupt::Throw(_) | Abrupt::Terminated(_))) => Err(spent()),
+                // A faulted agent, or a handle of another one: surf's own defect.
+                Err(HostError::Faulted | HostError::ForeignHandle) => Err(DomEnd::Fault),
+                // Ends faulted: the state frees no handle while it runs. A limit or an
+                // interrupt is never this outer error: the budget answers the inner completion.
+                Err(HostError::StaleHandle) => Err(DomEnd::Fault),
+                // End faulted: a resize takes no value, no module and no evaluation and queues
+                // no job, so these answer only a defect; a limit is the inner MemoryBudget, an
+                // interrupt the termination the next step reads, never this outer error. The
+                // outer MemoryBudget (new at swell 0.9.0) is answered by `queue_microtask`
+                // only (`host/jobs.rs:207 @ 0.10.0`); a resize ends the run instead
+                // (`host/host_bytes.rs:93-94 @ 0.10.0`).
+                Err(
+                    HostError::WrongKind { .. }
+                    | HostError::ModuleStatus { .. }
+                    | HostError::ModuleTerminated
+                    | HostError::EvaluationInProgress
+                    | HostError::MemoryBudget,
+                ) => Err(DomEnd::Fault),
+            },
         }
+    }
+
+    /// The charge before a write into nodes that exist, of the sums of one tree call: `added`
+    /// stored bytes and `removed` ones. The next live bytes are those of `next_live` and the
+    /// wanted charge is `STORED_FACTOR` times them; when it is above what the stored handle
+    /// holds, the handle is made or grown to it. Over the budget nothing changes (the live
+    /// bytes, the charge and the tree) and the run ends `Terminated(MemoryBudget)`,
+    /// `limit: memory`, the answer being a throw the engine does not deliver. A shrink waits
+    /// for [`DomCx::settle_stored`] after the write. It changes the charge and never the live
+    /// bytes, so each call is followed by one settle with the same sums before another charge.
+    pub fn charge_stored(&mut self, added: usize, removed: usize) -> DomResult<()> {
+        let live = next_live(self.state.live, bytes_u64(added), bytes_u64(removed));
+        let wanted = live.saturating_mul(STORED_FACTOR);
+        if wanted <= self.state.charged {
+            return Ok(());
+        }
+        Self::charge_to(&mut *self.engine, &mut self.state.stored, wanted)?;
+        self.state.charged = wanted;
+        Ok(())
+    }
+
+    /// The settle after a write into nodes that exist, with the sums [`DomCx::charge_stored`]
+    /// was given, or with `(0, 0)` after a write the tree refused: the live bytes become
+    /// `next_live` of them and the handle shrinks to `STORED_FACTOR` times that, so a write
+    /// that removed bytes gives them back. An equal size makes no engine call; a settle never
+    /// grows the handle (a caller's defect, which a debug assertion names). The engine cannot
+    /// refuse a shrink for memory, so any refusal of it is a defect: [`DomEnd::Fault`], with
+    /// the live bytes and the charge as they were.
+    pub fn settle_stored(&mut self, added: usize, removed: usize) -> DomResult<()> {
+        let live = next_live(self.state.live, bytes_u64(added), bytes_u64(removed));
+        let wanted = live.saturating_mul(STORED_FACTOR);
+        debug_assert!(
+            wanted <= self.state.charged,
+            "a settle above the charge: charge_stored comes first"
+        );
+        if wanted < self.state.charged {
+            let shrunk = match Self::charge_to(&mut *self.engine, &mut self.state.stored, wanted) {
+                Err(DomEnd::Throw(_)) => Err(DomEnd::Fault),
+                other => other,
+            };
+            shrunk?;
+            self.state.charged = wanted;
+        }
+        self.state.live = live;
+        Ok(())
     }
 }
 
@@ -967,6 +1127,7 @@ fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
         Err(DomEnd::StringLength) => Err(string_length_error(cx)),
+        Err(DomEnd::Fault) => Err(Abrupt::Terminated(Termination::EngineFault)),
     }
 }
 
@@ -1255,6 +1416,11 @@ fn number(value: f64) -> Value {
 /// define of its index. One step a node bought work of about forty steps of a plain walk in the
 /// test profile (measured on the reading slice), so a node is charged as eight.
 pub const COLLECTION_NODE_STEPS: u64 = 8;
+
+/// The steps of one element of a `sequence<DOMString>` answered, beside the bytes of its
+/// String: the String made and the define of its index, charged as a collection node is
+/// ([`COLLECTION_NODE_STEPS`]), so a list of many short Strings is not answered for nothing.
+pub const STRING_ELEMENT_STEPS: u64 = 8;
 
 /// The bytes of a String answer whose copy into the engine is charged one step: the copy
 /// converts each byte to UTF-16 code units, about the time of a plain walk's step for 16 bytes
@@ -1549,8 +1715,12 @@ fn not_refreshed(cx: &mut DomCx<'_, '_>) -> Abrupt {
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String
-/// per element.
+/// per element. [`STRING_ELEMENT_STEPS`] are charged for each element, in one charge before
+/// the loop, and each String's bytes as [`string_value`] charges them.
 fn strings_value(cx: &mut DomCx<'_, '_>, strings: Vec<String>) -> Completion<Value> {
+    let elements = u64::try_from(strings.len()).unwrap_or(u64::MAX);
+    cx.engine
+        .charge_steps(elements.saturating_mul(STRING_ELEMENT_STEPS))?;
     let array = cx.engine.get(&cx.installed.array).map_err(defect)?;
     let created = engine(cx.engine.construct(array, &[], None))?;
     let Value::Object(object) = created else {
@@ -3204,7 +3374,7 @@ pub trait Attributes {
         let _ = (cx, this, qualified_name, value);
         Err(not_supported("Element.setAttribute"))
     }
-    /// `Element.setAttributeNS`: `undefined setAttributeNS(DOMString? namespace, DOMString qualifiedName, (TrustedType or DOMString) value)`; deviation: (TrustedType or DOMString) read as DOMString.
+    /// `Element.setAttributeNS`: `undefined setAttributeNS(DOMString? namespace, DOMString qualifiedName, (TrustedType or DOMString) value)`; deviation: (TrustedType or DOMString) read as DOMString; deviation: a namespace that is none of the six the tree stores (HTML, MathML, SVG, XLink, XML, XMLNS) throws NotSupportedError after validate and extract, before the attribute is looked up.
     fn element_set_attribute_ns(
         &mut self,
         cx: &mut DomCx<'_, '_>,

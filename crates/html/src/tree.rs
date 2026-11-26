@@ -22,6 +22,13 @@
 //! `InvalidCharacterError`), an element has no namespace prefix, an attribute's namespace is one
 //! of [`Namespace`], and a range or a mutation record is not kept.
 //!
+//! Since `story:scripts-dom-attributes` the surface has three reads of an element's attributes
+//! ([`Tree::attribute_position`], [`Tree::attribute_position_ns`], [`Tree::attribute_names`])
+//! that match a name by the rule the attribute writes use, and the owners of the rules a caller
+//! would otherwise copy: [`Namespace::from_url`], [`Tree::namespace_error`],
+//! [`Attribute::stored_bytes`] and [`Attribute::qualified_len`]. A read counts no step either:
+//! the doc comment of each says what it costs, and the caller charges for it.
+//!
 //! Depth for a write: the elements among a node's inclusive ancestors, a template counted for
 //! the nodes of its contents, the count by which the depth limit bounds the tree in every parse
 //! (the crate documentation, "Limits"). An insertion that would give an element a depth past
@@ -91,16 +98,46 @@ pub enum Namespace {
     Xmlns,
 }
 
+/// The URL of [`Namespace::Html`].
+const HTML_URL: &str = "http://www.w3.org/1999/xhtml";
+/// The URL of [`Namespace::MathMl`].
+const MATHML_URL: &str = "http://www.w3.org/1998/Math/MathML";
+/// The URL of [`Namespace::Svg`].
+const SVG_URL: &str = "http://www.w3.org/2000/svg";
+/// The URL of [`Namespace::XLink`].
+const XLINK_URL: &str = "http://www.w3.org/1999/xlink";
+/// The URL of [`Namespace::Xml`].
+const XML_URL: &str = "http://www.w3.org/XML/1998/namespace";
+/// The URL of [`Namespace::Xmlns`].
+const XMLNS_URL: &str = "http://www.w3.org/2000/xmlns/";
+
 impl Namespace {
     /// The namespace's URL.
     pub fn url(self) -> &'static str {
         match self {
-            Namespace::Html => "http://www.w3.org/1999/xhtml",
-            Namespace::MathMl => "http://www.w3.org/1998/Math/MathML",
-            Namespace::Svg => "http://www.w3.org/2000/svg",
-            Namespace::XLink => "http://www.w3.org/1999/xlink",
-            Namespace::Xml => "http://www.w3.org/XML/1998/namespace",
-            Namespace::Xmlns => "http://www.w3.org/2000/xmlns/",
+            Namespace::Html => HTML_URL,
+            Namespace::MathMl => MATHML_URL,
+            Namespace::Svg => SVG_URL,
+            Namespace::XLink => XLINK_URL,
+            Namespace::Xml => XML_URL,
+            Namespace::Xmlns => XMLNS_URL,
+        }
+    }
+
+    /// The namespace whose URL ([`Namespace::url`]) is `url`; `None` for any other string,
+    /// the empty one included.
+    ///
+    /// Cost: at most six compares of `url` with a URL of at most 36 bytes; a compare reads no
+    /// byte when the lengths differ.
+    pub fn from_url(url: &str) -> Option<Namespace> {
+        match url {
+            HTML_URL => Some(Namespace::Html),
+            MATHML_URL => Some(Namespace::MathMl),
+            SVG_URL => Some(Namespace::Svg),
+            XLINK_URL => Some(Namespace::XLink),
+            XML_URL => Some(Namespace::Xml),
+            XMLNS_URL => Some(Namespace::Xmlns),
+            _ => None,
         }
     }
 }
@@ -117,6 +154,32 @@ pub struct Attribute {
     pub local_name: String,
     /// The value.
     pub value: String,
+}
+
+impl Attribute {
+    /// The stored bytes of the attribute, as the tree counts them ([`Tree::stored_bytes`]): its
+    /// record ([`ATTRIBUTE_BYTES`]) and the UTF-8 bytes of its prefix, local name and value.
+    ///
+    /// Cost: a constant number of steps (three lengths read).
+    pub fn stored_bytes(&self) -> usize {
+        ATTRIBUTE_BYTES + self.string_bytes()
+    }
+
+    /// The UTF-8 bytes of its prefix, local name and value: what an attribute holds beside its
+    /// record ([`Tree::held_bytes`]).
+    ///
+    /// Cost: a constant number of steps (three lengths read).
+    pub fn string_bytes(&self) -> usize {
+        self.prefix.as_ref().map_or(0, String::len) + self.local_name.len() + self.value.len()
+    }
+
+    /// The length in bytes of its qualified name: its prefix, one for the colon and its local
+    /// name, or its local name.
+    ///
+    /// Cost: a constant number of steps (two lengths read).
+    pub fn qualified_len(&self) -> usize {
+        self.prefix.as_ref().map_or(0, |prefix| prefix.len() + 1) + self.local_name.len()
+    }
 }
 
 /// The identity of a node in its [`Tree`].
@@ -212,13 +275,9 @@ impl Categories {
     }
 }
 
-/// The stored bytes of `attribute`: its record ([`ATTRIBUTE_BYTES`]) and the UTF-8 bytes of its
-/// prefix, local name and value.
+/// The stored bytes of `attribute` ([`Attribute::stored_bytes`]).
 fn attribute_bytes(attribute: &Attribute) -> usize {
-    ATTRIBUTE_BYTES
-        + attribute.prefix.as_ref().map_or(0, String::len)
-        + attribute.local_name.len()
-        + attribute.value.len()
+    attribute.stored_bytes()
 }
 
 /// The stored bytes of `data` ([`Tree::stored_bytes`]): the UTF-8 bytes of its strings and
@@ -502,9 +561,11 @@ impl Tree {
     }
 
     /// Adds `attributes` to `element`, in order. The caller has left out every name the element
-    /// has an attribute of (the `html` and `body` start tag rules of "in body"). A list that was
-    /// empty gets exactly the room it needs, so that a list never holds more than twice the
-    /// records it has (the heap bound of [`crate::limits::Limits::max_stored_bytes`]).
+    /// has an attribute of (the `html` and `body` start tag rules of "in body"). The list gets
+    /// exactly the records it adds, so a list the parser built holds no room beyond its
+    /// records however many merges built it ([`Tree::attribute_room_grown`]), and never more
+    /// than twice the records it has (the heap bound of
+    /// [`crate::limits::Limits::max_stored_bytes`]).
     pub(crate) fn add_attributes(&mut self, element: NodeId, attributes: Vec<Attribute>) {
         if let NodeData::Element {
             attributes: existing,
@@ -512,9 +573,7 @@ impl Tree {
         } = &mut self.nodes[element.0].data
         {
             self.stored_bytes += attributes.iter().map(attribute_bytes).sum::<usize>();
-            if existing.is_empty() {
-                existing.reserve_exact(attributes.len());
-            }
+            existing.reserve_exact(attributes.len());
             existing.extend(attributes);
         }
     }
@@ -590,9 +649,32 @@ impl Tree {
     /// The stored bytes of the tree ([`crate::limits::Limits::max_stored_bytes`]): the UTF-8
     /// bytes of every string it holds (element local names, attribute names, prefixes and
     /// values, text, comment data, doctype fields, processing instruction targets and data), and
-    /// [`ATTRIBUTE_BYTES`] for every attribute, in every node of the arena.
+    /// [`ATTRIBUTE_BYTES`] for every attribute, in every node of the arena. The record slots a
+    /// list holds room for past its attributes are not in it ([`Tree::held_bytes`]).
     pub fn stored_bytes(&self) -> usize {
         self.stored_bytes
+    }
+
+    /// The bytes the tree holds by the rule a script's attribute writes are charged by: the
+    /// strings [`Tree::stored_bytes`] counts, and [`ATTRIBUTE_BYTES`] for every record an
+    /// attribute list holds room for, whether an attribute is in it or not. A record slot counts
+    /// while its list holds it, an attribute's strings while the attribute is there: an add
+    /// rises it by the strings and the records the list gains ([`Tree::attribute_room_grown`]),
+    /// a removal lowers it by the strings and the records the list gives back
+    /// ([`Tree::attribute_room_freed`]), a replaced value moves it by the value's bytes.
+    ///
+    /// Cost: one pass over the nodes of the arena; no pass over a list.
+    pub fn held_bytes(&self) -> usize {
+        self.nodes
+            .iter()
+            .map(|node| match &node.data {
+                NodeData::Element { attributes, .. } => attributes
+                    .capacity()
+                    .saturating_sub(attributes.len())
+                    .saturating_mul(ATTRIBUTE_BYTES),
+                _ => 0,
+            })
+            .fold(self.stored_bytes, usize::saturating_add)
     }
 
     /// Records the steps the parse used.
@@ -665,6 +747,144 @@ impl Tree {
     pub fn children(&self, node: NodeId) -> &[NodeId] {
         &self.nodes[node.0].children
     }
+
+    /// The position in the attribute list of `element` of the first attribute whose qualified
+    /// name is `name` (DOM, "get an attribute by name"): for an element in the HTML namespace
+    /// `name` is lowered byte by byte as it is compared, and a stored name is never folded, so
+    /// an attribute stored with capitals on an HTML element is found by no qualified name. The
+    /// rule the writes by qualified name use. `None` for no such attribute and for a node that
+    /// is no element.
+    ///
+    /// Cost: one pass over the list; an attribute whose qualified length differs from the
+    /// length of `name` is passed on the lengths, and one of the same length is compared byte
+    /// by byte, at most the bytes of `name`. No copy. The caller charges for it.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_position(&self, element: NodeId, name: &str) -> Option<usize> {
+        let (namespace, attributes) = self.element_attributes(element).ok()?;
+        position_of(namespace, attributes, name)
+    }
+
+    /// The position in the attribute list of `element` of the first attribute in `namespace`
+    /// whose local name is `local_name` (DOM, "get an attribute by namespace and local name");
+    /// the prefix plays no part. The rule the writes by namespace and local name use. `None`
+    /// for no such attribute and for a node that is no element.
+    ///
+    /// Cost: one pass over the list; each attribute's namespace is compared, and its local
+    /// name, after a compare of the lengths, at most the bytes of `local_name`. No copy. The
+    /// caller charges for it.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_position_ns(
+        &self,
+        element: NodeId,
+        namespace: Option<Namespace>,
+        local_name: &str,
+    ) -> Option<usize> {
+        let (_, attributes) = self.element_attributes(element).ok()?;
+        position_of_ns(attributes, namespace, local_name)
+    }
+
+    /// The qualified names of the attributes of `element`, in their order, duplicates kept
+    /// (DOM, `getAttributeNames`): the prefix, a colon and the local name, or the local name,
+    /// each in a String of its exact length. Empty for a node that is no element.
+    ///
+    /// Cost: one pass over the list that builds one String per attribute, in all the bytes of
+    /// the qualified names, in a list made with the room for all of them. The caller charges
+    /// for it.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_names(&self, element: NodeId) -> Vec<String> {
+        let Ok((_, attributes)) = self.element_attributes(element) else {
+            return Vec::new();
+        };
+        let mut names = Vec::with_capacity(attributes.len());
+        for attribute in attributes {
+            let mut name = String::with_capacity(attribute.qualified_len());
+            if let Some(prefix) = &attribute.prefix {
+                name.push_str(prefix);
+                name.push(':');
+            }
+            name.push_str(&attribute.local_name);
+            names.push(name);
+        }
+        names
+    }
+
+    /// The bytes by which [`Tree::held_bytes`] counts more record slots in the attribute list
+    /// of `element` once one attribute is added: the records the list's allocation gains,
+    /// times [`ATTRIBUTE_BYTES`]. 0 while the list has room (the attribute goes into a slot the
+    /// list holds); one record while it holds fewer than four, where the adding writes reserve
+    /// one record at a time; else as many records as the list holds. A list the parser built
+    /// has no room, so the first add to a list of `c` records takes `c` records. 0 for a node
+    /// that is no element.
+    ///
+    /// Cost: a constant number of steps; no pass over the list.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_room_grown(&self, element: NodeId) -> usize {
+        let Ok((_, attributes)) = self.element_attributes(element) else {
+            return 0;
+        };
+        grown_capacity(attributes.len(), attributes.capacity())
+            .saturating_sub(attributes.capacity())
+            .saturating_mul(ATTRIBUTE_BYTES)
+    }
+
+    /// The bytes by which [`Tree::held_bytes`] counts fewer record slots in the attribute list
+    /// of `element` once one attribute is removed: the records the list's allocation gives
+    /// back, times [`ATTRIBUTE_BYTES`]. 0 when the list keeps its allocation; all of it when
+    /// the removal empties the list; else, for a list left with room for more than twice its
+    /// entries and more than four, the records past those it keeps. 0 for a node that is no
+    /// element or has no attribute.
+    ///
+    /// Cost: a constant number of steps; no pass over the list.
+    ///
+    /// # Panics
+    ///
+    /// When `element` is not of this tree.
+    pub fn attribute_room_freed(&self, element: NodeId) -> usize {
+        let Ok((_, attributes)) = self.element_attributes(element) else {
+            return 0;
+        };
+        let Some(left) = attributes.len().checked_sub(1) else {
+            return 0;
+        };
+        let capacity = attributes.capacity();
+        capacity
+            .saturating_sub(kept_capacity(left, capacity))
+            .saturating_mul(ATTRIBUTE_BYTES)
+    }
+
+    /// Whether the DOM's "validate and extract" throws `NamespaceError` for the namespace URL
+    /// `namespace` (`None` for null), the prefix `prefix` and the local name `local_name` of a
+    /// qualified name its caller split at its first colon: a prefix with a null namespace;
+    /// the prefix `xml` outside the XML namespace; the qualified name `xmlns` (no prefix and
+    /// the local name `xmlns`) or the prefix `xmlns` outside the XMLNS namespace; the XMLNS
+    /// namespace with neither. It reads no tree and judges a URL outside the six of
+    /// [`Namespace`] by the same conditions.
+    ///
+    /// Cost: a constant number of compares, each of a string with a constant of at most 36
+    /// bytes, which reads no byte when the lengths differ; no pass over the name.
+    pub fn namespace_error(
+        namespace: Option<&str>,
+        prefix: Option<&str>,
+        local_name: &str,
+    ) -> bool {
+        let named_xmlns = prefix.is_none() && local_name == "xmlns";
+        (prefix.is_some() && namespace.is_none())
+            || (prefix == Some("xml") && namespace != Some(XML_URL))
+            || ((named_xmlns || prefix == Some("xmlns")) && namespace != Some(XMLNS_URL))
+            || (namespace == Some(XMLNS_URL) && !named_xmlns && prefix != Some("xmlns"))
+    }
 }
 
 /// The length of `data` in UTF-16 code units (the DOM's length of character data).
@@ -692,24 +912,91 @@ fn byte_index(data: &str, units: usize) -> WriteResult<usize> {
     }
 }
 
-/// The qualified name of `attribute`: its prefix, a colon and its local name, or its local name.
-fn qualified_name_is(attribute: &Attribute, name: &str) -> bool {
-    match &attribute.prefix {
-        None => attribute.local_name == name,
-        Some(prefix) => {
-            name.len() == prefix.len() + 1 + attribute.local_name.len()
-                && name.starts_with(prefix.as_str())
-                && name[prefix.len()..].starts_with(':')
-                && name.ends_with(attribute.local_name.as_str())
+/// The position in `attributes`, of an element in `namespace`, of the first attribute whose
+/// qualified name (its prefix, a colon and its local name, or its local name) is `name`. For an
+/// element in the HTML namespace each byte of `name` is lowered before it is compared, as the
+/// DOM lowers the name in an HTML document; the stored name is compared as it is. An attribute
+/// whose qualified length differs is passed on its length; one of the same length is compared
+/// byte by byte. No byte is copied. The one owner of the rule: the reads and the writes by
+/// qualified name call it.
+fn position_of(namespace: Namespace, attributes: &[Attribute], name: &str) -> Option<usize> {
+    let lower = namespace == Namespace::Html;
+    let wanted = name.as_bytes();
+    attributes.iter().position(|attribute| {
+        if attribute.qualified_len() != wanted.len() {
+            return false;
         }
-    }
+        let prefix = attribute.prefix.as_deref().unwrap_or_default().as_bytes();
+        let colon: &[u8] = if attribute.prefix.is_some() {
+            b":"
+        } else {
+            b""
+        };
+        prefix
+            .iter()
+            .chain(colon)
+            .chain(attribute.local_name.as_bytes())
+            .zip(wanted)
+            .all(|(&stored, &byte)| stored == if lower { lower_byte(byte) } else { byte })
+    })
+}
+
+/// The position in `attributes` of the first attribute in `namespace` whose local name is
+/// `local_name`; the prefix plays no part. The one owner of the rule: the reads and the writes
+/// by namespace and local name call it.
+fn position_of_ns(
+    attributes: &[Attribute],
+    namespace: Option<Namespace>,
+    local_name: &str,
+) -> Option<usize> {
+    attributes.iter().position(|attribute| {
+        attribute.namespace == namespace && attribute.local_name == local_name
+    })
+}
+
+/// `byte` in ASCII lower case.
+fn lower_byte(byte: u8) -> u8 {
+    byte.to_ascii_lowercase()
 }
 
 /// Gives a list back the room it holds past twice its entries, so that a list a write shrank
 /// keeps the heap bound of [`Limits::max_stored_bytes`].
 fn shrink<T>(list: &mut Vec<T>) {
-    if list.capacity() > (2 * list.len()).max(4) {
+    if must_shrink(list.len(), list.capacity()) {
         list.shrink_to_fit();
+    }
+}
+
+/// Whether a list of `len` entries with room for `capacity` is shrunk to its entries: room for
+/// more than twice its entries, and for more than four.
+fn must_shrink(len: usize, capacity: usize) -> bool {
+    capacity > len.saturating_mul(2).max(4)
+}
+
+/// The room an attribute list of `len` records keeps after a removal, when it had room for
+/// `capacity`: none when it is empty, so that an element brought back to no attribute holds no
+/// record slot; its entries when [`must_shrink`] says so; else all of it.
+fn kept_capacity(len: usize, capacity: usize) -> usize {
+    if len == 0 {
+        0
+    } else if must_shrink(len, capacity) {
+        len
+    } else {
+        capacity
+    }
+}
+
+/// The room of an attribute list of `len` records with room for `capacity` once one more is
+/// added: the same while it has room; else one more while it holds fewer than four, so that
+/// a short list a script grows holds no record slot it does not use, and twice its records
+/// beyond, so that a run of adds moves each record a bounded number of times.
+fn grown_capacity(len: usize, capacity: usize) -> usize {
+    if len < capacity {
+        capacity
+    } else if len < 4 {
+        len + 1
+    } else {
+        len.saturating_mul(2)
     }
 }
 
@@ -1519,17 +1806,27 @@ impl Tree {
                 let bytes = attribute_bytes(&attribute);
                 self.admit(0, bytes)?;
                 self.stored_bytes += bytes;
-                self.attributes_mut(element).push(attribute);
+                let attributes = self.attributes_mut(element);
+                // The room of `grown_capacity`, which `attribute_room_grown` reports before the
+                // write: one record at a time while the list is short (a push into an empty list
+                // would reserve four records), then as many again as it holds.
+                let wanted = grown_capacity(attributes.len(), attributes.capacity());
+                attributes.reserve_exact(wanted.saturating_sub(attributes.len()));
+                attributes.push(attribute);
             }
         }
         Ok(())
     }
 
-    /// Removes the attribute at `at` of `element`; its bytes are freed.
+    /// Removes the attribute at `at` of `element`; its bytes are freed, and the room of
+    /// [`kept_capacity`], which `attribute_room_freed` reports before the write, is kept.
     fn drop_attribute(&mut self, element: NodeId, at: usize) {
         let attributes = self.attributes_mut(element);
         let removed = attributes.remove(at);
-        shrink(attributes);
+        let kept = kept_capacity(attributes.len(), attributes.capacity());
+        if kept < attributes.capacity() {
+            attributes.shrink_to(kept);
+        }
         self.stored_bytes -= attribute_bytes(&removed);
     }
 
@@ -1537,8 +1834,8 @@ impl Tree {
     /// in no namespace (`setAttribute`); on an HTML element the name is lowered first.
     pub fn set_attribute(&mut self, element: NodeId, name: &str, value: &str) -> WriteResult<()> {
         let (namespace, attributes) = self.element_attributes(element)?;
+        let at = position_of(namespace, attributes, name);
         let name = Self::attribute_name(namespace, name);
-        let at = attributes.iter().position(|a| qualified_name_is(a, &name));
         self.put_attribute(
             element,
             at,
@@ -1566,19 +1863,10 @@ impl Tree {
             Some((prefix, local)) => (Some(prefix), local),
             None => (None, qualified_name),
         };
-        if (prefix.is_some() && namespace.is_none())
-            || (prefix == Some("xml") && namespace != Some(Namespace::Xml))
-            || ((qualified_name == "xmlns" || prefix == Some("xmlns"))
-                && namespace != Some(Namespace::Xmlns))
-            || (namespace == Some(Namespace::Xmlns)
-                && qualified_name != "xmlns"
-                && prefix != Some("xmlns"))
-        {
+        if Self::namespace_error(namespace.map(Namespace::url), prefix, local_name) {
             return Err(WriteError::Namespace);
         }
-        let at = attributes
-            .iter()
-            .position(|a| a.namespace == namespace && a.local_name == local_name);
+        let at = position_of_ns(attributes, namespace, local_name);
         self.put_attribute(
             element,
             at,
@@ -1592,11 +1880,11 @@ impl Tree {
     }
 
     /// Removes the first attribute of `element` whose qualified name is `name`
-    /// (`removeAttribute`); on an HTML element the name is lowered first.
+    /// (`removeAttribute`); on an HTML element the name is lowered as it is compared, and no
+    /// copy of it is made.
     pub fn remove_attribute(&mut self, element: NodeId, name: &str) -> WriteResult<()> {
         let (namespace, attributes) = self.element_attributes(element)?;
-        let name = Self::attribute_name(namespace, name);
-        if let Some(at) = attributes.iter().position(|a| qualified_name_is(a, &name)) {
+        if let Some(at) = position_of(namespace, attributes, name) {
             self.drop_attribute(element, at);
         }
         Ok(())
@@ -1611,10 +1899,7 @@ impl Tree {
         local_name: &str,
     ) -> WriteResult<()> {
         let (_, attributes) = self.element_attributes(element)?;
-        if let Some(at) = attributes
-            .iter()
-            .position(|a| a.namespace == namespace && a.local_name == local_name)
-        {
+        if let Some(at) = position_of_ns(attributes, namespace, local_name) {
             self.drop_attribute(element, at);
         }
         Ok(())
@@ -1623,7 +1908,8 @@ impl Tree {
     /// Toggles the attribute of `element` whose qualified name is `name` (`toggleAttribute`):
     /// with no `force` it is removed when present and added with an empty value when not;
     /// `Some(true)` only adds and `Some(false)` only removes. Answers whether it is present
-    /// after.
+    /// after. On an HTML element the name is lowered as it is compared, and copied in lower
+    /// case only when an attribute is added.
     pub fn toggle_attribute(
         &mut self,
         element: NodeId,
@@ -1631,10 +1917,10 @@ impl Tree {
         force: Option<bool>,
     ) -> WriteResult<bool> {
         let (namespace, attributes) = self.element_attributes(element)?;
-        let name = Self::attribute_name(namespace, name);
-        match attributes.iter().position(|a| qualified_name_is(a, &name)) {
+        match position_of(namespace, attributes, name) {
             None if force == Some(false) => Ok(false),
             None => {
+                let name = Self::attribute_name(namespace, name);
                 self.put_attribute(
                     element,
                     None,
@@ -1689,5 +1975,27 @@ mod tests {
         };
         assert!(tree.nodes[div.0].children.capacity() <= 4);
         assert!(attributes.capacity() <= 4);
+    }
+
+    /// The first four attributes of an element take exactly their room, so the bytes the tree
+    /// counts for them are the bytes the list holds.
+    #[test]
+    fn put_attribute_reserves_exactly() {
+        use super::{Limits, Namespace, NodeData, Tree};
+        let mut tree = Tree::document(Limits::default());
+        let div = tree.create_element_ns(Namespace::Html, "div").unwrap();
+        for n in 0..4 {
+            tree.set_attribute(div, &format!("a{n}"), "v").unwrap();
+            let NodeData::Element { attributes, .. } = &tree.nodes[div.0].data else {
+                unreachable!("a div is an element");
+            };
+            assert_eq!(attributes.len(), n + 1);
+            assert_eq!(
+                attributes.capacity(),
+                attributes.len(),
+                "after add {}",
+                n + 1
+            );
+        }
     }
 }

@@ -368,18 +368,23 @@ above, and the list of standards itself was written from memory.
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
     swell 0.10.0 agent under surf's limits, and a document's scripts over the generated DOM
-    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`) and
-    whose slice `selectors` answers the selector members over a subset of Selectors Level 4
-    (`story:scripts-dom-selectors`); no crate depends on it. Depends on swell, `surf-html`,
-    `surf-secret` and `surf-url`. 331 tests in one test binary: `engine` 29 (2 of them ignored
-    until swell reaches HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3`
-    19, `adversary_4` 10, `adversary_5` 7, `adversary_6` 5, `adversary_checkpoint` 10,
-    `adversary_checkpoint_2` 5, `bindings` 20, `dom_reading` 48, `dom_reading_cost` 19,
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`), whose
+    slice `selectors` answers the selector members over a subset of Selectors Level 4
+    (`story:scripts-dom-selectors`) and whose slice `attributes` reads and writes an element's
+    attributes (`story:scripts-dom-attributes`: its members in `src/dom/attributes.rs`, every
+    read of the tree and its charge in `src/dom/attribute_reads.rs`, every write, its
+    validation and its charges in `src/dom/attribute_writes.rs`); no crate depends on it.
+    Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 409 tests in one test binary:
+    `engine` 29 (2 of them ignored until swell reaches HOST-26 and HOST-127), `adversary` 10,
+    `adversary_2` 1, `adversary_3` 19, `adversary_4` 10, `adversary_5` 7, `adversary_6` 5,
+    `adversary_checkpoint` 10, `adversary_checkpoint_2` 5, `bindings` 22, `dom_reading` 48,
+    `dom_reading_cost` 19,
     `adversary_dom_reading` 17, `adversary_dom_reading_2` 13, `adversary_dom_reading_3` 11,
     `adversary_dom_reading_4` 14, `adversary_dom_reading_5` 10, `adversary_dom_reading_6` 12,
     `dom_selectors` 42, `adversary_dom_selectors` 9, `adversary_dom_selectors_2` 8,
-    `adversary_dom_selectors_3` 6 and `run_end` 6; the modules `dom_attributes`, `dom_mutation`
-    and `parse_run` hold none yet.
+    `adversary_dom_selectors_3` 6, `dom_attributes` 53, `dom_attributes_cost` 7,
+    `adversary_dom_attributes` 10, `adversary_dom_attributes_2` 6 and `run_end` 6; the modules
+    `dom_mutation` and `parse_run` hold none yet.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -936,10 +941,11 @@ above, and the list of standards itself was written from memory.
     one token before the step check, end tags in the public `tokenizer::tokenize`, and the
     decoded text of `parse_document_bytes` (up to 3 bytes per input byte). Since
     `story:html-document-port` (round 1) `surf` depends on `surf-html` and parses every
-    committed HTML body with it. 253 tests: 19 unit tests and 234 in one test binary:
+    committed HTML body with it. 268 tests: 20 unit tests and 248 in one test binary:
     `encoding` 13, `not_yet_parsed` 1, `tree_body` 8, `tree_formatting` 8, `tree_costs` 11,
     `tree_state` 3, `adversary_tree` 16, `adversary_tree_state` 3, `adversary_tree_state_2` 2,
-    `limits` 37, `adversary_limits` 11, `script_hook` 62, `adversary_script_hook` 23,
+    `adversary_tree_writes` 2, `adversary_tree_writes_2` 1,
+    `limits` 37, `adversary_limits` 11, `script_hook` 73, `adversary_script_hook` 23,
     `adversary_script_hook_2` 13, `adversary_script_hook_3` 9, `adversary_script_hook_4` 4,
     `adversary_script_hook_5` 2 and `adversary_script_hook_6` 8. `limits` and
     `adversary_limits` share `tests/common/mod.rs`, a counting allocator

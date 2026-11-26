@@ -4,6 +4,8 @@
 //! its methods, each of the others answers the trait's default, a `NotSupportedError` naming
 //! the member (`story:webidl-bindings`).
 
+mod attribute_reads;
+mod attribute_writes;
 mod attributes;
 mod mutation;
 mod reading;
