@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tests-without-wall-time-bounds
 kind: story
-status: proposed
+status: active
 title: Replace the wall-time bounds of five tests by counts and keep the rule in the gate
 summary: Five tests of main bound a time by a clock (four assert an elapsed time, one waits 10 s for a parse); each gets the count that proves its cost (one new in webidl, one steps ceiling, two tightened), and a source check with a ledger of the other statements it finds refuses new ones.
 relations:
@@ -32,9 +32,10 @@ scope:
   path: taskfiles/test-clocks-ledger.txt
 - confidence: cited
   path: taskfiles/test-clocks.yml
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 16}
+- {from: "proposed", to: "active", at: "2026-11-26T04:50:10Z", actor: "human:operator", revision: 23}
 ---
 ## Context
 
