@@ -12,7 +12,7 @@ scope:
   path: crates/agent-tasks/tests/adversary2.rs
 - confidence: cited
   path: crates/agent-tasks/tests/bounded.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T17:30:08Z", actor: "human:operator", revision: 8}
 ---
@@ -116,21 +116,24 @@ A gate that goes red for no defect of the code stops a merge and costs a second 
      a process). None needed.
 4. How the fix is shown. The race cannot be forced by a model test without a change of the
    program, so two tests of `adversary2.rs` make the process themselves. Each spawns
-   `/bin/sleep 30` with `Stdio::null()` for its stdin, stdout and stderr and holds the child in
-   a guard whose `Drop` calls `kill()` and then `wait()` (both results ignored), so a panic
-   in the test leaves no `sleep` behind. Each writes the pid to a file named with the test's
+   `/bin/sleep 30` through one helper of the test file. The helper sets `Stdio::null()` for the
+   stdin, stdout and stderr of the child, in its own body, and returns the child in a guard
+   whose `Drop` calls `kill()` and then `wait()` (both results ignored), so a panic in the
+   test leaves no `sleep` behind. Each writes the pid to a file named with the test's
    name and `std::process::id()`, as the two model tests do (`adversary2.rs:257`).
    - `a_killed_process_nobody_has_collected_is_not_left`: sends the child `signal_kill`, waits
      with `ended_within(pid, END_BOUND)` (it returns when the state is `Z`: the test is the
      parent and has not called `wait`), asserts that `comm(pid)` is still `Some("sleep")` (the
-     window of the defect, made certain), asserts that `sleeping(&file, END_BOUND)` is empty,
-     and then calls `wait` on the child. Red with `sleeping` written back as the one `comm`
-     read: it returns the pid.
-   - `a_process_that_still_runs_is_left_and_ended`: asserts `sleeping(&file, Duration::ZERO)`
-     is that pid alone (the process runs for 30 s and the bound is zero, so the answer does not
-     depend on the load and no clock literal is in the test), asserts the process has ended
-     afterwards (`ended_within(pid, END_BOUND)`, since `sleeping` sent it SIGKILL) and calls
-     `wait`. Red with a `sleeping` that keeps nothing.
+     window of the defect, made certain), asserts with `assert_eq!` that
+     `sleeping(&file, END_BOUND)` is empty, and then calls `wait` on the child. Red with
+     `sleeping` written back as the one `comm` read: it returns the pid, and the message of
+     the assertion shows that answer.
+   - `a_process_that_still_runs_is_left_and_ended`: asserts with `assert_eq!` that
+     `sleeping(&file, Duration::ZERO)` is that pid alone (the process runs for 30 s and the
+     bound is zero, so the answer does not depend on the load and no clock literal is in the
+     test), asserts the process has ended afterwards (`ended_within(pid, END_BOUND)`, since
+     `sleeping` sent it SIGKILL) and calls `wait`. Red with a `sleeping` that keeps nothing:
+     the message of the assertion shows the empty answer where the pid was expected.
    With them `adversary2` holds 12 tests and the crate 50. What proves what: the two tests are
    the proof that `sleeping` decides by a wait; the 50 runs below are a check that the three
    named tests show no failure in 50 runs, not a proof. No run with the defect written back is
@@ -140,12 +143,14 @@ A gate that goes red for no defect of the code stops a merge and costs a second 
    environment the `test` step sets (`Taskfile.yml:444-452`: `RUSTFLAGS=-D warnings` and
    `SURF_BIN_DIR=<root>/target/debug`; its `build`, `:399-406`, is
    `cargo build --workspace --all-targets --locked` with the same `RUSTFLAGS`):
-   `slot --timeout 10m sh -c 'export RUSTFLAGS="-D warnings" SURF_BIN_DIR="$PWD/target/debug";
+   `slot --timeout 30m sh -c 'export RUSTFLAGS="-D warnings" SURF_BIN_DIR="$PWD/target/debug";
    cargo build --workspace --all-targets --locked && cargo nextest run -p surf-agent-tasks
    --locked --stress-count 50 -E "test(leaves_no_process)"'`. `--stress-count` needs nextest
    0.9.143 or later, which `.config/nextest.toml:1` already requires, so there is no fallback.
-   Arithmetic: 50 x 3 x 1.1 s = 165 s if the runs went one after another, plus the build; under
-   the 10 minutes named.
+   Arithmetic: 50 x 3 x 1.1 s = 165 s if the runs went one after another. The build of the same
+   job is not in that sum, which is why the job names 30 minutes, the most a job may name. A
+   job that ends `timed_out` is not started again unchanged: the build and the run are then two
+   jobs.
 
 ## Change
 
@@ -162,9 +167,12 @@ A gate that goes red for no defect of the code stops a merge and costs a second 
   test counts become `50 tests (`adversary` 4, `adversary2` 12, ...)` (now 48 and 10), and
   one sentence follows them: the tests of the model driver (`adversary2`, `bounded`) decide
   that a model's processes ended by a wait, `ended_within` with `END_BOUND`, never by one read.
-  The paragraph at `:2316-2320` and the entry of `crates/test-process` (`:836`) are not edited.
+  The sentence is written so that `ended_within` and `adversary2` stand on one physical line
+  of the file (lines there wrap at about 100 columns), which acceptance 8 checks. The
+  paragraph at `:2316-2320` and the entry of `crates/test-process` (`:836`) are not edited.
 
 No file under any `src/` changes and `taskfiles/agent-tasks-model.sh` does not change.
+`sleeping` prints nothing, and the report does not rely on a wait that it prints.
 
 ## Acceptance
 
@@ -181,44 +189,58 @@ Each item is one outcome.
    in each file, and `git grep -n -F 'use surf_agent_tasks::process::END_BOUND;' --
    crates/agent-tasks/tests/bounded.rs` prints one line.
 4. `a_killed_process_nobody_has_collected_is_not_left` passes, and fails with `sleeping`
-   written as the one `comm` read (`left = [<pid>]` at its assertion).
+   written as the one `comm` read; the failure shows the pid that `sleeping` answered in the
+   message of the test's assertion. The run command, one pool job that builds as the job of
+   decision 4 does and runs the two new tests, no `--stress-count`:
+   `slot --timeout 30m sh -c 'export RUSTFLAGS="-D warnings" SURF_BIN_DIR="$PWD/target/debug";
+   cargo build --workspace --all-targets --locked && cargo nextest run -p surf-agent-tasks
+   --locked -E "test(is_not_left) | test(is_left_and_ended)"'`.
 5. `a_process_that_still_runs_is_left_and_ended` passes, and fails with a `sleeping` that keeps
-   nothing (it asserts the pid is returned). Each failure of items 4 and 5 is shown once before
-   the change is kept, and the report names the output.
+   nothing; the failure shows `sleeping`'s empty answer in the message of the test's assertion.
+   The run command is the one of item 4. Each failure of items 4 and 5 is shown once before the
+   change is kept, and the report names the output.
 6. The stress command of decision 4, run once as written there: it exits 0 and the nextest
    summary shows 50 iterations and no failure. The report states that this is a check of 50
    runs and not a proof.
 7. A model that does leave a process still turns its tests red: `kill_group`
    (`agent-tasks-serve.rs:140-148`) written to signal the leader only
-   (`.args(["-9", &group.to_string()])`), then, as one pool job with the same build and
-   environment as item 6 and the filter
+   (`.args(["-9", &group.to_string()])`), then, as one pool job with the same `slot --timeout
+   30m` build and environment as item 6 and the filter
    `-E "test(leaves_no_process) | test(is_ended_with_its_group)"` and no `--stress-count`,
-   these four tests fail:
+   these four tests fail, each identified by its message and not by a line, since the edit of
+   `bounded.rs` moves the lines:
    `a_model_that_leaves_a_child_leaves_no_process` and
    `a_model_over_its_bound_leaves_no_process` with `children of the model left: [<pid>]` after
-   the 5 s wait, `a_command_that_leaves_a_child_leaves_no_process` at `bounded.rs:80`
-   (`the child of the command is left`), and
-   `a_command_over_its_bound_is_ended_with_its_group` (`bounded.rs:84-99`) at `:98`. The change
-   is put back; the report names the four outputs.
-8. In `AGENTS.md`, `git grep -n -F -e ended_within --and -e adversary2 -- AGENTS.md` prints
-   nothing at `a14e3b0` and one line after, inside the entry of `crates/agent-tasks`; and
-   ``git grep -n -F '50 tests (`adversary` 4, `adversary2` 12' -- AGENTS.md`` prints one line
-   while the same with `48 tests` and `adversary2` 10 prints nothing.
-9. The new tests leave nothing behind: `git grep -n -F 'Stdio::null()' --
-   crates/agent-tasks/tests/adversary2.rs` prints at least six lines (the three streams of
-   each of the two spawns), and `git grep -n -F 'impl Drop for' --
-   crates/agent-tasks/tests/adversary2.rs` prints the guard whose `Drop` calls `kill()` and
-   `wait()`. The pid files are named with the test's name and `std::process::id()`.
+   the 5 s wait; `a_command_that_leaves_a_child_leaves_no_process` with `the child of the
+   command is left` (the last assertion of the test, `bounded.rs:80 @ a14e3b0`); and
+   `a_command_over_its_bound_is_ended_with_its_group`, which fails at its check of the time,
+   `the helper took` (`bounded.rs:97 @ a14e3b0`), or at the assertion after it, `the child of
+   the command is left` (`:98 @ a14e3b0`), whichever the load of the host gives (with the
+   leader alone signalled, the helper takes about 3 s against the check of 4 s). The change is
+   put back; the report names the four outputs.
+8. In `AGENTS.md`, two commands, each with its output before and after the change:
+   - `git grep -n -F -e ended_within --and -e adversary2 -- AGENTS.md` prints nothing before
+     (at `a14e3b0`) and one line after, inside the entry of `crates/agent-tasks`;
+   - ``git grep -n -F '50 tests (`adversary` 4, `adversary2` 12' -- AGENTS.md`` prints nothing
+     before and one line after, and ``git grep -n -F '48 tests (`adversary` 4, `adversary2` 10'
+     -- AGENTS.md`` prints one line before and nothing after.
+9. The new tests leave nothing behind: `git grep -c -F 'Stdio::null()' --
+   crates/agent-tasks/tests/adversary2.rs` prints the count 1 before (`adversary2.rs:219 @
+   a14e3b0`, in `drive_without`) and the count 4 after, the three new lines being the body of
+   the helper that spawns the child of both new tests (the three streams, each on its own
+   line), and
+   `git grep -n -F 'impl Drop for' -- crates/agent-tasks/tests/adversary2.rs` prints nothing
+   before and the guard after, whose `Drop` calls `kill()` and `wait()`. The pid files are
+   named with the test's name and `std::process::id()`.
 10. The folder's bounds hold: no test over 60 s, the test step within 120 s, a test over 5 s
     named with its time (a model test that leaves a process waits 5 s only when it fails);
     no pool job over 10 minutes unless it names its time with `slot --timeout` (at most 30
-    minutes: the jobs of items 6 and 7 name 10 minutes) and none started again unchanged after
+    minutes: the jobs of items 4 to 7 name 30 minutes) and none started again unchanged after
     `timed_out`; every compile or test command carries `slot`; no Python; no model call and no
     network request in a test (the stand-in model is a shell script); the wait's limit is at
     least 10 times the event alone (decision 1).
 11. A script that measures or waits starts without the `slot` prefix; the story adds none. No
-    command of the story sets `--local`, `--here`, `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`. The
-    report does not rely on a wait printed by `sleeping`: a passing test shows no output.
+    command of the story sets `--local`, `--here`, `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`.
 
 ## Out of scope
 
