@@ -29,15 +29,17 @@ command runs yet (`story:scripts-dom-reading`, its tests counted by the gate run
 (`story:agent-tasks-left-process-wait`, which changes tests only, its tests counted by the gate
 run on its tip `e61d766` on 2026-11-26), and with the core limit of 1 byte for a session
 process (`story:session-core-limit-one`) and the gate step that refuses a new bound on elapsed
-time in a test (`story:tests-without-wall-time-bounds`; the table's test counts are those of
-the gate run on `52ebbd7`, the tip of this story with the two before it merged into it, on
-2026-11-26):
+time in a test (`story:tests-without-wall-time-bounds`, its tests counted by the gate run on
+`52ebbd7`, the tip of this story with the two before it merged into it, on 2026-11-26), and
+with the script engine's pin moved from swell `0.8.0` to `0.10.0` (`story:swell-0-9-0`; the
+table's test counts are those of the gate run on its tip `6b4593f`, with `main` merged into
+it, on 2026-11-26):
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 221 of 221 pass, against the interpreter and against the Rust code |
-| tests | 2,565 passed and 3 ignored: 2,013 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
+| tests | 2,600 passed and 2 ignored: 2,048 passed and the 2 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 72 passed, in Chromium's headless shell |

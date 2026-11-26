@@ -19,7 +19,10 @@ const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
 /// The source cargo writes for the six packages of swell at the tag the root manifest names.
 const SWELL: &str =
-    "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be";
+    "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f";
+
+/// The version of the six packages of swell at that tag.
+const SWELL_VERSION: &str = "0.10.0";
 
 /// The six packages a host takes from swell (`docs/design/scripts.md`, Q13).
 const SWELL_PACKAGES: [&str; 6] = [
@@ -375,10 +378,14 @@ fn listed(name: &str) -> String {
 }
 
 /// Runs the check on `lock` and asserts it fails with the line of the allow-list for swell
-/// 0.8.0 from `source`, naming the listed line.
+/// of the listed version from `source`, naming the listed line.
 fn assert_swell_from_fails(case: &str, lock: &str, source: &str) {
+    assert_ne!(
+        source, SWELL,
+        "{case}: the source differs from the listed one"
+    );
     let dir = copy_with(case, lock, &allow_list());
-    let start = format!("Cargo.lock: swell 0.8.0 from {source}: not on the allow-list");
+    let start = format!("Cargo.lock: swell {SWELL_VERSION} from {source}: not on the allow-list");
     let listed = listed("swell");
     assert_fails_with(case, &dir, &format!("{start:?} naming {listed:?}"), |l| {
         l.starts_with(&start) && l.contains(&listed)
@@ -388,14 +395,18 @@ fn assert_swell_from_fails(case: &str, lock: &str, source: &str) {
 /// swell of the listed version and commit under another tag fails, naming it and the listed line.
 #[test]
 fn a_swell_package_of_another_tag_fails_naming_it() {
-    let source = SWELL.replace("?tag=0.8.0#", "?tag=0.7.0#");
+    let source = SWELL.replace(&format!("?tag={SWELL_VERSION}#"), "?tag=0.7.0#");
     assert_swell_from_fails("swell-tag", &lock_with_source("swell", &source), &source);
 }
 
-/// swell of the listed tag at another commit fails, naming it and the listed line.
+/// swell of the listed tag at another commit fails, naming it and the listed line: the first
+/// hex digit of the listed commit is changed, whatever it is.
 #[test]
 fn a_swell_package_at_another_commit_fails_naming_it() {
-    let source = SWELL.replace("#0c18", "#1c18");
+    let (at, commit) = SWELL.rsplit_once('#').expect("a commit in SWELL");
+    let first = commit.chars().next().expect("a commit");
+    let other = if first == '0' { '1' } else { '0' };
+    let source = format!("{at}#{other}{}", &commit[1..]);
     assert_swell_from_fails("swell-commit", &lock_with_source("swell", &source), &source);
 }
 
@@ -424,8 +435,9 @@ fn a_listed_swell_line_with_a_checksum_fails_naming_it() {
     );
     let allow = allow_list().replace(&listed, &with_checksum);
     let dir = copy_with("swell-checksum", &lock(), &allow);
-    let start =
-        format!("Cargo.lock: swell 0.8.0 from {SWELL}: not on the allow-list; its checksum none");
+    let start = format!(
+        "Cargo.lock: swell {SWELL_VERSION} from {SWELL}: not on the allow-list; its checksum none"
+    );
     assert_fails_with(
         "swell-checksum",
         &dir,
@@ -534,7 +546,7 @@ fn a_swell_package_without_overflow_checks_fails_naming_it() {
             },
         );
         let line = format!(
-            "Cargo.toml: swell-num 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
+            "Cargo.toml: swell-num {SWELL_VERSION} from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
         );
         assert_fails_with(case, &dir, &format!("{line:?}"), |l| l == line);
     }

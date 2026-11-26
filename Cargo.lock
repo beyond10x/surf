@@ -348,8 +348,8 @@ dependencies = [
 
 [[package]]
 name = "swell"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 dependencies = [
  "swell-compiler",
  "swell-num",
@@ -360,8 +360,8 @@ dependencies = [
 
 [[package]]
 name = "swell-compiler"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 dependencies = [
  "swell-num",
  "swell-syntax",
@@ -369,21 +369,21 @@ dependencies = [
 
 [[package]]
 name = "swell-num"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 
 [[package]]
 name = "swell-regexp"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 dependencies = [
  "swell-unicode",
 ]
 
 [[package]]
 name = "swell-syntax"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 dependencies = [
  "swell-regexp",
  "swell-unicode",
@@ -391,8 +391,8 @@ dependencies = [
 
 [[package]]
 name = "swell-unicode"
-version = "0.8.0"
-source = "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be"
+version = "0.10.0"
+source = "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f"
 
 [[package]]
 name = "untrusted"

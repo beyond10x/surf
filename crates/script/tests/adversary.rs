@@ -91,8 +91,8 @@ fn no_script_after_the_deadline_runs() {
     }
 }
 
-/// Held: each of swell's seven error kinds keeps its own word; none is read as `Error` or
-/// `value`.
+/// Held: each of swell's eight error kinds keeps its own word; none is read as `Error` or
+/// `value`. An `AggregateError` takes its errors first and its message second.
 #[test]
 fn every_error_kind_keeps_its_word() {
     let kinds = [
@@ -103,11 +103,19 @@ fn every_error_kind_keeps_its_word() {
         ("SyntaxError", ScriptErrorKind::SyntaxError),
         ("TypeError", ScriptErrorKind::TypeError),
         ("URIError", ScriptErrorKind::UriError),
+        ("AggregateError", ScriptErrorKind::AggregateError),
     ];
     let ends = with_runner(limits(), |runner| {
         kinds
             .iter()
-            .map(|(name, _)| runner.evaluate(&format!("throw new {name}(\"m\")")))
+            .map(|(name, _)| {
+                let arguments = if *name == "AggregateError" {
+                    "[], \"m\""
+                } else {
+                    "\"m\""
+                };
+                runner.evaluate(&format!("throw new {name}({arguments})"))
+            })
             .collect::<Vec<_>>()
     });
     for ((name, kind), end) in kinds.iter().zip(&ends) {

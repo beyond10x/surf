@@ -51,7 +51,7 @@ and surf-session), through the crate surf-tls:
 Material of the organization built into the crate surf-script, which no shipped
 binary links yet:
 
-- swell (https://github.com/beyond10x/swell, tag 0.8.0), the script engine,
+- swell (https://github.com/beyond10x/swell, tag 0.10.0), the script engine,
   under the Apache License 2.0, the text in LICENSE beside this file. Its
   NOTICE file reads, in the parts that pertain to what surf builds:
 

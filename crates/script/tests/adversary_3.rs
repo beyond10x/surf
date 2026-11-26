@@ -310,9 +310,11 @@ const NODES: Answers = Answers {
 
 /// Red. Q4 (`docs/design/scripts.md`, "parser: nodes"): a write that would make one more node
 /// is refused and the script ends `limit: nodes`; decision 9 ends it "even under a `catch`".
-/// Without a `catch` the throw of `end_with_limit` leaves the entry first: the engine reads the
-/// interrupt only after a host call that returned normally, so the entry ends `Throw`, and
-/// `Runner::document_end` clears the record and the interrupt and answers `threw`.
+/// When the case was red, `end_with_limit` threw, and the engine of swell `0.8.0` read the
+/// interrupt only after a host call that returned normally, so the entry ended `Throw` and
+/// `Runner::document_end` answered `threw`. Since swell `0.9.1` the engine reads the interrupt
+/// after a host function that answers by a throw as well (HOST-216), and `end_with_limit`
+/// answers `Terminated(Interrupted)` itself.
 #[test]
 fn a_limit_not_caught_ends_the_script_at_the_limit() {
     let log = Log::default();
@@ -487,7 +489,7 @@ const INTERFACES: &str = r#"["EventTarget", "Node", "Element", "Document", "Char
 /// objects, functions, objects made by script on the right prototype, prototype objects, a
 /// `DOMException`, the global, wrappers of sibling and parent brands, a `Proxy` of a wrapper)
 /// in four ways (`call`, `Function.prototype.apply.call`, `Function.prototype.call.call`, a bound
-/// function; swell 0.8.0 has no `Reflect`)
+/// function; swell has no `Reflect`)
 /// throws the brand check's `TypeError`, and the wrapper hook's `unwrap` is never asked.
 /// Every interface object called without `new` throws a `TypeError`.
 #[test]

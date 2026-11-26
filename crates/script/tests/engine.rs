@@ -1,12 +1,13 @@
-//! The runner of `surf-script` on swell `0.8.0`, no DOM (`story:scripts-engine-dependency`):
+//! The runner of `surf-script` on swell `0.10.0`, no DOM (`story:scripts-engine-dependency`):
 //! each end of Q7 the runner can reach from a script, the limits of Q4 at small values of the
-//! test's own, the stack of Q5, the hooks of Q6, and swell's HOST-17, HOST-152 and HOST-163
-//! cases with surf's limits on the runner's thread (`docs/design/scripts.md`). Each test makes
-//! its own runner, a realm with the intrinsics and nothing else, in the test mode (a fixed clock
-//! and fixed seeds) unless it tests the session's hooks.
+//! test's own, the stack of Q5, the hooks of Q6, the microtask checkpoint after each script
+//! (`story:swell-0-9-0`), and swell's HOST-17, HOST-152 and HOST-163 cases with surf's limits
+//! on the runner's thread (`docs/design/scripts.md`). Each test makes its own runner, a realm
+//! with the intrinsics and nothing else, in the test mode (a fixed clock and fixed seeds)
+//! unless it tests the session's hooks.
 //!
-//! Three tests are ignored until swell reaches what they call (HOST-125, HOST-26, HOST-127).
-//! Two claims of the runner no test holds yet, because swell `0.8.0` gives no way to see them
+//! Two tests are ignored until swell reaches what they call (HOST-26, HOST-127).
+//! Two claims of the runner no test holds yet, because swell `0.10.0` gives no way to see them
 //! (review S5, fix round 1): that a fault stays set, so that each script after `faulted` ends
 //! `not run: faulted` (no script makes swell fault on purpose), and that a runner of the test
 //! mode hands its agent the seeds of [`Mode::seeds`] (no script reads `hash_key` or
@@ -25,15 +26,15 @@ use swell::{
 };
 
 /// The message swell refuses a class declaration at 1:1 with: `SyntaxError::refused("class",
-/// 8, ..)` (`crates/syntax/src/parser/statement.rs:218 @ 0.8.0`), whose text is
-/// `format!("{construct}{REFUSED}{slice}")` (`crates/syntax/src/error.rs:85 @ 0.8.0`),
-/// "<construct> is not supported before slice <n>" (`crates/syntax/src/lib.rs:16 @ 0.8.0`),
+/// 8, ..)` (`crates/syntax/src/parser/statement.rs:221 @ 0.10.0`), whose text is
+/// `format!("{construct}{REFUSED}{slice}")` (`crates/syntax/src/error.rs:85 @ 0.10.0`),
+/// "<construct> is not supported before slice <n>" (`crates/syntax/src/lib.rs:16 @ 0.10.0`),
 /// to which the error object's message adds the position, `format!("{} ({}:{})", ..)`
-/// (`crates/swell/src/script.rs:407 @ 0.8.0`).
+/// (`crates/swell/src/script.rs:407 @ 0.10.0`).
 const CLASS_REFUSED: &str = "class is not supported before slice 8 (1:1)";
 
 /// The message of the `RangeError` a call past `frame_depth` throws
-/// (`crates/swell/src/interp/budget.rs:45 @ 0.8.0`).
+/// (`crates/swell/src/interp/budget.rs:58 @ 0.10.0`).
 const FRAME_DEPTH_EXCEEDED: &str = "frame_depth exceeded";
 
 /// The limits of the tests: small, so that no test reaches one by accident or runs long.
@@ -338,7 +339,6 @@ fn host_hooks() {
 
 /// `Date.now()` reads the test clock, which advances 1 ms per call.
 #[test]
-#[ignore = "HOST-125"]
 fn clock_advances() {
     assert_eq!(
         end(
@@ -388,6 +388,257 @@ fn compile_strings() {
     );
 }
 
+/// `%AsyncFunction%` and `%AsyncGeneratorFunction%`, reached as the `constructor` of an async
+/// function's and an async generator function's prototype, end as `Function` does in a
+/// session (Q4's row of `eval` and `Function`): allowed, their functions run, and a body
+/// 10,000 code units longer costs each of the three at least 10,000 steps more.
+#[test]
+fn async_constructors_compile_as_function_does() {
+    const CONSTRUCTORS: [&str; 3] = [
+        "Function",
+        "(async function () {}).constructor",
+        "(async function* () {}).constructor",
+    ];
+    let pad = " ".repeat(10_000);
+    let (ends, costs, check) = run(limits(), Mode::Session, |runner| {
+        let ends = vec![runner.evaluate(
+            "var AF = (async function () {}).constructor; \
+                 var AGF = (async function* () {}).constructor; \
+                 if (AF === Function || AGF === Function) throw new Error(\"same\"); \
+                 AF(\"return 1\")().then(function (v) { globalThis.a = v; }); \
+                 AGF(\"yield 2\")().next().then(function (r) { globalThis.b = r.value; });",
+        )];
+        let mut costs = Vec::new();
+        for constructor in CONSTRUCTORS {
+            let mut steps = Vec::new();
+            for body in ["", pad.as_str()] {
+                let before = runner.steps();
+                let end = runner.evaluate(&format!("({constructor})(\"{body}\");"));
+                steps.push((end, runner.steps() - before));
+            }
+            costs.push((constructor, steps));
+        }
+        let check = runner.evaluate("if (a !== 1 || b !== 2) throw new Error(\"results\");");
+        (ends, costs, check)
+    })
+    .expect("a runner");
+    assert_eq!(ends, [ScriptEnd::Ran]);
+    assert_eq!(check, ScriptEnd::Ran, "{check}");
+    for (constructor, steps) in costs {
+        let [(short_end, short), (long_end, long)] = steps.as_slice() else {
+            panic!("{constructor}: {steps:?}");
+        };
+        assert_eq!((short_end, long_end), (&ScriptEnd::Ran, &ScriptEnd::Ran));
+        assert!(long - short >= 10_000, "{constructor}: {short} {long}");
+    }
+}
+
+/// An `AggregateError` keeps its own word and its message (Q7).
+#[test]
+fn aggregate_error() {
+    let end = end("throw new AggregateError([], \"m\")");
+    let ScriptEnd::Threw(thrown) = &end else {
+        panic!("the throw ended {end}");
+    };
+    assert_eq!(thrown.kind, ScriptErrorKind::AggregateError, "{end}");
+    assert_eq!(end.to_string(), "threw AggregateError \"m\" 1:1");
+}
+
+/// The kinds `error_kind` must know: every own property of the global object whose name ends in
+/// `Error`, as the realm lists them. Each `new <name>([])` ends `threw` with the kind whose word
+/// is `<name>`; a kind swell adds that the runner reads through its wildcard arm reads `Error`
+/// and fails here, naming it.
+#[test]
+fn every_error_constructor_keeps_its_word() {
+    let listed = end("throw new Error(Object.getOwnPropertyNames(globalThis)\
+         .filter(function (n) { return /Error$/.test(n); }).join(\",\"))");
+    let ScriptEnd::Threw(list) = &listed else {
+        panic!("the list ended {listed}");
+    };
+    let names: Vec<&str> = list
+        .message
+        .as_deref()
+        .unwrap_or_else(|| panic!("no list in {listed}"))
+        .split(',')
+        .collect();
+    for name in [
+        "AggregateError",
+        "Error",
+        "EvalError",
+        "RangeError",
+        "ReferenceError",
+        "SyntaxError",
+        "TypeError",
+        "URIError",
+    ] {
+        assert!(names.contains(&name), "{name} is not in {names:?}");
+    }
+    let sources: Vec<String> = names
+        .iter()
+        .map(|name| format!("throw new {name}([])"))
+        .collect();
+    let sources: Vec<&str> = sources.iter().map(String::as_str).collect();
+    let thrown = ends(limits(), &sources);
+    let wrong: Vec<String> = names
+        .iter()
+        .zip(&thrown)
+        .filter_map(|(name, end)| match end {
+            ScriptEnd::Threw(error) if error.kind.word() == *name => None,
+            other => Some(format!("{name}: {other}")),
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "kinds that do not keep their word: {wrong:?}"
+    );
+}
+
+/// HTML's microtask checkpoint after a script that ran: its promise job runs before the next
+/// script.
+#[test]
+fn checkpoint_runs_after_the_script() {
+    assert_eq!(
+        ends(
+            limits(),
+            &[
+                "var x = 0; Promise.resolve().then(function () { x = 1; });",
+                "if (x !== 1) throw new Error(\"x\")",
+            ]
+        ),
+        [ScriptEnd::Ran, ScriptEnd::Ran]
+    );
+}
+
+/// An `async` function's continuation is a job of the checkpoint.
+#[test]
+fn async_function_runs() {
+    assert_eq!(
+        ends(
+            limits(),
+            &[
+                "(async function () { await null; globalThis.y = 2; })();",
+                "if (y !== 2) throw new Error(\"y\")",
+            ]
+        ),
+        [ScriptEnd::Ran, ScriptEnd::Ran]
+    );
+}
+
+/// A script that threw gets its checkpoint too ("clean up after running script" on both paths).
+#[test]
+fn checkpoint_after_threw() {
+    let after = ends(
+        limits(),
+        &[
+            "Promise.resolve().then(function () { globalThis.z = 3; }); throw 1",
+            "if (z !== 3) throw new Error(\"z\")",
+        ],
+    );
+    let ScriptEnd::Threw(thrown) = &after[0] else {
+        panic!("the script ended {}", after[0]);
+    };
+    assert_eq!(thrown.kind, ScriptErrorKind::Value, "{}", after[0]);
+    assert_eq!(after[1], ScriptEnd::Ran, "{}", after[1]);
+}
+
+/// A job that throws and a rejection no handler takes leave the script's end as it was.
+#[test]
+fn job_throw_keeps_the_end() {
+    assert_eq!(
+        ends(
+            limits(),
+            &[
+                "Promise.resolve().then(function () { throw new Error(\"j\"); });",
+                "Promise.reject(new Error(\"r\"));",
+            ]
+        ),
+        [ScriptEnd::Ran, ScriptEnd::Ran]
+    );
+}
+
+/// The steps the flood's script spends, read off the first run (the runner's total before it
+/// performed a checkpoint).
+const FLOOD_SCRIPT_STEPS: u64 = 33;
+
+/// The steps the flood's checkpoint spends, read off the first run: all of its
+/// `steps_per_entry`, as swell's HOST-197 example reads after `StepBudget`.
+const FLOOD_CHECKPOINT_STEPS: u64 = 100_000;
+
+/// A job that queues itself ends the script at the checkpoint's step budget, which is
+/// `steps_per_entry` of its own (HOST-193): the runner's total is the script's steps and the
+/// checkpoint's (HOST-197), and the queue is cleared, so the next script runs.
+#[test]
+fn job_flood_ends_at_the_step_limit() {
+    let mut limits = limits();
+    limits.engine.steps_per_entry = 100_000;
+    let (flood, steps, after) = with_runner(limits, |runner| {
+        let flood = runner.evaluate("function f() { Promise.resolve().then(f); } f();");
+        (flood, runner.steps(), runner.evaluate("1"))
+    });
+    assert_eq!(flood, ScriptEnd::Limit(Reason::StepsPerScript), "{flood}");
+    assert_eq!(after, ScriptEnd::Ran, "{after}");
+    assert!(
+        steps <= FLOOD_SCRIPT_STEPS + limits.engine.steps_per_entry,
+        "{steps} steps"
+    );
+    assert_eq!(steps, FLOOD_SCRIPT_STEPS + FLOOD_CHECKPOINT_STEPS);
+}
+
+/// A limit clears the queue: the job a script queued before its limit does not run in the next
+/// script's checkpoint.
+#[test]
+fn limit_clears_the_queue() {
+    let mut limits = limits();
+    limits.engine.steps_per_entry = 100_000;
+    assert_eq!(
+        ends(
+            limits,
+            &[
+                "Promise.resolve().then(function () { globalThis.w = 1; }); while (true) {}",
+                "1",
+                "if (typeof w !== \"undefined\") throw new Error(\"w\")",
+            ]
+        ),
+        [
+            ScriptEnd::Limit(Reason::StepsPerScript),
+            ScriptEnd::Ran,
+            ScriptEnd::Ran
+        ]
+    );
+}
+
+/// The wall clock ends a checkpoint as it ends a script (HOST-198).
+#[test]
+fn checkpoint_wall_clock() {
+    let mut limits = limits();
+    limits.engine.steps_per_entry = u64::MAX;
+    limits.wall_clock = Duration::from_millis(100);
+    let (first, later) = with_runner(limits, |runner| {
+        let first = runner.evaluate("Promise.resolve().then(function () { while (true) {} });");
+        (first, runner.evaluate("1"))
+    });
+    assert_eq!(first, ScriptEnd::Limit(Reason::WallClock), "{first}");
+    assert_eq!(later, ScriptEnd::NotRun(Reason::WallClock), "{later}");
+}
+
+/// The memory budget ends a checkpoint as it ends a script: `limit: memory`, the queue cleared,
+/// one collection, and the next script runs.
+#[test]
+fn checkpoint_memory() {
+    let mut limits = limits();
+    limits.engine.memory_bytes = 1024 * 1024;
+    limits.engine.steps_per_entry = u64::MAX;
+    let (first, collections, after) = with_runner(limits, |runner| {
+        let first = runner.evaluate(
+            "Promise.resolve().then(function () { var a = []; for (;;) a.push(new Array(1000)); });",
+        );
+        (first, runner.collections(), runner.evaluate("1"))
+    });
+    assert_eq!(first, ScriptEnd::Limit(Reason::Memory), "{first}");
+    assert_eq!(collections, 1);
+    assert_eq!(after, ScriptEnd::Ran, "{after}");
+}
+
 thread_local! {
     /// The realm `parse_deep` parses in, on the runner's thread.
     static REALM: Cell<Option<RealmRef>> = const { Cell::new(None) };
@@ -396,7 +647,7 @@ thread_local! {
 }
 
 /// A host function that calls its first argument through `cx.call`: one re-entry (swell's
-/// `tests/support/stack.rs @ 0.8.0`, `reenter`).
+/// `tests/support/stack.rs @ 0.10.0`, `reenter`).
 fn reenter(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let function = call.args.first().copied().unwrap_or(Value::Undefined);
     cx.call(function, Value::Undefined, &[]).expect("call")
@@ -465,7 +716,7 @@ fn at_full_nesting(deepest: &str, check: &str) -> u32 {
 }
 
 /// swell's HOST-17 (`host_17_deepest_reentry_parses_at_full_nesting`,
-/// `crates/swell/tests/limits_scripts.rs:126 @ 0.8.0`) with surf's limits: a script reaches
+/// `crates/swell/tests/limits_scripts.rs:126 @ 0.10.0`) with surf's limits: a script reaches
 /// `reentry_depth` re-entries through a host function, and at the deepest a host function
 /// parses a source nested `parser_nesting` levels through `cx.parse_script`.
 #[test]
@@ -486,7 +737,7 @@ fn host_17_reentry_at_full_nesting() {
     );
 }
 
-/// The script of swell's `tests/eval_stack.rs @ 0.8.0`, `deepest`: `f` calls itself through
+/// The script of swell's `tests/eval_stack.rs @ 0.10.0`, `deepest`: `f` calls itself through
 /// `reenter` until the re-entry past `reentry_depth` throws; the deepest `f` runs `at_deepest`
 /// once. `deep` is a source nested `parser_nesting` levels.
 fn eval_stack_script(at_deepest: &str) -> String {
@@ -522,7 +773,7 @@ fn eval_stack_check(kinds: &str) -> String {
 }
 
 /// swell's HOST-152 (`host_152_deepest_reentry_evals_at_full_nesting`,
-/// `crates/swell/tests/eval_stack.rs:173 @ 0.8.0`) with surf's limits: at the deepest re-entry
+/// `crates/swell/tests/eval_stack.rs:173 @ 0.10.0`) with surf's limits: at the deepest re-entry
 /// a direct and an indirect `eval` of a source nested `parser_nesting` levels, each answering a
 /// Number or throwing a `SyntaxError` or a `RangeError`.
 #[test]
@@ -538,7 +789,7 @@ fn host_152_eval_at_full_nesting() {
 
 /// swell's HOST-163
 /// (`host_163_deepest_reentry_calls_function_with_parameters_and_body_at_full_nesting`,
-/// `crates/swell/tests/eval_stack.rs:201 @ 0.8.0`) with surf's limits: at the deepest re-entry
+/// `crates/swell/tests/eval_stack.rs:201 @ 0.10.0`) with surf's limits: at the deepest re-entry
 /// `Function(p, b)` with `p` and `b` each nested `parser_nesting` levels, and
 /// `Function("a", "return " + b)`, each answering a function or throwing a `SyntaxError`.
 #[test]
