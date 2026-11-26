@@ -364,7 +364,9 @@ above, and the list of standards itself was written from memory.
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
     swell 0.8.0 agent under surf's limits, and a document's scripts over the generated DOM
-    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`); no
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`) and
+    whose slice `selectors` answers the selector members over a subset of Selectors Level 4
+    (`story:scripts-dom-selectors`); no
     crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 232
     tests in one test binary: `engine` 18 (3 of them ignored until swell reaches HOST-125,
     HOST-26 and HOST-127), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,

@@ -2461,7 +2461,7 @@ function notSupported(f, message) {{
 var el = document.getElementById("p");
 notSupported(function () {{ document.appendChild(el); }}, "Node.appendChild is not supported");
 notSupported(function () {{ el.getAttribute("id"); }}, "Element.getAttribute is not supported");
-notSupported(function () {{ el.querySelector("p"); }}, "Element.querySelector is not supported");"#
+notSupported(function () {{ el.attachShadow({{}}); }}, "Element.attachShadow is not supported: shadow trees");"#
                 ),
             );
         },
