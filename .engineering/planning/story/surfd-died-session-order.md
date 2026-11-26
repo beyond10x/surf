@@ -8,7 +8,7 @@ summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to 
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 ---
@@ -54,10 +54,16 @@ factor makes that safe.
    a process's descriptors before the process is waitable, and in between `try_wait` is empty.
    The loop is a wait for an event with a limit: it sleeps 10 ms a turn (`/usr/bin/sleep
    0.01`; the session's environment is cleared, so commands are named by path) and gives up
-   after 400 turns, which is over 10 times the 0.3 s the shell failed to meet once. A child
-   that gives up writes nothing and exits; the case then fails by its assertions, at the
-   default ready timeout of 5 s (`daemon.rs:31`), and does not hang. The loop is sh, so it
-   adds no elapsed value to a Rust test.
+   after 300 turns, a count that is over 10 times the 0.3 s the shell failed to meet. A child
+   that gives up must not look like one that wrote: when it exits without a line, `supervise`
+   sends `Start::Nothing` (`:1651`), the opener takes `not_started` (`:1476`, `:1575-1590`),
+   and the answer for a shell that ended is the same text the case asserts. So the child that
+   gives up first makes a file `gave-up` in the case's directory (`: > <path>`, the path
+   quoted by `quoted`) and then exits, and the case asserts after its answer that the file
+   does not exist, with a message that names the loop. The case sets `session_ready_timeout`
+   to 30 s, so that under load the 300 turns end before the product's timeout and the file,
+   not the timeout, decides; a green run answers in milliseconds and never waits for it. The
+   loop is sh, so it adds no elapsed value to a Rust test.
 2. Second case: the order stays one of two clocks, because the event the case reaches is the
    product's ready timeout, which starts inside `open` right after the spawn (`:1409`,
    `:1474`) and which a test cannot hold back. The child must hold the session's standard
@@ -74,9 +80,12 @@ factor makes that safe.
 
 ## Change
 
-- `crates/surfd/tests/adversary_2.rs`: the two session programs, the three settings of the
-  second case, and the doc comments of both cases, which say how the order is made. No case is
-  added or renamed, so no count of `AGENTS.md` moves.
+- `crates/surfd/tests/adversary_2.rs`: the two session programs; the settings of both cases (the
+  first case's ready timeout; the second case's ready timeout, hold and kill grace); the first
+  case's assertion on the file `gave-up`; the reason the second case asserts, which names the
+  timeout (`within 0.3 seconds` at `:164-169` becomes `within 2 seconds`); and the doc
+  comments of both cases, which say how the order is made. No case is added or renamed, so no
+  count of `AGENTS.md` moves.
 
 ## Acceptance
 
@@ -93,15 +102,20 @@ factor makes that safe.
 4. The first case is red when the child does not wait: with the loop of decision 1 replaced
    by nothing (the child writes `x` at once) and `/usr/bin/sleep 1` before the `kill`, the
    case is red. Shown once, taken back.
-5. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
+5. The first case is red when the loop never sees the shell's end: with the state letter the
+   loop waits for changed to one no process has (`X`), the child gives up and the case fails
+   at its assertion on `gave-up`, not at an assertion on the answer; the report gives the
+   case's time. Shown once, taken back.
+6. A text check: `git grep -n 'sleep 0.3' -- crates/surfd/tests/adversary_2.rs` prints one
    line at `a14e3b0` (`:141`) and nothing after the change, and `git grep -c
    'from_millis(300)' -- crates/surfd/tests/adversary_2.rs` prints 2 at `a14e3b0` and 1 after
-   (the case of the live session at `:118` keeps its timeout).
-6. One pool job after `slot cargo build --workspace --all-targets --locked`, with
+   (the number after the last colon; the case of the live session at `:118` keeps its
+   timeout).
+7. One pool job after `slot cargo build --workspace --all-targets --locked`, with
    `RUSTFLAGS="-D warnings"` and `SURF_BIN_DIR=<tree>/target/debug` as `task test` sets them:
    `slot cargo nextest run -p surfd --locked` is all green; the two cases are named with their
    times, the second about 3 s, none over 5 s.
-7. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
+8. No test over 60 s, the test step within 120 s. No pool job over 10 minutes unless it names
    its time with `slot --timeout` (at most 30 minutes), none started again unchanged. Every
    command that compiles or tests carries `slot`; none carries `--local`, `--here`,
    `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF`. No Python. A script that measures or waits starts
