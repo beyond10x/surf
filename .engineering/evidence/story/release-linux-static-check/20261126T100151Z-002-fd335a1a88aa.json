@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-26T10:01:51Z",
+  "actor": "human:operator",
+  "artifact": "story:release-linux-static-check",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a manual run of the release workflow on the branch at c1fc89a, run 45780781969, 2026-11-26",
+    "reference": "every job success; the step that checks the Linux binaries passed for x86_64 and aarch64: 4 static binaries each, and surf-agent help --for-agent ran in the Alpine image named by its digest; the two unpacked Linux archives of the run pass the script, exit 0"
+  }
+}

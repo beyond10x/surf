@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:release-linux-static-check
 kind: story
-status: active
+status: implemented
 title: Check in the release workflow that each Linux archive holds static binaries and runs one in a container
 summary: A script of its own, run by the workflow before the upload and by a workstation, fails a Linux archive whose binary has an INTERP header, a NEEDED entry or no ELF form, and runs surf-agent help --for-agent in an Alpine container named by digest; a gate test with made ELF files, a stand-in docker and twelve planted defects gives both sides of it.
 scope:
@@ -20,10 +20,11 @@ scope:
   path: taskfiles/release-static.sh
 - confidence: cited
   path: taskfiles/release.yml
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T07:31:43Z", actor: "human:operator", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-26T07:31:43Z", actor: "human:operator", revision: 12, executor: "agent:implementor"}
+- {from: "active", to: "implemented", at: "2026-11-26T10:01:51Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":3,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -305,3 +306,204 @@ stories name `AGENTS.md` in their scope lists (7 active, 3 draft, 3 proposed, co
 plan store's commit `78d57a6`), so a textual merge there is to be expected. No other open story
 writes `.github/workflows/release.yml`, `taskfiles/release.yml` or `taskfiles/release-smoke.sh`.
 The story needs the image's digest (decision 5) before it is implemented.
+
+## As built
+
+The unit is on `main` at `77957d0` (the merge of `impl/release-linux-static-check` at
+`c1fc89a`). It changes 7 files, 813 lines added and 14 removed: two new scripts under
+`taskfiles/`, the two tasks, the workflow, `docs/releasing.md` and `AGENTS.md`. No Rust file,
+`README.md`, `CHANGELOG.md`, `website/` or `taskfiles/release-smoke.sh` changes.
+
+- What was built.
+  - `taskfiles/release-static.sh <dir> [--image <ref>]` (116 lines). For `surf`, `surf-agent`,
+    `surfd`, `surf-session`, in that order and all four before it exits, it runs `readelf -lW`
+    and `readelf -d` and fails a binary that has an `INTERP` row, a `(NEEDED)` entry, or a
+    `readelf` status other than 0 (a text file, a missing file); a binary with both gets the
+    `INTERP` line only. A static-pie binary and a binary with no dynamic section pass. Lines:
+    `<dir>/<name>: INTERP header (dynamically linked)`, `... NEEDED entry (dynamically
+    linked)`, `... not an ELF file readelf can read`, each after `release-static: `; at the end
+    `release-static: <dir> holds 4 static binaries: surf surf-agent surfd surf-session`.
+    Exit 0, 1, or 2 for a usage error. `<dir>` is resolved to an absolute path first; every
+    value is written with `printf`.
+  - The image. With `--image` and only when all four are static, the script runs
+    `$DOCKER run --rm --network none --volume <dir>:/archive:ro <ref> /archive/surf-agent help
+    --for-agent` (`DOCKER` defaults to `docker`). It requires exit 0 and the first line
+    `surf-agent <version>: a definition for agents`, the version read from the directory's name,
+    and prints `release-static: surf-agent help --for-agent ran in <ref>: surf-agent <version>`.
+    A `<ref>` that does not end in `@sha256:` and 64 hex digits, an empty value included, is a
+    usage error (exit 2) before docker starts; `--image` given never skips the container, and
+    docker absent or failing fails the check. In the workflow the image is one value in `env:`,
+    beside `PACKAGE` and `ARCHIVE`, with its tag in a comment on the line above:
+
+        STATIC_IMAGE: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+
+    The tag is `alpine:3.24.4`; the digest is that of its multi-arch index (amd64 and arm64).
+  - `taskfiles/release-static-test.sh [<script>]` (589 lines). It writes five ELF64 files with
+    `printf` octal escapes under `.out/release-static-test/` (`static` 120 bytes, `interp`
+    201, `needed` 249, `static-pie` 200, `both` 337) and a text file. A guard runs `readelf`
+    on each first and stops the test when a file does not read as named (the `INTERP` row only
+    in `interp` and `both`; the `(NEEDED)` entry only in `needed` and `both`; a dynamic section
+    only in `needed`, `static-pie` and `both`; no warning or error). All five read as named on
+    the first run; no layout change was needed. A stand-in `docker` (a shell script) records its
+    arguments, prints the first line and the status a case sets, and can write a line on stderr
+    first. The 18 cases are functions; each holds an exit status, a text the output holds (one
+    it does not hold where the case says so) and, for the container cases, whether the stand-in
+    was called and its arguments (`run`, `--rm`, `--network none`, `--volume <absolute
+    dir>:/archive:ro`, the image and the command). Cases 1 to 16 are the story's. Case 17: an
+    empty `--image` value, exit 2, stand-in not called, no "static binaries" line. Case 18: the
+    stand-in writes `Unable to find image ... locally` on stderr before the definition, exit 0
+    and the "ran in" line.
+  - 14 planted defects, each a `sed` copy of the script made inside the test. Each copy runs the
+    cases its defect names, which must be decided otherwise, and case 1 (four static files, no
+    image), which must be decided as expected, so that a copy that does not run at all fails;
+    an edit that finds no line (a copy equal to the script) fails the test. The defects, with
+    the cases they name: `INTERP` test removed (3, 13, 16); `NEEDED` test removed (4); status of
+    `readelf` not read (5, 6); the loop stops at the first bad binary (7); digest form not
+    required (8); container run before the static check (13); status of docker not read (11);
+    version not compared (10); an absent docker skips the container (12); an unknown option
+    accepted (14); `--network none` left out (9); `<dir>` not resolved before the mount (15);
+    an empty image value taken as no image (17); docker's stderr read with its stdout (18).
+    The stand-ins of cases 11 and 13 print the right first line, so only the rule under test
+    turns them red.
+  - The workflow, `.github/workflows/release.yml`: the `STATIC_IMAGE` value; one new step "Check
+    that the Linux binaries are static and run in a plain container" between the smoke step and
+    the `upload-artifact` step of the job `package`, with `if: contains(matrix.target,
+    '-linux-')`, calling `sh taskfiles/release-static.sh
+    "$RUNNER_TEMP/unpacked/$ARCHIVE-$VERSION-$TARGET" --image "$STATIC_IMAGE"`; the inline
+    `INTERP` check of the step "Build, test and package" is removed.
+  - The task lines. `taskfiles/release.yml`: `release-static` (`DIR`, optional `IMAGE`) and
+    `release-static-test` (optional `SCRIPT`). `Taskfile.yml`: `- task: release-static-test` in
+    `check`, after `test-layout-test` and before `sh-echo-test`.
+  - The sentences. `docs/releasing.md`: the `INTERP` sentence is replaced by the check and the
+    reason (a host with an older glibc than the build's cannot run a binary linked against
+    glibc), and step 8 of "Cutting a release" gains `sh taskfiles/release-static.sh <dir>/surf-
+    <version>-x86_64-unknown-linux-musl` beside the smoke command. `AGENTS.md`, four places:
+    the list of task files, the release paragraph, the sentence on what `check` runs ("Since
+    `story:release-linux-static-check` it runs `release-static-test` after `test-layout-test`,
+    before `sh-echo-test`") and the commands. `README.md` and `website/docs/try-it.md` keep
+    "statically linked"; no `CHANGELOG.md` entry.
+- Acceptance, at `c1fc89a` unless a line says otherwise.
+  1. Shown. `slot task release-static-test` ends `release-static-test: 18 case(s), each decided
+     as expected by taskfiles/release-static.sh`, exit 0 (the story's text says 16, deviation
+     1). Red before: the 16 cases against an empty script, 16 of 16 red; the base has no such
+     task (`git show 53ab365:taskfiles/release.yml | grep -c release-static` prints 0). A case
+     decided otherwise prints `release-static-test: <n>. <name>: exit <n>, expected <m>`.
+  2. Shown, with 14 defects in place of 12 (deviation 1): the same run prints `14 planted
+     defect(s), each caught by the cases it names; 49 script runs in all`. An empty script,
+     a copy that does not run and an edit that finds no line were each shown to fail the test.
+  3. Shown at `c1fc89a` by the five commands: the `STATIC_IMAGE` grep prints one line (`:30`),
+     `git grep -n INTERP -- .github` and `git grep -c linux-gnu` print nothing, the order
+     program prints `206 237 238 1` and exits 0 (base: `211  229 `), the step program exits 0.
+  4. Shown, once, at the implementation commit: `slot --timeout 30m cargo build --locked -p
+     surf-cli -p surf-agent -p surfd -p surf-session --bins` (exit 0), the four files of
+     `target/debug` copied to a directory named `surf-0.0.0-x86_64-unknown-linux-gnu`;
+     `sh taskfiles/release-static.sh <dir>` printed four `INTERP header (dynamically linked)`
+     lines in the order `surf`, `surf-agent`, `surfd`, `surf-session` and exited 1.
+  5. Shown by the unpacked archives of the manual run (item 6): the two Linux archives were
+     downloaded, `sha256sum -c SHA256SUMS` printed `OK` for all four archives, and `sh
+     taskfiles/release-static.sh <unpacked directory>` printed `holds 4 static binaries: surf
+     surf-agent surfd surf-session` and exited 0 for the `x86_64` and for the `aarch64`
+     archive. The half with `--image` on a machine with docker was not run there (no container
+     program); the two runner jobs of item 6 print that line.
+  6. Shown by the manual run of the workflow, run 45780781969 on `c1fc89a`
+     (`https://github.com/beyond10x/surf/actions/runs/45780781969`): conclusion `success`,
+     every job `success`. In the two Linux `package` jobs the new step is `success` and prints
+     `release-static: <runner temp>/unpacked/surf-0.9.0-<target> holds 4 static binaries: surf
+     surf-agent surfd surf-session`, then the pull of the image by its digest and
+     `release-static: surf-agent help --for-agent ran in alpine@sha256:f59abe65...c71bf:
+     surf-agent 0.9.0`, for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. The
+     two jobs pulled different layers (`881fc932939e`, `b90627b8f429`) of the one digest. In
+     the two macOS jobs the step is `skipped`. The `ubuntu-22.04-arm` image has docker, so the
+     one change of decision 8 did not follow.
+  7. Shown at `c1fc89a`: `git grep -n -F 'shows an `INTERP` header' -- docs/releasing.md`
+     prints nothing; `git grep -c release-static -- docs/releasing.md` prints 3; the four
+     `AGENTS.md` greps print `AGENTS.md:1` each.
+  8. Shown: `git diff e4604fb c1fc89a` and `git diff 53ab365 cf4be06` of
+     `taskfiles/release-smoke.sh`, `CHANGELOG.md`, `README.md` and `website/docs/try-it.md`
+     print nothing. (`main` moved: `53ab365` to `c1fc89a` differs in `CHANGELOG.md` and
+     `README.md` by other units.)
+  9. Shown in part: no test over 60 s (the test runs 2.4 to 20.5 s, see the numbers), no
+     network request, no container, no cargo call in the test step, no Python; the one build
+     named its time with `slot --timeout 30m` and ran once; the time of the task is named
+     below. Not shown: the 120 s of the whole test step of `check`, which no report of the unit
+     measures.
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written.
+  1. 18 cases and 14 planted defects, not 16 and 12 (acceptance 1 and 2, decision 6, the
+     story's summary). The review wrote cases 17 and 18 and the fix round the two defects that
+     hold them; the texts that count (`AGENTS.md`, `taskfiles/release.yml`, the test's header
+     and its output line) say 18 and 14.
+  2. A planted copy runs the cases its defect names and case 1, not the whole table (decision
+     6: 208 case runs). The test makes 49 script runs. Three defects showed other cases red
+     as well on the whole table (defect 1: 7; defect 2: 7; defect 11: 10, 11, 15); with
+     the named cases only, those are no longer run.
+  3. A planted copy must also keep case 1 green (the story asks that the named cases turn red
+     and that a copy that equals the script fails). A copy that does not run now fails.
+  4. Where the story names no status or stream: a missing `<dir>` argument, `--image` without
+     a value and a `<dir>` that is no directory exit 2; `readelf` not on `PATH`, and with
+     `--image` a directory whose name gives no version, exit 1. The failure lines go to stderr
+     and the two success lines to stdout; the test reads both.
+- The review (one pass on `cf4be06`; verdict NEEDS-CHANGE, all findings introduced by the
+  unit; no must):
+  - 9 findings: 4 shoulds and 5 notes.
+  - The 4 shoulds: `--image ''` was taken as no image, so the check ended green without the
+    container (the story: "the step never skips the container"); a planted defect whose copy
+    did not run at all counted as caught, because every case turned red, the named ones too;
+    the 16 cases stayed green on a copy that reads docker's stderr with its stdout, which fails
+    every release on a runner that pulls the image first; each planted defect ran the whole
+    table, 43 of the 208 script runs giving the same proof.
+  - The 5 notes: an ELF without program headers, a file without the execute bit and a
+    symlink to a static file pass (the smoke step runs the binaries first and the job packs
+    regular files with `cp`; nothing found reaches it); with `eu-readelf` as `readelf` a
+    `NEEDED`-only file passes; a second `--image` replaces the first, and a `:` in the
+    directory path is split by docker's `--volume` parser; the removed inline check printed
+    `::error::` annotations and the script prints plain lines; with two more cases the texts that
+    say sixteen cases need the new count.
+  - Cases written (one commit, `b4da138`, 35 lines added and 2 removed in the test file only):
+    case 17, red on the script (`exit 0, expected 2`), and case 18, green on the script and red
+    on the copy with `2>&1`; and the rule that a copy keeps case 1 green. Run on the review's
+    commit the suite was red on case 17 alone.
+  - Fix round 1 (the merge `5f7c1e8` of the two cases, then `b348459`): the script keeps that
+    `--image` was given, so an empty value is a usage error and case 17 is green; the two
+    planted defects for cases 17 and 18; each copy runs its named cases and case 1; the cases
+    became functions; the counts in the texts say 18 and 14. Red run after the merge: case 17
+    only (`1 of 18 case(s) decided otherwise`). At `b348459`: `slot task release-static-test`
+    exit 0, `slot task lock-check` exit 0, `sh -n` on both scripts exit 0.
+  - The merge of `main` (`c1fc89a`, three other units): one conflict, in `AGENTS.md`, in the
+    sentence on what `check` runs; both sides' "Since `story:...`" sentences are kept. `check`
+    lists 30 steps, each once. Run again on the merge: `slot task release-static-test`,
+    `lock-check`, `test-clocks-check` and `test-clocks-check-test` exit 0; `sh
+    taskfiles/test-layout.sh .` exit 0 (26 test directories, 246 test files, one binary each).
+    The unit's own change is the same 7 files.
+- Numbers:
+  - Cases: 0 before (the base has no task), 16 after the first commit, 18 at the tip. Planted
+    defects: 12, then 14.
+  - Script runs of the test: 208 at `cf4be06` (13 tables of 16 cases), 49 at `b348459` and at
+    the tip (18 + 31: 17 named cases and case 1 in each of 14 copies). The fix round's commit
+    body says "in place of 234" (18 cases x 13 tables, had the merged table been green); the
+    measured figure of the first test is 208.
+  - Time of `sh taskfiles/release-static-test.sh` started directly, with the 1-minute load on 20
+    CPUs where a report gives it: first commit, 12.7 s (no load given); the review's three
+    runs of that commit, 20,528 ms at load 50.49, 12,899 ms at 52.08, 16,166 ms at 47.91; the
+    fix round's three runs, 2,434 ms at 23.62, 2,486 ms at 23.33, 2,545 ms at 23.33.
+  - Time of `slot task release-static-test`: first commit 27.6 s (sync included); fix round
+    16.4 s (sync and queue included, load 17.62); merge 10.1 s. One script run: 97 ms; the first
+    test was over 5 s and its time was named; it is under 60 s. The direct time at `b348459` is
+    2.4 to 2.5 s.
+  - The new step in the manual run, from its first to its last log line: 08:26:25.50 to
+    08:26:26.77 UTC (`x86_64`) and 08:18:28.16 to 08:18:29.34 UTC (`aarch64`).
+  - Lines over 100 columns: 9 in `release-static.sh` (each rule on one line, decision 6), 4 in
+    the test.
+  - `Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list`
+    (`lock-check` at the fix round and at the merge).
+- Left as it is (the review's notes that nobody changed):
+  - An ELF with no program headers, a regular file without the execute bit and a symlink to a
+    static file outside the archive pass the check; the packing step makes none of them.
+  - With `eu-readelf` as `readelf` a `NEEDED`-only file passes (it prints `NEEDED` without
+    parentheses); the runners use GNU binutils, and the test's guard stops under `eu-readelf`.
+  - `--image` twice: the last wins, so a tag followed by a digest passes. A `:` in `<dir>` is
+    split by docker's `--volume` parser; the stand-in cannot show docker's answer, and
+    `RUNNER_TEMP` has no `:`.
+  - The step prints plain lines on stderr; the removed inline check printed `::error::`
+    annotations.
+- A later story takes up: none; no report names one.
