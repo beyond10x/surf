@@ -1855,8 +1855,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `conformance/` (`git ls-files`: an untracked file is not read), blanks comments, strings
   and character literals, and fails, naming `<file>:<line>`, on an `assert!` that holds an
   upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` and its `saturating_`
-  and `checked_` forms, or a name bound from one by `let`, `if let`, `=`, `+=` or a `match`
-  arm), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left
+  and `checked_` forms, or a name bound from one by `let`, `if let`, a `for` pattern, `=`,
+  `+=` or a `match` arm, in the forms the header of the script lists), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left
   (`deadline.saturating_duration_since(Instant::now()) > Duration::ZERO`), and on an `if`,
   `while`, `else` or match guard on such a value whose block fails the test. The header of the
   script lists the forms it reads and the ones it does not see. The ledger

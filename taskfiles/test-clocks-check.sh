@@ -24,8 +24,9 @@
 # Reading: the files `git ls-files` lists under the patterns crates/**/tests/**/*.rs,
 # generated/**/tests/**/*.rs and conformance/**/tests/**/*.rs, so an untracked file, a target
 # directory and a dot directory git does not track are not read. A file none of whose lines
-# holds "elapsed", "duration_since" or the word now holds no elapsed value and no clock read and
-# is not read further; a space or a line feed before the ( of a call does not hide one. Each
+# holds "elapsed" or "duration_since", and that does not hold both the word now and "Instant" or
+# "SystemTime" (each on any of its lines), holds no elapsed value and no clock read and is not
+# read further; a space or a line feed before the ( of a call does not hide one. Each
 # file is read with its comments, strings, raw strings and character literals blanked first,
 # one pass, line by line, the state kept across lines: // to the line feed; /* */ nested; "..."
 # with a backslash hiding the next character; r, br or cr not after a letter, a digit or _,
@@ -53,6 +54,8 @@
 #   matching }, fails the test by the same words.
 # - a match guard, pattern if condition =>, whose condition compares upward and whose arm, its
 #   block or its expression to the next , fails the test by the same words.
+# A clock read compared with an instant the product holds (a certificate's not_after, a cookie's
+# expiry) is refused like a deadline, though it bounds no wait of the test.
 # An operand is read without a leading * or & and without parentheses around the whole, and a
 # cast after it (as u64) is part of it. A clock read is an operand that is exactly a path ending
 # in Instant::now() or SystemTime::now(). An elapsed value is an operand that is exactly a call
@@ -70,7 +73,8 @@
 # A name is tracked from its binding to the end of the file when the value of the binding holds
 # an elapsed value (round 1), a name of round 1 (round 2) or a name of round 2 (round 3). The
 # bindings: a let, its value read from the keyword to the first ; outside brackets; an if let or
-# while let, its value to the { of the block; NAME = and NAME += at the start of a statement,
+# while let, its value to the { of the block; a for, its pattern from the keyword to the in, its
+# value from the in to the { of the block; NAME = and NAME += at the start of a statement,
 # their value to the first ; or , outside brackets; the pattern of each arm of a match, its
 # value what the match reads. A pattern binds its lower-case names, not the names of a variant,
 # a struct, a path or a field in it (Some(took) binds took); of a pattern that binds several,
@@ -91,7 +95,12 @@
 # clock read through an alias (use Instant as Clock; Clock::now()) or through a name
 # (let now = Instant::now(); assert!(now < deadline)); a name bound from the time left; a
 # failing else if branch; a match guard that compares downward with a failing arm after it;
-# and whether the limit of a wait is at least 10 times the time alone.
+# an operand that is an expression around an elapsed value (took + SLACK, took / ROUNDS); a
+# comparison through cmp, partial_cmp, min or max; a name bound by a destructuring assignment,
+# a value assigned through a reference or to a field; the time left whose argument is a name
+# or a parameter (deadline.saturating_duration_since(now)), and with a parameter on either side
+# it is read as an elapsed value; a bound between two Unix timestamps; and whether the limit of
+# a wait is at least 10 times the time alone.
 #
 # Ledger: one "<path> <count>" per line, sorted by path (LC_ALL=C), no comment. A line out of
 # order fails, naming the first such line. A file with more refused statements than its line
@@ -441,8 +450,9 @@ function arms(i,   j, t, brace, shut, p, q, g) {
   }
 }
 # The bindings of a file: a let (its value to the first ; outside brackets), an if let or while
-# let (its value to the { of the block), an assignment NAME = and NAME += at the start of a
-# statement (its value to the first ; or , outside brackets); then the names of each round.
+# let (its value to the { of the block), a for (its pattern to the in, its value to the { of the
+# block), an assignment NAME = and NAME += at the start of a statement (its value to the first ;
+# or , outside brackets); then the names of each round.
 function track(   i, j, t, eq, k, cond, nm, l, r, n) {
   nlet = 0
   split("", arr_rank)
@@ -470,6 +480,34 @@ function track(   i, j, t, eq, k, cond, nm, l, r, n) {
       }
       if (!eq) continue
       add(i, eq + 1, j - 1, pnames(i + 1, pattern_end(i + 1, eq)))
+      continue
+    }
+    if (t == "for") {
+      j = i + 1
+      while (j <= ntok) {
+        t = arr_tok[j]
+        if (t == "in" || t == ";" || t == ")" || t == "]" || t == "}") break
+        if (t == "(" || t == "[" || t == "{") {
+          if (!arr_pair[j]) break
+          j = arr_pair[j] + 1
+          continue
+        }
+        j++
+      }
+      if (arr_tok[j] != "in" || j == i + 1) continue
+      k = j + 1
+      while (k <= ntok) {
+        t = arr_tok[k]
+        if (t == "{" || t == ";" || t == ")" || t == "]" || t == "}") break
+        if (t == "(" || t == "[") {
+          if (!arr_pair[k]) break
+          k = arr_pair[k] + 1
+          continue
+        }
+        k++
+      }
+      if (arr_tok[k] != "{") continue
+      add(i, j + 1, k - 1, pnames(i + 1, j - 1))
       continue
     }
     if (t == "match") {
@@ -818,17 +856,22 @@ function statements(   i, t, kw, o, j, c, brace, guard, n) {
   return n
 }
 # The refused statements of the file path, their lines in arr_found[1..]; -1 when unreadable.
-function scan(path,   n, line, got, has) {
+function scan(path,   n, line, got, has, now, typ) {
   n = 0
   has = 0
+  now = 0
+  typ = 0
   while ((got = (getline line < path)) > 0) {
     n++
     arr_raw[n] = line
-    if (!has && (index(line, "elapsed") || index(line, "duration_since") || (index(line, "now") && line ~ /(^|[^A-Za-z0-9_])now([^A-Za-z0-9_]|$)/))) has = 1
+    if (has) continue
+    if (index(line, "elapsed") || index(line, "duration_since")) has = 1
+    if (!now && index(line, "now") && line ~ /(^|[^A-Za-z0-9_])now([^A-Za-z0-9_]|$)/) now = 1
+    if (!typ && (index(line, "Instant") || index(line, "SystemTime"))) typ = 1
   }
   close(path)
   if (got < 0) return -1
-  if (!has) return 0
+  if (!has && !(now && typ)) return 0
   blank(n)
   tokenize(n)
   pair()

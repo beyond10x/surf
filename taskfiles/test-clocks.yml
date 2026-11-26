@@ -466,6 +466,24 @@ tasks:
         fresh if_let_value_ends_at_its_block_passes
         test_fn '    if let Some(count) = poll() {' '        println!("{count} {:?}", s.elapsed());' '        assert!(count < 5);' '    }'
         passed
+        fresh for_pattern_bound_from_an_elapsed_value_refused
+        test_fn '    for took in [s.elapsed()] {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh for_pattern_with_braces_refused
+        test_fn '    for Run { took, .. } in [Run { took: s.elapsed() }] {' '        assert!(took < LIMIT);' '    }'
+        refused 6
+        fresh for_value_ends_at_its_block_passes
+        test_fn '    for n in 0..3 {' '        println!("{n} {:?}", s.elapsed());' '        assert!(n < 5);' '    }'
+        passed
+        fresh pattern_of_unworded_names_from_an_elapsed_value_refused
+        test_fn '    let (first, last) = (s.elapsed(), 1);' '    assert!(first < LIMIT);'
+        refused 6
+        fresh pattern_with_a_worded_name_tracks_only_it_passes
+        test_fn '    let (count, took) = (poll(), s.elapsed());' '    println!("{took:?}");' '    assert!(count < 5);'
+        passed
+        fresh clock_read_of_system_time_in_a_file_without_instant_refused
+        put "$file" 'fn a(deadline: std::time::SystemTime) {' '    assert!(std::time::SystemTime::now() < deadline);' '}'
+        refused 2
 
         if [ "$wrong" -ne 0 ]; then
           echo "test-clocks-check-test: $wrong of $cases case(s) decided otherwise by $script"
