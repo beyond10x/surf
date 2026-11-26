@@ -8,6 +8,7 @@ summary: The test `seeds_fixed` (HOST-26), ignored until swell delivers `Math.ra
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:swell-0-9-0
+- depends_on: story:swell-0-12-0
 revision: 3
 ---
 ## Context

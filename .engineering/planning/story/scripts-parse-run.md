@@ -10,6 +10,7 @@ relations:
 - depends_on: story:html-script-hook
 - depends_on: story:scripts-dom-reading
 - depends_on: story:swell-0-9-0
+- depends_on: story:swell-0-12-0
 scope:
 - confidence: cited
   path: AGENTS.md
