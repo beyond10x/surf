@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:swell-0-9-0
 kind: story
-status: active
+status: implemented
 title: surf takes swell 0.10.0, runs the microtask checkpoint after each script, and maps swell's new error kind and host error
 summary: The tag moves to 0.10.0, which holds 0.9.0 and 0.9.1, in one place with the lock, the allow-list, the test constants, NOTICE and the tag sentences; the runner performs HTML's microtask checkpoint after each script under the document's totals and clock and clears the queue after a limit; AggregateError gets its word and a wildcard arm whose swallowing a test notices; HostError::MemoryBudget joins surf_defect!(); clock_advances runs; the test that swell 0.9.1's interrupt fix breaks is rewritten; the design note is revised at 0.10.0, with requirement 11 held and HOST-216 to HOST-220 recorded.
 relations:
@@ -59,10 +59,11 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 32
+revision: 34
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-26T16:24:03Z", actor: "human:operator", revision: 34, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -968,3 +969,335 @@ limits rely on, and a page's promises need the checkpoint this story runs. The e
 that surf runs page scripts on the tag that holds requirement 11
 (`.engineering/planning/epic/scripts-in-a-page.md:606-612`, Q18 of the note), and `0.10.0` is
 the newest tag that does, so surf pins it.
+
+## As built
+
+The unit is on `main` at `a7872e8` (the merge of `impl/swell-0-10-0` at `e507a7b`). Against the
+`main` it merged (`947eb6c`) it changes 27 files, 2,040 lines added and 361 removed. Its commits
+on its base `a14e3b0`: the implementation (`527d3b6`, `f0b9874`, `9943d49`), the first review's
+cases (merge `67b6b6a`) and their fix round (`8cd29e3`, `a37ab84`), the second review's cases
+(merge `762c806`) and their fix round (`f463e24`), the merge of `main` (`64917d2`), a round after
+it (`6b4593f`) and the public numbers (`e507a7b`).
+
+- What was built.
+  - The pin. `crates/script/Cargo.toml` names swell by the tag `0.10.0` (`git+https://github.com/
+    beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f` in the lock); the tag
+    holds `0.9.0` and `0.9.1`. The lock changes in the six swell packages only (version and
+    source, 12 lines each way); it holds 58 packages, 25 from outside the repository, as at the
+    base. `cargo update` of the six packages was the one network step. `NOTICE:54`,
+    `AGENTS.md`, `README.md` and `website/docs/principles.md` name the tag; swell's `NOTICE` is
+    the same file at both tags, so the quoted text stays.
+  - The lock file and its allow list. `taskfiles/lock-allow.txt` holds the six lines
+    `<name> 0.10.0 <source> none`. `crates/surf/tests/lock_check.rs` and
+    `crates/surf/tests/adversary.rs` each hold the tag, version and commit once, in two
+    constants, `SWELL` (the source with tag and commit) and `SWELL_VERSION`; every other literal
+    is built from them. The case "at another commit" changes the first hex digit of the commit
+    `SWELL` holds (`b` to `0`) and asserts the source differs. `swell 0.8.1` in `adversary.rs`
+    became the version with its patch raised by one. `?tag=0.7.0#`, the "another tag" case, is
+    the one other version literal.
+  - What broke at the pin, before any other change (the pin alone, then a build of `surf-script`):
+    8 compiler errors and 1 test. Seven errors: each of the seven patterns
+    `HostError::Faulted | surf_defect!()` in `runner.rs` no longer covers
+    `HostError::MemoryBudget` (a variant new at `0.9.0`; `HostError` is not `non_exhaustive`).
+    One error: the `match` of `error_kind` over `ErrorKind`, which is `non_exhaustive` since
+    `0.9.0` and so needs a wildcard arm. The test: `adversary_6::a_record_read_that_an_interrupt_
+    ends_gives_no_text` (84 run, 83 passed, 1 failed, 3 skipped; left `Err("limit: wall-clock")`,
+    right `Ok(None)`): since `0.9.1` a host function that sets the interrupt and then throws ends
+    the run in `Terminated(Interrupted)`, which the runner reads as `limit: wall-clock`, so the
+    old script no longer ends `threw`. The lock tests of `surf` passed (45). Nothing else broke.
+  - How each was answered. `HostError::MemoryBudget` joined `surf_defect!()` (seven variants; the
+    doc comment says why: at `0.10.0` only `queue_microtask` answers it and surf calls none; it
+    leaves the macro with the first such call). `ScriptErrorKind` gained `AggregateError` (word
+    `"AggregateError"`), `Runner::error` keeps its message as read, `error_kind` has one arm per
+    kind and one wildcard `_ => ScriptErrorKind::Error`, the one wildcard over a swell enum in
+    `crates/script`; its comment names what it swallows and what the test cannot notice (a kind
+    with no global constructor whose name ends in `Error`). The test
+    `engine::every_error_constructor_keeps_its_word` lists the realm's own properties that end
+    in `Error`, throws `new <name>([])` for each and compares `error.kind.word()` with the name.
+    The one failing test was replaced by `adversary_6::interrupt_set_before_a_throw_ends_at_wall_
+    clock_and_the_next_record_is_whole`: the script `document.getElementById("interrupt");` ends
+    `limit: wall-clock`, the flag is clear after it, and the next script, `throw new
+    DOMException("m", "N");`, records `N: m`. `clock_advances` runs (its `#[ignore]` is gone);
+    two tests stay ignored, the seeds and the time zone, which the engine has not built at the
+    tag. The swell citations in `runner.rs` and `engine.rs` read `@ 0.10.0`; none reads
+    `@ 0.8.0` there.
+  - The microtask checkpoint. After a script that ended `ran`, `threw` or `refused`, `Runner::
+    evaluate` calls `Agent::perform_microtask_checkpoint()` once, after it read the script's end,
+    its steps and its error site (the checkpoint overwrites what `last_entry_steps()` and
+    `last_entry_error_site()` answer). It is one outermost entry of swell's with a step budget of
+    its own, `steps_per_entry` (HOST-193); its `last_entry_steps()` is added to the step total
+    (HOST-197); the wall clock ends it as it ends a script (HOST-198). The script count does not
+    rise for it. Its end is the script's end: `Normal` leaves it; `StepBudget`, `MemoryBudget`
+    and `Interrupted` make `limit: steps-per-script`, `limit: memory` and `limit: wall-clock`; a
+    DOM limit a job recorded gives that limit's word (`document_end`); `EngineFault`, a `Throw`
+    (which the checkpoint never answers) and `Err(HostError::Faulted)` make `faulted`. After
+    `limit:` or `faulted` no checkpoint runs. A job's throw and a rejection no handler took are
+    not recorded: the script ends as it ended, and the note names the two deviations from HTML.
+  - How a run ends. (1) The queue: after any end `limit: <word>`, of a script or of its
+    checkpoint, `evaluate` calls `Agent::clear_microtasks()` (HOST-200), so jobs a script queued
+    before its limit do not spend the next script's budget; after `limit: memory` the clear comes
+    before the one `collect()`. HTML and swell's note keep the queue after a script stopped; this
+    is a named deviation. At a `script` end tag the queue is therefore empty. (2) The question at
+    a script's end: once the script's run answered, a normal end or a throw, and before a thrown
+    value is read and before the checkpoint, `Runner::run_ended` asks whether the wall clock ran
+    out or the interrupt is set (`InterruptHandle::is_set` reads the flag without taking it). If
+    so the script ends `limit: wall-clock`, or with the limit the bindings recorded, no text of a
+    thrown value is read, no checkpoint runs and the queue is cleared. A read of a thrown
+    `DOMException`'s text that the flag ends all the same answers `RunEnded` and the script ends
+    the same way, never a record `threw` with no message. The question is asked again after a
+    checkpoint that emptied the queue. (3) The interrupt: after every script's end, whatever its
+    word (a limit, `faulted`, `not run`, a parse error), `evaluate` withdraws a set interrupt
+    in one place, `self.agent.interrupt_handle().clear()`, and no way out of `script_end` returns
+    around it; a clock that ran out is known by the clock, so the next script is `not run:
+    wall-clock` all the same. (4) Where the checkpoint reads the flag at `0.10.0`: at its start
+    and before it takes each job off; after a job's function answered when that function is a
+    script function, and not when it is a host function. The question before the read of a
+    thrown value and the flag half of the question before the checkpoint never decide an end
+    alone at `0.10.0`; they are the second line, named so in the note and in two comments.
+  - The design note `docs/design/scripts.md`, at `0.10.0` (commit
+    `b9d3d46fa7ac4abc982f2248e903e6301e277a9f`): the head; Q2 row 1 "taken in effect: the runner
+    performs a checkpoint after each script", with the paragraph that states the checkpoint and
+    three sentences "Deviation from HTML" (a job's exception is not reported, a rejection no
+    handler took is not notified, the queue is cleared after a limit); Q4 (the rows of
+    `memory_bytes`, `steps_per_entry` "at most two entries, the script and its checkpoint",
+    `eval` and `Function` with `%AsyncFunction%` and `%AsyncGeneratorFunction%`, the row after
+    `Terminated(MemoryBudget)` "`Agent::clear_microtasks()` first, then `collect()` once", the
+    HOST-216 and HOST-217 paragraph, the question and the one withdrawal, the second line);
+    Q6 (the two clock requirements that have a test at `0.10.0`, the six others pending; a page
+    can time its run against
+    the wall clock with `Date.now()`); Q7 ("eight kinds", the wildcard, the enum copy gains
+    `{name: AggregateError, summary: "AggregateError"}`); Q11 and Q13 (requirement 11 held at
+    `0.10.0`; its detail at `0.8.0`; its close at `0.9.0` by HOST-215 and the probe's run); Q18
+    ("220 lines, 152 `test`, 68 `pending`", rows 1 to 11 `held`, HOST-216 to HOST-220 after the
+    table). Q13 holds the 18 lines of the probe's output verbatim in one fenced block: per mode
+    `exit 0` and five `stdout:` lines; the script that asks for the copy ends `throw RangeError
+    "reentry_depth exceeded"` (3,607, 5,154 and 4,130 steps), the doubling after it `terminated
+    StepBudget` (5 steps), `heap_bytes` 13,052,701, 13,054,051 and 13,054,051; the probe was run
+    on `0.9.0` and carried to `0.10.0` by reading.
+  - The public surfaces (the last commit, `e507a7b`): `README.md`, `AGENTS.md`,
+    `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/status.md`, `what-works.md`,
+    `how-it-is-built.md`. The tag strings read `0.10.0`; the gate blocks hold the lines of the
+    gate log (`2050 tests: 2048 passed, 0 failed, 2 ignored`, 249 test files, `release-static-
+    test` added); `2,602 tests ... 2,600 pass, and 2 of surf-script are ignored`; the badge
+    `2600 passed`; the entry of `surf-script` in `AGENTS.md` names the tag, the modules and 266
+    tests (264 run and 2 ignored), with no "no DOM yet".
+- Acceptance, at `e507a7b` unless a line says otherwise.
+  1. Shown. `slot task lock-check` prints `Cargo.lock: 58 package(s), 25 from outside this
+     repository, each on the allow-list` (the gate log, and the merge round). `git grep` for
+     `tag=0.8.0`, `tag = "0.8.0"` and the old commit in `Cargo.lock taskfiles crates NOTICE`
+     prints nothing; `tag=0.10.0#b9d3d46...` counts 6 in `Cargo.lock` and 6 in
+     `taskfiles/lock-allow.txt`; `tag 0.8.0` in `NOTICE` prints nothing, `tag 0.10.0` counts 1.
+  2. Shown. At `9943d49`, `cargo nextest run -p surf lock_check:: adversary::`: `45 tests run:
+     45 passed, 113 skipped`; after the merge `-p surf`: `158 tests run: 158 passed`, 45 of them
+     in the two modules. The version pattern prints 2 lines per file, the value line of
+     `SWELL` and the line of `SWELL_VERSION`.
+  3. Shown, at `9943d49`: `engine::` `26 tests run: 26 passed, 73 skipped`; with the case
+     that the first review asked for, the module holds 27 run and 2 ignored. `git grep -F
+     '#[ignore'` prints 2 lines. The cases of the story pass: `clock_advances`, `aggregate_error`,
+     `every_error_constructor_keeps_its_word`, `checkpoint_runs_after_the_script`,
+     `async_function_runs`, `checkpoint_after_threw`, `job_throw_keeps_the_end`,
+     `job_flood_ends_at_the_step_limit`, `limit_clears_the_queue`, `checkpoint_wall_clock`,
+     `checkpoint_memory`. `globalThis` exists at the tag, so no `var` fallback was taken. Job
+     flood, the two step numbers (`steps_per_entry` 100,000 in the test): the script's own steps
+     33, the checkpoint 100,000, total 100,033; the test asserts the total is the sum and at
+     most the script plus `steps_per_entry`. Before the runner change the run was red: `60 tests
+     run: 50 passed, 10 failed`; four cases were green before it (`job_throw_keeps_the_end`,
+     `limit_clears_the_queue`, `dom_limit_drops_the_jobs` and the replacement test of
+     `adversary_6`: no checkpoint ran any job, and the last is swell's own behaviour).
+  4. Shown, at `9943d49`: `34 tests run: 34 passed, 65 skipped` for `adversary::`,
+     `adversary_6::`, `bindings::`; `every_error_kind_keeps_its_word` holds eight kinds; the old
+     test name prints nothing, the new one 1 line. The cases of `bindings.rs` are
+     `dom_limit_drops_the_jobs` and `limit_end_in_a_then_callback`.
+  5. Shown. `_ => ScriptErrorKind::Error` is at `runner.rs:1120` under the comment that names
+     the test (`:1116`); `| HostError::MemoryBudget` is at `runner.rs:39`; every pattern builds
+     with no other arm (the build is the check).
+  6. Shown. The probe file has 18 distinct lines, sha256
+     `78fa5309cf44a42b2de1d6b4ad0abaed7e2d120ee974e5ce67c605ad40fc16da`;
+     `grep -c -x -F -f <file>` on the note prints 18; `one more doubling, to 2^24: terminated
+     StepBudget` counts 3; `HOST-215` counts 7; `status at `0.10.0`` prints 3 lines and
+     `status at `0.8.0`` nothing; the head line and Q2 row 1 are there, the old Q2 cell is not.
+  7. Shown in part. `slot task check` exits 0 at the tip (`task check exit 0 in 138 s`).
+     `git diff --stat 947eb6c e507a7b` names the files of the Change and the public surfaces,
+     and three more (deviations 2 and 4).
+  8. Shown. After the last commit `git grep -F` for `release tag (`0.8.0`)` and `swell 0.8.0`
+     in `README.md website/docs docs/badges AGENTS.md` prints nothing; the counts, badge and gate
+     blocks are rewritten from the log (deviation 6); the ignored tests read 2 with their ids;
+     `site-build` exit 0, `help_for_agent` 14 passed, `sh-echo` 55 passed, `sh-echo-test` 2
+     cases, `planning-only-test` 9 cases.
+  9. Shown. No `@ 0.8.0` in `runner.rs` and `engine.rs`; the comment of decision 8 (jobs and
+     load requests stay dropped) cites the engine's list `@ 0.10.0` at `runner.rs:221`;
+     `eight kinds` in Q7; `220 lines, 152 `test`, 68 `pending`` in Q18;
+     `requirements.txt:216-220 @ 0.10.0` counts 1; `Deviation from HTML` counts 3; the enum line
+     is there; the four strings the note dropped print nothing.
+  10. Shown. Not held by a test: the reading of a checkpoint's `Throw` and of its
+      `Terminated(EngineFault)` as `faulted`. Held: the script count (`engine::totals`), the
+      clear after `limit: memory`, the clear before the collection, the read of a thrown value
+      that an interrupt ends (acceptance 12). The replaced test was run once at the pin and
+      failed as the story read it (deviation 7). Stale comments left, see "Left as it is".
+  11. Shown for the runs here. No test over 60 s; the test step of the gate 41.2 s of 120 s (see
+      the numbers); no model call and no network request in a test; every build and test ran
+      through `slot`; no Python; no generator output added; no report names a job that timed
+      out. No test this unit added runs over 5 s (the slowest, 1.630 s). Tests over 5 s on the
+      merged tree, none of them the unit's: see the numbers.
+  12. Shown. Module `adversary_checkpoint` (10 cases) and `run_end` (6): (a) a script that sets
+      the interrupt and throws, a thrown number, a normal end with and without a queued job, a
+      recorded bindings limit and a throw, a clock that ran out at a normal end; (b)
+      `a_memory_limit_drops_the_jobs`, `the_clear_comes_before_the_collection`; (c)
+      `a_checkpoint_counts_no_script`, `an_interrupt_in_a_job_ends_the_checkpoint_and_the_next_
+      one_runs`; (d) `endless_jobs_end_at_the_step_limit_and_leave_no_job`; (e)
+      `hostile_thrown_values_end_with_a_record_and_run_no_code`,
+      `an_aggregate_error_of_many_entries_records_its_message` (100,000 entries); (f)
+      `engine::async_constructors_compile_as_function_does` (deviation 8). The clear after a
+      script's own `limit: memory`, the clear before the collection and the collection were each
+      shown red under a one-line change (clear removed, order swapped, collect removed).
+  13. Shown. Module `adversary_checkpoint_2` (5 cases) and `run_end`. One-line changes of
+      `runner.rs`, each tried and taken back (`git diff --quiet` after), each red: the question
+      before the checkpoint removed (`a_clock_run_out_before_its_thread_runs_no_job_of_the_script`);
+      `Normal => end` in the checkpoint, the question after it removed (two cases, among them
+      `a_host_function_as_the_last_job_leaves_the_flag_to_the_runner`); the clock half of the
+      question removed (the two `a_clock_run_out_...` cases); the flag half removed
+      (`a_host_function_as_the_last_job_leaves_the_flag_to_the_runner`); the clear skipped for
+      `limit: wall-clock` (`a_wall_clock_end_by_the_rule_leaves_no_job_for_a_later_script`); the
+      one withdrawal removed (six tests red, among them the failing case of the second review).
+- What differs from the story. Every decision, Change line and acceptance item not named here
+  was built as written.
+  1. The merge of `main` put `main`'s refill check into `evaluate`. The story's Placement says
+     the reading unit edits no line of `evaluate`; `main` edited its doc comment and added, in
+     the arm `ScriptEnd::Limit(Reason::Memory)` after `collect()`, `DomState::cut_refill` raising
+     `memory_ends` to 2. The unit had moved that arm from `script_end` into `evaluate`, so the
+     block sits there, in `main`'s order; both sides' behaviour holds.
+  2. A comment of the prelude and the regenerated bindings changed, though decision 12 says the
+     story edits neither `crates/webidl/src/prelude.rs` nor `crates/script/src/bindings.rs`: the
+     comment of `end_with_limit` ("works at the tag but swell does not promise it there") was
+     wrong at the pin, since the engine promises one answer of a host function from `0.9.1`
+     (HOST-217). Two comment lines in `prelude.rs`, the same two in `bindings.rs` and its two
+     header digest lines (`webidl-check` exit 0). Of the four comments the story names, one is
+     changed, one stays true and two stay stale ("Left as it is").
+  3. `engine::checkpoint_wall_clock` lost its bound on elapsed time (the story: "the elapsed time
+     under 10 s"), because the gate step `test-clocks-check` of `main` refused it (`engine.rs`:
+     2 bounds, the ledger allows 1; no ledger line was added). The case asserts `Limit(WallClock)`,
+     then `NotRun(WallClock)`; a one-line change (the checkpoint's `Interrupted` read as the
+     script's own end) turns it red by assertion in 0.114 s, not by a kill at 60 s.
+  4. `crates/script/tests/main.rs` is not in the story's scope list; it holds the `mod` lines of
+     `adversary_checkpoint`, `adversary_checkpoint_2` and `run_end` (the one-binary rule).
+  5. The note changes beyond decision 13's list, each made false by the tag: the head's
+     probe sentence, Q4's sentence on adding steps after each script, Q6's paragraph on what a
+     script reaches (now the clock), Q11's sentences "the value `story:scripts-document-port`
+     ships with" and "while requirement 11 is open ... one page in one document" (now "the pages
+     of several documents, whose trees the session keeps"), Q13 keeping the `0.8.0` probe line as
+     the tag before; and the paragraphs the two reviews' rules wrote (Q2, Q4, Q7).
+  6. The public numbers come from the gate run on `6b4593f`, the tip before the numbers commit,
+     not on `e507a7b` (the story: each number from the log of "its tip"); the run on `e507a7b`
+     read the same 2050 / 2048 / 2 and 249 test files, and its step times are in the numbers. The
+     counts of the `AGENTS.md` entry come from `cargo nextest list` (264) plus the 2 ignored.
+  7. Acceptance 10 says the test `a_record_read_that_an_interrupt_ends_gives_no_text` "was read,
+     not run"; it was run once at the pin and failed as read (see "What broke").
+  8. The test of acceptance 12f lives in `engine.rs`, not in `adversary_checkpoint`.
+- The two reviews and their fix rounds.
+  - First review (on `9943d49`): verdict NEEDS-CHANGE; 1 must, 4 shoulds, 3 notes; 8 findings.
+    The must: the read of a thrown `DOMException` takes the flag the wall clock's thread set
+    between the script's last step and the read, so the script ended `threw Error` with no
+    message and the checkpoint then ran the page's jobs, up to one `steps_per_entry` past the
+    bound. The shoulds: no case held the clear after a script's own `limit: memory` nor its
+    place before the collection; `checkpoint_memory` counted the call of `collect()` and would
+    stay green with none; the story's and the report's sentence that the read-failure branch is
+    unreachable from a test slice was wrong (a getter reaches it) and the script count was held
+    (`engine::totals`); Q4 did not name `%AsyncFunction%` and `%AsyncGeneratorFunction%`. The
+    notes: the comment in the generated code on HOST-217; Q6 did not say `Date.now()` lets a
+    page time its run against the bound; `steps_per_runner` has no enforcing caller. Cases
+    written: 10 in `adversary_checkpoint` (9 passing in `55529bc`, 1 failing in `58a84e7`;
+    suite 97 to 107, red 1); 5 one-line changes tried, 3 left the unit's suite green before the
+    cases (clear after memory, clear before collect, collect itself).
+  - Fix round 1 (`8cd29e3`, `a37ab84`): the question at a script's end (`run_ended`, `run_end`,
+    `at_run_end`), `exception_text` and `error` answering `RunEnded`, the question asked again
+    after a checkpoint; the doc comments, Q2, Q4, Q6, Q7 and the rows of `eval` and `Function`
+    changed; 6 cases in `run_end.rs`, 1 in `engine.rs`. Four of the changes were held by no
+    test: the question before the checkpoint removed, its clock half removed, the question after
+    the checkpoint removed, its flag half removed; the first review's case held the two ends of
+    the read only together. Gate: `1874 tests: 1872 passed, 0 failed, 2 ignored`.
+  - Second review (on `a37ab84`): verdict CONFIRMED; no must, 5 shoulds, 3 notes; 8 findings.
+    The shoulds: the four unheld changes above decided ends in states no test reached (held now
+    by 3 cases); skipping the clear after `limit: wall-clock` left the suite green (held now by
+    1 case); the note, a comment and the module comment of `run_end.rs` said the checkpoint reads
+    the flag only before a job and after a job's function, but it also reads at its start and
+    not after a host function a job calls; a script that ended `limit: steps-per-script` with
+    the interrupt set made the next script of the document end `limit: wall-clock` (reached
+    only by a test slice; the one failing case); two of the questions never decide an end alone
+    at the tag, and the note did not say so. Two notes: the read's own answer decides only in a
+    race no test can build; ends without an interrupt were compared with the first tip by
+    reading only (no record found that lost its message, site or kind). Cases written: 5 in
+    `adversary_checkpoint_2` (4 passing in `adffb3c`, 1 failing in `9ba7a5c`; suite 114 to 119,
+    red 1; each of the 5 ran 5 times, 5 of 5 as expected).
+  - Fix round 2 (`f463e24`): `evaluate` is `script_end` plus the clear on a limit plus the one
+    withdrawal of the interrupt plus the count and `collect()` after `limit: memory` and the
+    faulted mark; the clears inside `run_end` and `document_end` are gone; the sentences about
+    where the checkpoint reads the flag are corrected in `runner.rs`, the note and
+    `run_end.rs`; the second line is named in the note and in two comments. No code besides
+    that. Gate: `1879 tests: 1877 passed, 0 failed, 2 ignored`.
+- The merge and the rounds after it. `64917d2` merged `main` (`947eb6c`): five conflicts,
+  `AGENTS.md`, `crates/script/Cargo.toml` (`surf-url` on its line, the tag `0.10.0` on the
+  next), `runner.rs` (deviation 1), `tests/main.rs` (each module once), `docs/design/scripts.md`
+  (both sides' sentences; a number read from the merged code, not from a side). What `main`
+  wrote against `0.8.0` (the DOM reading members, 77 tests in the `adversary_dom_reading*`
+  modules, `dom_reading` 48, `dom_reading_cost` 19) built and passed at `0.10.0` with no change;
+  `dom_reading_cost::an_ordinary_page` printed 168771 steps, 59 reads of `textContent` and 800131
+  steps, the note's numbers. `slot task test-clocks-check` was red on two lines of `engine.rs`
+  (`:219` is `main`'s, `:622` the unit's); `6b4593f` fixed it (deviation 3) and corrected the
+  prelude comment (deviation 2). `e507a7b` wrote the public numbers.
+- Numbers.
+  - Tests of `surf-script`: 87 at the base (84 run, 3 ignored); 99 after the first commits
+    (97 run, 2 ignored); 116 after fix round 1 (114 run); 121 after fix round 2 (119 run); 266 on
+    the merged tree (264 run, 2 ignored). The unit adds 34: `engine` 11, `bindings` 2,
+    `adversary_checkpoint` 10, `adversary_checkpoint_2` 5, `run_end` 6. By module at `e507a7b`:
+    `engine` 29 (2 ignored), `adversary` 10, `adversary_2` 1, `adversary_3` 19, `adversary_4` 10,
+    `adversary_5` 7, `adversary_6` 5, `adversary_checkpoint` 10, `adversary_checkpoint_2` 5,
+    `bindings` 20, `dom_reading` 48, `dom_reading_cost` 19, `adversary_dom_reading` 17, `_2` 13,
+    `_3` 11, `_4` 14, `_5` 10, `_6` 12, `run_end` 6. Test files: 230 at the base, 233 after fix
+    round 2, 249 on the merged tree. `surf`: 45 in `lock_check::` and `adversary::`, 158 in all.
+  - The gate, `task check` through `check-runner`, with the 1-minute load at the start and the
+    end of the job; the test step has a budget of 120 s. Base (the public block of `a14e3b0`):
+    `1845 tests: 1842 passed, 0 failed, 3 ignored (cargo-nextest 1843, doc tests 2)`.
+    `9943d49`: 1857 / 1855 / 2 ignored; test step 59.4 s; load 80.35 and 39.27 (the first try did
+    not start: load 95.91, not under 90); 243 s. `a37ab84`: 1874 / 1872 / 2; 72.8 s;
+    load 23.94 and 30.97; 177 s. `f463e24`: 1879 / 1877 / 2; 72.4 s; load 54.91 and 58.75;
+    186 s. `6b4593f`: 2050 / 2048 / 2; 56.3 s; load 60.72 and 57.88; 281 s. `e507a7b`, the
+    final run: 2050 / 2048 / 2; test step 41.2 s, tls test step 5.2 s, conformance step 9.2 s,
+    page step 21.0 s, the four 76.6 s; load 52.07 and 49.59; 138 s; site build exit 0. The tests
+    of the TLS crates: 552 passed in each run.
+  - Times of the unit's tests (no load given): the cases of the first commits 0.007 to 0.264 s
+    (`job_flood_ends_at_the_step_limit` 0.264 s); the review's 0.009 to 1.630 s (the
+    100,000-entry `AggregateError` case 1.630 s); `run_end` 0.012 to 0.019 s;
+    `adversary_checkpoint_2` 0.011 to 0.219 s. The crate's own run on the merged tree: 66.238 s
+    wall for 264 tests, 40.515 s after `6b4593f`. Tests over 5 s, none of them the unit's, named
+    with their time: `adversary_5::the_code_getter_in_a_loop_copies_at_most_a_legacy_name_and_
+    ends_at_the_step_limit` 13.569 s (first full run, under load; 5.379 s and 7.095 s in
+    other runs, 9.637 s on the merged tree), `adversary_dom_reading::hostile_shapes_of_a_kept_
+    collection` 9.068 s, `adversary_6::the_steps_of_a_script_are_its_entrys_whatever_its_end`
+    6.369 s, `adversary_dom_reading_4::a_wanted_set_of_many_tokens_against_classes_of_many_
+    tokens` 6.100 s, `adversary_dom_reading_3::a_memory_end_at_every_point_of_a_shrinking_
+    refill` 5.697 s and `..._of_two_refills_in_one_script` 5.669 s, `adversary_3::every_
+    generated_function_checks_the_brand_of_this` 5.456 s.
+  - `taskfiles/test-layout.sh`: `26 test directories, 249 test files, one test binary each`.
+- Left as it is.
+  - Not held by a test: the reading of a checkpoint's `Throw` and of its `Terminated(EngineFault)`
+    as `faulted`.
+  - The stale comments the story leaves out (decision 12): the doc comment of `ExceptionData`
+    ("from the sentence and the signature, not from a requirement": a String listed in `trace` is
+    now HOST-218; `prelude.rs:313`, `bindings.rs:380`), the doc comment of `string_length`
+    (reads `ToObject(string).length`; `to_utf16_len`, HOST-220, replaces it; `prelude.rs:927`),
+    and the comment `crates/script/tests/adversary_5.rs:232` ("@ 0.8.0, section 4"). `to_utf16_len`
+    is used nowhere in surf. HOST-219 (a BigInt listed in `trace`) concerns a type no host data of
+    surf holds.
+  - A job's throw and a rejection no handler took are not recorded (decision 7); `steps_per_runner`
+    is counted by `Runner::steps` and enforced by no caller; `Math.random` and the time zone are
+    pending in the engine; `WellKnownSymbol::AsyncIterator`, `PromiseCapability`, `PromiseState`
+    and the promise reads are used nowhere in surf.
+  - Q2's `Deviation from HTML` on the queue clear stays until timers and events exist.
+  - `README.md:286` and `website/docs/what-works.md:18` still say the ignored tests wait "until
+    swell reaches what they call"; the count in them is 2.
+- A later story takes up: `story:scripts-document-port` (the document's step total, the
+  writer of a script's end; named by the reports); from the story's Out of scope:
+  `story:scripts-job-errors` (a job's throw and an unhandled rejection),
+  `story:scripts-event-loop-and-timers` (`queueMicrotask`: `HostError::MemoryBudget` leaves
+  `surf_defect!()` there, and it re-reads the queue clear), `story:scripts-seeds-and-time-zone`
+  (the two ignored tests), `story:scripts-utf16-length` (`to_utf16_len` and the stale comments).
