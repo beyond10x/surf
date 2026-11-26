@@ -44,7 +44,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 51
+revision: 52
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -1873,11 +1873,11 @@ The files shared, one by one:
   private `position_of_ns` and `lower_byte` beside `position_of`, changes the scans of five
   writes to call `position_of` and `position_of_ns` (the removing functions make no copy of
   the name, decision 3) and `put_attribute` to reserve exactly. The reading story adds the write
-  counter and merges first. The mutation story at `79bdbb2` makes `parent_or_host` `pub`, adds
-  the validity check `check_insertion`, the bulk removal `remove_all`, the work counter `work()`
-  and its doc comments (its Change, file lines 700-715), and changes no recursive function, so
-  it makes no change of its own to the clone; its text names "six reads" of this story
-  (its line 1051), which is the count of an earlier revision: this story has three reads and
+  counter and merges first. The mutation story's Change (the entry of `crates/html/src/tree.rs`,
+  file lines 1281-1318 at revision 6) makes `parent_or_host` `pub`, adds the validity check
+  `check_insertion` (with the enum `Exclude` it takes), the bulk removal `remove_all`, the work
+  counter `work()` and its doc comments, and changes no recursive function, so it makes no
+  change of its own to the clone. This story has three reads and
   three owners. `story:scripts-dom-sibling-positions` (a draft with no scope list; that it
   edits the child-list writers of `tree.rs` is inferred from its body, and it depends on the
   mutation story since `aa70366`) and `story:html-parser-hook-cost` name the file too. The edits
@@ -1903,13 +1903,13 @@ The files shared, one by one:
   later merger keeps every line.
 - `crates/script/tests/main.rs`: this story adds `mod dom_attributes_cost;` after `mod
   dom_attributes;` (line 17 @ 83e6b8a); the mutation story adds `mod dom_mutation_cost;` (its
-  text `:1315` and `:2109` at revision 5), after `mod dom_mutation;` on line 18, one
+  text `:1335` and `:2248` at revision 6), after `mod dom_mutation;` on line 18, one
   line from this story's: adjacent
   hunks, resolved by keeping both; the selectors story adds none (`dom_selectors` is declared
   at `:21`).
 - `crates/script/tests/dom_reading.rs`: `other_slices_still_throw` (`:2399-2432 @ 83e6b8a`)
   holds three adjacent lines, `:2424` `document.appendChild(el)` (the mutation story's, its
-  decision 9), `:2425` `el.getAttribute("id")` (this story's) and `:2426` `el.querySelector("p")`
+  decision 10), `:2425` `el.getAttribute("id")` (this story's) and `:2426` `el.querySelector("p")`
   (the selectors story's, its decision 13, which says the same of this story). Each of the
   three stories changes its own line; the later merger keeps all three changes.
 - `crates/script/tests/bindings.rs`: this story adds two `Writes` variants (`Stored`
