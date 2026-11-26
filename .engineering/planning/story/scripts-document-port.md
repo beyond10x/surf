@@ -18,6 +18,7 @@ relations:
 - depends_on: story:scripts-html-conformance
 - depends_on: story:swell-0-9-0
 - depends_on: story:script-error-kind-aggregate
+- depends_on: story:session-core-limit-one
 scope:
 - confidence: cited
   path: Cargo.lock
