@@ -1808,8 +1808,9 @@ check(G.many.length === 3997 && G.one.length === 3997, "the second pair");
     /// bad url holds 4,085 bytes with 2,042 spaces, costs what `a:is("x...x")`, a string in a
     /// text of the same length, costs: the glue's copy, 512, and the parse's text, 257, both
     /// before the lexer reads a byte, five tokens (`a`, `:`, `is(`, the url or the string,
-    /// `)`) and the script's own steps. Read as a function and its parts, the spaces and names
-    /// alone would be 4,084 tokens more. Each text is passed twice and the second calls are
+    /// `)`) and the script's own steps. Read as a function and its parts (`url(`, `x`, 2,042
+    /// spaces and as many `x`, `)`) it would be 4,087 tokens for one, 4,086 steps more
+    /// (measured 4,887). Each text is passed twice and the second calls are
     /// compared: the first call of the runner costs 3 steps more (measured 804 for the url
     /// and 801 for the string, then 801 and 801).
     #[test]
