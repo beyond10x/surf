@@ -24,13 +24,15 @@ its tip `5dcedfb` on 2026-11-25), and with the HTML parser's script hook
 (`story:html-script-hook`, its tests counted by the gate run on its tip `58d720b` on
 2026-11-25), and with the DOM's read members in the script runner of `surf-script`, which no
 command runs yet (`story:scripts-dom-reading`, its tests counted by the gate run on its tip
-`5664184` on 2026-11-26):
+`5664184` on 2026-11-26), and with the agent tasks' wait for the processes a model left
+(`story:agent-tasks-left-process-wait`, which changes tests only; the table's test counts are
+those of the gate run on its tip `e61d766` on 2026-11-26):
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 221 of 221 pass, against the interpreter and against the Rust code |
-| tests | 2,552 passed and 3 ignored: 2,000 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
+| tests | 2,556 passed and 3 ignored: 2,004 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 72 passed, in Chromium's headless shell |
