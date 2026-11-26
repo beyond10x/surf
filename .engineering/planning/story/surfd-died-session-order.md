@@ -8,7 +8,7 @@ summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to 
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 ---
@@ -50,8 +50,11 @@ factor makes that safe.
 1. First case: the order is made by an event. The child writes `x` only after the session
    shell is waitable: it reads `/proc/<pid>/stat` of the shell (`$$` names the shell in the
    subshell too) until the state after the last `)` is `Z` or the file is gone, and then
-   writes. The end of a pipe or FIFO that the shell holds is not that event: the kernel closes
-   a process's descriptors before the process is waitable, and in between `try_wait` is empty.
+   writes. The file is gone only after the opener collected the shell's status at its ready
+   timeout (`:1474`, `:427`), a path on which the case fails by its reason; that half of the
+   test only ends the loop. The end of a pipe or FIFO that the shell holds is not that event:
+   the kernel closes a process's descriptors before the process is waitable, and in between
+   `try_wait` is empty.
    The loop is a wait for an event with a limit: it sleeps 10 ms a turn (`/usr/bin/sleep
    0.01`; the session's environment is cleared, so commands are named by path) and gives up
    after 300 turns, a count that is over 10 times the 0.3 s the shell failed to meet. A child
@@ -91,8 +94,8 @@ factor makes that safe.
 
 1. Guard: each of the two cases still fails when the product loses the note. With the `note
    ended` line left out of the before-ready answer (a hand-made defect in `with_ended`,
-   `daemon.rs:1561-1566`, made on the committed tip, run, taken back; `git diff --quiet`
-   after), both cases are red.
+   `daemon.rs:1561-1566`, made on the committed tip, run, taken back; `git diff --quiet --
+   crates/surfd/src` after), both cases are red.
 2. The first case is green when the session shell is slow to end: with `/usr/bin/sleep 1`
    written before `kill -s ABRT $$` in its session program (taken back after), the case is
    green; at `a14e3b0` the same line makes it red. Each shown once.
@@ -124,9 +127,9 @@ factor makes that safe.
 ## Out of scope
 
 - The other clocks of the file: the `thread::sleep` of 500 ms with its two elapsed bounds
-  (`:210`, `:220`, `:232`) is for `story:time-bounds-in-tests`, and
-  `story:tests-without-wall-time-bounds` brings the check that finds such bounds. The sleeps
-  at `:102`, `:190` and `:319` order nothing.
+  (`:210`, `:220`, `:232`) is listed by no story yet; the check of
+  `story:tests-without-wall-time-bounds` finds such bounds, and `story:time-bounds-in-tests`
+  decides them. The sleeps at `:102`, `:190` and `:319` order nothing.
 - Any change of `surfd`'s ready timeout, kill grace or answers.
 
 ## Placement
