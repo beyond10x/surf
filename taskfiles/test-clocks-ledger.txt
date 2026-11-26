@@ -12,6 +12,7 @@ crates/fetch/tests/redirects.rs 1
 crates/fetch/tests/review1_security_fetch.rs 4
 crates/fetch/tests/review2_fetch_limits.rs 1
 crates/fetch/tests/secreview_tls_fetch.rs 2
+crates/script/tests/adversary_dom_reading.rs 1
 crates/script/tests/bindings.rs 1
 crates/script/tests/engine.rs 1
 crates/session/tests/adversary_change_log.rs 1
