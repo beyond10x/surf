@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:session-core-limit-one
 kind: story
-status: draft
+status: active
 title: Start a session with a core limit of 1 in place of 0 (0 where surfd's own hard limit is 0), so that its end by a signal is seen without a wait for the host's core handler
 summary: 'surfd starts a session with --core=0:0, which on a host whose core pattern is a pipe does not stop the dump: a session that ends by SIGABRT, SIGXCPU or SIGSEGV is waitable only after the host''s core handler took it (113 to 220 ms; seven surfd tests red in a gate run). surfd now reads its own hard core limit and starts a session with --core=1:1, or --core=0:0 where that limit is 0 (prlimit cannot raise it). Tests, docs and changelog move with it; one case of first_line.rs is taken.'
 relations:
@@ -40,7 +40,10 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 20
+revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T06:31:44Z", actor: "human:operator", revision: 21}
+- {from: "proposed", to: "active", at: "2026-11-26T06:31:44Z", actor: "human:operator", revision: 22, executor: "agent:implementor"}
 ---
 ## Context
 
