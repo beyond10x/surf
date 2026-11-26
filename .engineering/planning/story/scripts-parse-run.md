@@ -51,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 54
+revision: 55
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -818,7 +818,7 @@ the merged file and resolves what overlaps.
   the reading unit merged before this story: `story:scripts-dom-reading` (`generate.rs`,
   `prelude.rs`, `bindings.rs`; `scripts-dom-reading.md:656-670`), this story (`prelude.rs`,
   `DomState::swap_tree`), `story:scripts-dom-attributes` (proposed; `prelude.rs`,
-  `strings_value`, `live` and `peak`; `scripts-dom-attributes.md:497-503,897-899`; no edge to
+  `strings_value`, `live` and `charged`; `scripts-dom-attributes.md:849-864`; no edge to
   this story, which it names as the sharer), `story:scripts-utf16-length` (`prelude.rs`,
   `string_length`; `scripts-utf16-length.md:18-41`), `story:scripts-dom-collection-names`
   (`selection.txt`; `scripts-dom-collection-names.md:17`) and `story:html-open-namespace`
@@ -833,7 +833,7 @@ the merged file and resolves what overlaps.
 - The public-surface lines of acceptance 21 (`README.md:285`, `docs/badges/make.sh:38`,
   `docs/badges/tests.svg`, `website/docs/status.md`, `what-works.md`) are rewritten in the last
   commit of this story and of `story:scripts-dom-attributes` and `story:scripts-dom-selectors`
-  too (`scripts-dom-attributes.md:64-72`, `scripts-dom-selectors.md:72-80`), which also write
+  too (`scripts-dom-attributes.md:1687-1708`, `scripts-dom-selectors.md:72-80`), which also write
   other files of `crates/script`; `story:scripts-dom-mutation` rewrites them, `status.md:31` and
   `what-works.md:17` in its acceptance 22 (`scripts-dom-mutation.md:1745-1763`; its scope list
   names none of them), and `story:scripts-html-conformance` and `story:scripts-document-port` have
@@ -842,7 +842,7 @@ the merged file and resolves what overlaps.
   tip. For the others, no edge: acceptance 21's "after merging `main`" is the order, and the
   last to merge takes the numbers of its own log. The entry of `surf-script` in `AGENTS.md`
   (`:365-368 @ a14e3b0`) is edited by this story, by `story:scripts-dom-attributes` (`AGENTS.md`
-  in its scope, `scripts-dom-attributes.md:597`) and by `story:scripts-dom-selectors`: no edge;
+  in its scope, `scripts-dom-attributes.md:934-935`) and by `story:scripts-dom-selectors`: no edge;
   the one that merges later takes `main` first and re-reads the test count from its log.
 - `AGENTS.md` and `website/docs/status.md` are in the scope of `story:conformance-lock-and-lints`
   (draft); `AGENTS.md` is also in that of `story:session-argument-checks` (draft),
