@@ -19,7 +19,7 @@ crates/session/tests/built.rs 1
 crates/surf-cli/tests/cli.rs 1
 crates/surf-cli/tests/review1_output.rs 1
 crates/surfd/tests/adversary.rs 1
-crates/surfd/tests/adversary_2.rs 1
+crates/surfd/tests/adversary_2.rs 2
 crates/surfd/tests/hardening.rs 2
 crates/surfd/tests/in_process.rs 2
 crates/test-process/tests/children.rs 1

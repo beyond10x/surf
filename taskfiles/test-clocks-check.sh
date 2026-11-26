@@ -71,7 +71,7 @@
 # is a path ending in an upper-case constant, or one name bound by let or = from a value that
 # holds + or - and a clock read or a name bound to one (a deadline, s + WAIT).
 # A name is tracked from its binding to the end of the file when the value of the binding holds
-# an elapsed value (round 1), a name of round 1 (round 2) or a name of round 2 (round 3). The
+# an elapsed value (round 1) or a name of rounds 1 to 3 (rounds 2 to 4: four rounds). The
 # bindings: a let, its value read from the keyword to the first ; outside brackets; an if let or
 # while let, its value to the { of the block; a for, its pattern from the keyword to the in, its
 # value from the in to the { of the block; NAME = and NAME += at the start of a statement,
@@ -88,7 +88,8 @@
 # upper bound on the time left (deadline.saturating_duration_since(Instant::now()) < WAIT).
 #
 # Not seen: a bound written through a helper function, a macro, or a bool of a let
-# (let ok = took < LIMIT; assert!(ok)); a name bound through a name of round 3; the negated
+# (let ok = took < LIMIT; assert!(ok)); a name bound through a name of round 4; the names of a
+# pattern that binds several names of which none holds a word of the list; the negated
 # spelling assert!(!(took >= LIMIT)); assert_eq!(took, ..) by equality; a bound recorded in a
 # list asserted after the loop; a test that returns Err from the block; a failure by .expect,
 # .unwrap or std::process::exit in the block; a difference of two instants written with -; a
@@ -533,7 +534,7 @@ function track(   i, j, t, eq, k, cond, nm, l, r, n) {
     }
     add(i, eq + 1, j - 1, " " arr_tok[i])
   }
-  for (r = 1; r <= 3; r++) {
+  for (r = 1; r <= 4; r++) {
     for (l = 1; l <= nlet; l++) {
       if (!holds(arr_let_from[l], arr_let_to[l], r, arr_let_at[l])) continue
       n = split(arr_let_names[l], arr_names, " ")

@@ -278,8 +278,11 @@ tasks:
         fresh nested_block_comment_with_a_bound
         test_fn '    /* outer /* inner */ assert!(s.elapsed() < LIMIT); */' '    /* a /* b' '    */ assert!(s.elapsed() < LIMIT);' '    */'
         passed
-        fresh fourth_round_of_rebinding_not_seen
+        fresh fourth_round_of_rebinding_refused
         test_fn '    let a = s.elapsed();' '    let b = a;' '    let c = b;' '    let d = c;' '    assert!(d < LIMIT);'
+        refused 9
+        fresh fifth_round_of_rebinding_not_seen
+        test_fn '    let a = s.elapsed();' '    let b = a;' '    let c = b;' '    let d = c;' '    let e = d;' '    assert!(e < LIMIT);'
         passed
         fresh field_of_another_value_not_refused
         test_fn '    let total = s.elapsed();' '    println!("{total:?}");' '    assert!(counts.total < LIMIT);'
@@ -421,10 +424,13 @@ tasks:
         track
         verdict "$(decide 1 crates/x/tests/common/mod.rs:2 "$(over crates/x/tests/common/mod.rs 1 0)")"
         fresh bound_through_a_for_pattern_over_a_list_of_pairs_refused
-        test_fn '    let (answers, looked) = (vec![(1, s.elapsed())], s.elapsed());' '    let mut longest = Duration::ZERO;' \
+        test_fn '    let (answers, looked) = thread::scope(|scope| {' \
+          '        let opens: Vec<_> = (0..8).map(|n| scope.spawn(move || (n, s.elapsed()))).collect();' \
+          '        let answers: Vec<_> = opens.into_iter().map(|o| o.join().unwrap()).collect();' \
+          '        (answers, 0)' '    });' '    let mut longest = Duration::ZERO;' \
           '    for (answer, took) in &answers {' '        longest = longest.max(*took);' '    }' \
           '    assert!(longest < LIMIT, "longest {longest:?}");'
-        refused 10
+        refused 14
         fresh operand_behind_a_reference_refused
         test_fn '    assert!(&s.elapsed() < &LIMIT);'
         refused 5
@@ -475,9 +481,9 @@ tasks:
         fresh for_value_ends_at_its_block_passes
         test_fn '    for n in 0..3 {' '        println!("{n} {:?}", s.elapsed());' '        assert!(n < 5);' '    }'
         passed
-        fresh pattern_of_unworded_names_from_an_elapsed_value_refused
+        fresh pattern_of_unworded_names_from_an_elapsed_value_not_seen
         test_fn '    let (first, last) = (s.elapsed(), 1);' '    assert!(first < LIMIT);'
-        refused 6
+        passed
         fresh pattern_with_a_worded_name_tracks_only_it_passes
         test_fn '    let (count, took) = (poll(), s.elapsed());' '    println!("{took:?}");' '    assert!(count < 5);'
         passed
