@@ -1854,11 +1854,16 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   tracked `*.rs` files under a `tests/` directory of `crates/`, `generated/` and
   `conformance/` (`git ls-files`: an untracked file is not read), blanks comments, strings
   and character literals, and fails, naming `<file>:<line>`, on an `assert!` that holds an
-  upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` or a name bound from
-  one) and on an `if` or `while` on such a value whose block fails the test. The ledger
-  `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, one file per line) lists the files
-  that still hold such statements: a file with more fails, a file with fewer fails and names
-  the count to write, so the ledger only shrinks. A line for a file the check did not read
+  upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` and its `saturating_`
+  and `checked_` forms, or a name bound from one by `let`, `if let`, `=`, `+=` or a `match`
+  arm), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left
+  (`deadline.saturating_duration_since(Instant::now()) > Duration::ZERO`), and on an `if`,
+  `while`, `else` or match guard on such a value whose block fails the test. The header of the
+  script lists the forms it reads and the ones it does not see. The ledger
+  `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, one file per line, sorted by path)
+  lists the files that still hold such statements: a line out of order fails, a file with
+  more fails, a file with fewer fails and names the count to write, so the ledger only
+  shrinks. A line for a file the check did not read
   (untracked, renamed, deleted or outside those directories) fails and says to delete the
   line. `AWK=<command>` names the awk (POSIX awk only), `--ledger <file>` and `--count` are
   options, a root that is not the top of a git work tree exits 2. Else it prints
@@ -1989,8 +1994,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   test over the budget is. A test bounds a time only by a wait for the event with a limit at
   least 10 times the time it takes alone, and proves a cost by a count (such as
   `surf_page::attribute_visits()`), not by a wall time. `task test-clocks-check` (a step of
-  `check`) refuses the assertion of an upper bound on an elapsed time that its ledger does
-  not list.
+  `check`) refuses the assertion of an upper bound on an elapsed time, in the forms the header
+  of `taskfiles/test-clocks-check.sh` lists as refused, that its ledger does not list; the
+  same header names the forms it does not see.
 - `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
   ones `task test` leaves out, under the same `.config/nextest.toml` and environment
   (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. Of the other packages

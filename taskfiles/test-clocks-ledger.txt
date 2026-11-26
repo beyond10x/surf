@@ -16,10 +16,15 @@ crates/script/tests/bindings.rs 1
 crates/script/tests/engine.rs 1
 crates/session/tests/adversary_change_log.rs 1
 crates/session/tests/built.rs 1
+crates/surf-cli/tests/cli.rs 1
+crates/surf-cli/tests/review1_output.rs 1
+crates/surfd/tests/adversary.rs 1
 crates/surfd/tests/adversary_2.rs 1
 crates/surfd/tests/hardening.rs 2
 crates/surfd/tests/in_process.rs 2
 crates/test-process/tests/children.rs 1
 crates/tls-test-server/tests/adversary_request_body.rs 1
+crates/tls-test-server/tests/hostile.rs 1
+crates/view-fixture/tests/fixture.rs 2
 crates/view/tests/http.rs 3
 crates/view/tests/stream_bounds.rs 1
