@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:surfd-died-session-order
 kind: story
-status: active
+status: implemented
 title: Order the session's end and its child's line by an event in two surfd tests
 summary: Two cases of crates/surfd/tests/adversary_2.rs need a session shell to end by its own signal before a child writes a line or a 0.3 s ready timeout runs out, and decide that order by a clock of 0.3 s; under load the first case failed once in the gate. Both cases end the shell by a signal that dumps no core; in the first the child waits until the shell is waitable, in the second the child holds the output until the shell is collected. No product file changes.
 scope:
 - confidence: cited
   path: crates/surfd/tests/adversary_2.rs
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-26T04:22:21Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-26T04:38:51Z", actor: "human:operator", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-26T06:14:23Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -179,3 +180,40 @@ did not send is named by that signal, and is not read as `bound cpu`, which belo
 -F crates/surfd/tests/adversary_2.rs -- .engineering/planning/story`. The check of
 `story:tests-without-wall-time-bounds` reads this file; the change adds no elapsed value, so
 no ledger line moves, and no edge is needed.
+
+## As built
+
+The unit is on `main` at `b33aae7` (the merge of `impl/surfd-died-session-order` at `c91b313`,
+which follows `b08ca8d`). It changes `crates/surfd/tests/adversary_2.rs` and no other file.
+
+- Two commits. `b08ca8d` was built from the story's text before its last revision: it kept
+  `SIGABRT`, waited for the shell's state `Z` in the first case and held the second case's
+  output by a `sleep` of 3 s under a kill grace of 4 s. A gate run on it under load had the
+  first case red after 7.5 s at its assertion on `gave-up`. `c91b313` is the story as it reads
+  now: `kill -s USR1 $$` in both cases, the note `note ended: signal SIGUSR1`, and in the
+  second case a child that holds the output until `[ -e /proc/$$/stat ]` fails.
+- Nothing differs from the decisions. The text checks of acceptance 7 hold on `c91b313`: no
+  line with `sleep 0.3` or `ABRT`, `from_millis(300)` once, `kill -s USR1` twice.
+- Times on the build host: the first case 0.023 s and 0.035 s, the second 2.010 s and 2.030 s;
+  the two cases 20 times in one job, `20/20 stress run iterations: 20 passed` in 40.5 s; the
+  89 cases of the package green in 3.2 s and 2.4 s, none of the seven cases the Context names
+  red in those runs.
+- Shown red by the two reviews and the fix round: the product without the note (both cases,
+  at their assertions on the text); the first case's child without its loop; the first case's
+  loop waiting for a state no process has (red at `gave-up`); the second case's child without
+  its hold (red at the reason); the second case's shell alive at the ready timeout (red at
+  `died_id`, after 6.0 s).
+- Left as it is, each seen by a review:
+  - When the second case's shell is still alive at the ready timeout, the case fails in
+    `died_id` with a message that names the answer and not the cause. It is told apart from
+    a lost note by the line it fails at.
+  - On that red path the child keeps testing for the file until the shell is collected or its
+    1,000 turns end; in the run that showed it the child ended 19 ms after the test process.
+    A green run leaves no process.
+  - A doc comment of the second case says "the answer is red" where it means the case.
+  - Two lines of another case of the file are not as `rustfmt` writes them; they were so
+    before the unit and the gate has no format step.
+- A case a reviewer wrote for a first line that is not `ready` (a session that writes `x` and
+  exits with status 3) passes on the unit and is kept on a review branch. It adds one test
+  and so moves the counts of `AGENTS.md` and the public numbers; it goes in with a later
+  story of `crates/surfd/tests`.
