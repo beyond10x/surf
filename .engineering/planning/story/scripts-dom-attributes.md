@@ -4,7 +4,7 @@ id: story:scripts-dom-attributes
 kind: story
 status: proposed
 title: The attribute members (14 rows), held to the attribute, stored-byte and memory limits and priced by what they scan
-summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the attribute functions of the tree's write surface after the standard's name checks and reads through three public reads and three owners of shared rules that the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned and a read of a value charging its bytes before any count, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in existing nodes charged to the memory budget through one handle that the engine resizes to twice the live bytes, so that a write that removes bytes refunds them, a cost module with a floor of steps on the worst shape of each member and one budget row for each writer and each read that returns a value, a namespace outside the six of the tree named as a deviation, the TrustedType deviation tested, the brand check of the members tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
+summary: Element's id, className and slot and its 11 attribute operations (17 trait methods) as the DOM Standard says, in three files (the members, every read of the tree, every write of the tree) with a source test that holds the members free of tree calls and charges, writes through the attribute functions of the tree's write surface after the standard's name checks and reads through three public reads and four owners of shared rules that the tree gains, every pass charged before it runs at one step per 16 bytes and one per 4 attributes scanned and a read of a value charging its bytes before any count, getAttributeNames charged per element, a write over the attribute or stored-byte limit ending the script through the generated limit result, the bytes script writes hold in existing nodes charged to the memory budget through one handle that the engine resizes to twice the live bytes, so that a write that removes bytes refunds them, a cost module with a floor of steps on the worst shape of each member and one budget row for each writer and each read that returns a value, a namespace outside the six of the tree named as a deviation, the TrustedType deviation tested, the brand check of the members tested, the attribute node members and the two SameObject attribute rows left to throw, the 14 case names asserted equal to the slice's rows.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:html-script-hook
@@ -44,7 +44,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 48
+revision: 50
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -101,8 +101,8 @@ What the code holds for this slice:
 - The glue charges what it answers: a String at one step per 16 bytes of its UTF-8 text
   (`text.len() / 16`), before its code units are counted and before the copy (`string_value`,
   `bindings.rs:1266-1272 @ 14f8a2a`, `STRING_BYTES_A_STEP` `:1259`; the count came first at
-  `83e6b8a`), a collection node at 8
-  steps (`COLLECTION_NODE_STEPS`, `:1251`). `getAttributeNames` answers a `sequence<DOMString>`
+  `83e6b8a`), a collection node at 8 steps (`COLLECTION_NODE_STEPS`, `:1251 @ 83e6b8a`,
+  `:1253 @ 14f8a2a`). `getAttributeNames` answers a `sequence<DOMString>`
   through `strings_value` (`bindings.rs:1546-1560`, written by `prelude.rs:1441-1454` of
   `crates/webidl/src`), which charges each element's bytes and nothing for the element: a list
   of 16,384 one-byte names costs the glue 0 steps. Its one caller is `getAttributeNames`
@@ -350,7 +350,7 @@ sharing one case.
    URL that is none of the six matches no attribute, so `getAttributeNS`, `hasAttributeNS` and
    `removeAttributeNS` answer `null`, `false` and nothing for it, as the standard does,
    without a scan.
-3. `crates/html/src/tree.rs` gains three public reads, three small public owners of rules the
+3. `crates/html/src/tree.rs` gains three public reads, four small public owners of rules the
    tree and the slice would otherwise copy, and the writes call all of them, so that the slice
    has one matching rule with the writes, one rule for the six namespaces, one for the four
    `NamespaceError` conditions and one count of an attribute's bytes. Each read is `&self` and
@@ -1115,7 +1115,7 @@ sharing one case.
       - The removal rows, on a page `<html n0="" n1="" ... n16382="" LONG="">` whose last
         attribute is named by 1,048,576 `z` bytes (`LONG` stands for that name here, and the test
         writes it as `"z".repeat(1048576)` into the page string; 16,384 attributes; the test
-        builds the page string once and parses it under `Limits` raised for it); `k` is 1, as no
+        builds the page string once and parses it with the raised `max_attributes`); `k` is 1, as no
         other name has that length. With `n = "z".repeat(1048576)`: `removeAttribute(n)`: [131,072
         (the glue), 4,096 (`find`'s scan, 16,384 / 4), 65,536 (`find`'s bytes, 1 * 1,048,576 /
         16), 69,632 (the tree's own scan, one charge call: 16,384 / 4 + 1 * 1,048,576 / 16 =
@@ -1136,7 +1136,7 @@ sharing one case.
         slice charged nothing for a pass over the name that no scan makes. That the tree makes
         no copy of the name is not a step count; the source test of acceptance 7a holds it.
       - The read rows, with the value from the page: `<html a="V">` with `V` of 1,048,576 bytes
-        built into the page string once and parsed under `Limits` raised for it; the script
+        built into the page string once and parsed under the default `Limits`; the script
         `var e = document.documentElement;`. `parts` is [the slice's charges, then G2, the
         glue's charge for the String it answers], and B1 = S0 + M + (the slice's charges) + G2 /
         2 ends `limit: steps-per-script` in the glue's charge; B2 = S0 + C runs. The helper
@@ -1451,19 +1451,25 @@ sharing one case.
       `Some(at) =>` to the `}` that closes it, counting the braces of the stripped text, not to
       the end of the function (a line of `Some(at) =>` with no `{` fails with a message too).
       It asserts one forbidden list, `attribute_name(`, `to_ascii_lowercase(`,
-      `to_lowercase(`, `make_ascii_lowercase(`, `.to_owned(`, `.to_string(`, `to_vec(`,
-      `.clone(`, `.into(`, `.into_owned(`, `.repeat(`, `String::`, `Vec::`, `Box::`, `Cow`,
-      `format!` and `.collect`, against the text of `position_of`, of `position_of_ns`, of
-      `remove_attribute`, of `remove_attribute_ns` and of the removing arm of
-      `toggle_attribute`: so the position rule lowers the wanted name byte by byte and copies
-      nothing, and no removal copies the name. A `git grep` of each of the eight added tokens
-      at `83e6b8a` over the code the cuts cover today (`qualified_name_is`, `tree.rs:696-706`,
-      the bodies of `remove_attribute` and `remove_attribute_ns`, `:1596-1621`, and the
-      removing arm, `:1651-1654`) finds none: correct code holds none of them, so no token
-      turns it red (`Vec::` is on 8 other lines of the file, none in those). The cuts call no
+      `to_lowercase(`, `make_ascii_lowercase(`, `.to_owned(`, `.to_string(`,
+      `ToString::to_string(`, `to_vec(`, `.clone(`, `.cloned(`, `.into(`, `.into_owned(`,
+      `.repeat(`, `.push_str(`, `.extend(`, `String::`, `Vec::`, `Box::`, `Rc::from(`,
+      `Arc::from(`, `Cow`, `format!` and `.collect`, against the text of `position_of`, of
+      `position_of_ns`, of `remove_attribute`, of `remove_attribute_ns` and of the removing arm
+      of `toggle_attribute`: so the position rule lowers the wanted name byte by byte and copies
+      nothing, and no removal copies the name. A `git grep` of each of
+      `make_ascii_lowercase(`, `ToString::to_string(`, `to_vec(`, `.cloned(`, `.into(`,
+      `.into_owned(`, `.repeat(`, `.push_str(`, `.extend(`, `Vec::`, `Box::`, `Rc::from(`,
+      `Arc::from(` and `Cow` at `83e6b8a` over the code the cuts cover today
+      (`qualified_name_is`, `tree.rs:696-706`, the bodies of `remove_attribute` and
+      `remove_attribute_ns`, `:1596-1621`, and the removing arm, `:1651-1654`) finds none:
+      correct code holds none of them, so no token turns it red (`Vec::` is on 8 other lines of
+      the file, `.push_str(` on 6 and `.extend(` on 10, none in those). The cuts call no
       function of the file other than `lower_byte`, `element_attributes`, `drop_attribute`,
-      `position_of`, `position_of_ns` and `qualified_len` (which the length compare of
-      `position_of` may call): the test takes the names after `fn ` in the stripped file and
+      `position_of`, `position_of_ns`, `qualified_len` (which the length compare of
+      `position_of` may call) and `qualified_name_is` (the private compare of today,
+      `tree.rs:696`, which `position_of` may keep for an element outside the HTML namespace):
+      the test takes the names after `fn ` in the stripped file and
       asserts that no call in the five texts has one of them but those; a call is a name
       before `(` with no receiver, or the receiver `self.` or `Self::`, or `.qualified_len(`.
       The lowering of one byte is a private function of its own, `lower_byte(byte: u8) -> u8`,
@@ -1560,16 +1566,25 @@ sharing one case.
     `settle_stored(` twice, once as `settle_stored(0, 0)`. Each settle is one statement
     spelled `cx.settle_stored(..)?;`, and that spelling is the rule: the test finds each
     statement from `cx.settle_stored(` to its `;` and asserts that it ends in `)?;`, so
-    `let put_back = cx.settle_stored(0, 0); put_back?;` is red. The text of `charged_write`
-    after its call of `write(cx.tree_mut())` (the pattern is the whole call, never the bare
-    `write(`, which the signature of `charged_write` holds; a `charged_write` that does not
-    hold the pattern once is red, with a message), with the two settle statements cut out
-    (each up to its `;`, so that the `?` that takes the settle's own answer goes with it),
-    holds none of `?`, `return`, `unwrap` and `expect(`, so that no refusal of the tree, of any
-    kind, skips the settle: after the tree call and before the settle nothing leaves the
-    function. The test is red when one of those strings is added to the file that must not
-    hold it, and when a `?`, a `return` or an `unwrap()` is put after the call of
-    `write(cx.tree_mut())` (the implementor shows each once and reports the output). The
+    `let put_back = cx.settle_stored(0, 0); put_back?;` is red. The tree's answer is taken by
+    a `match` of `charged_write`, the first that starts at or after the line of its call of
+    `write(cx.tree_mut())` (the pattern is the whole call, never the bare `write(`, which the
+    signature of `charged_write` holds; a `charged_write` that does not hold the pattern once
+    is red, with a message), one arm for the `Err` and one for the `Ok`. The test cuts each
+    arm by counted braces of the stripped text, as 7a cuts the removing arm, from the `{`
+    after its `=>` to the `}` that closes it (an arm with no `{` after its `=>` is red, with
+    a message), and asserts that each arm holds one settle statement: an arm with no settle,
+    such as `Err(e) => Err(map(e))`, is red. The text from the tree call to the end of the
+    last settle statement, with the two settle statements cut out (each up to its `;`, so
+    that the `?` that takes the settle's own answer goes with it) and with the rest of each
+    arm after its own settle statement left out, holds none of `?`, `return`, `unwrap` and
+    `expect(`, so that no refusal of the tree, of any kind, skips the settle: before the
+    settle of an arm nothing leaves the function. A `return` after an arm's own settle skips
+    nothing and is not read: `Err(e) => { cx.settle_stored(0, 0)?; return Err(map(e)); }` is
+    green, and so is any text after the last settle statement. The test is red when one of those
+    strings is added to the file that must not hold it, when a `?`, a `return` or an
+    `unwrap()` is put between the tree call and the settle of an arm, and when the settle of
+    an arm is removed (the implementor shows each once and reports the output). The
     signature of the settle is held by the compile, since the writers and the
     test slice of 6f take its answer with `?`, and by one source line: `git grep -n -F 'pub fn
     settle_stored(&mut self, added: usize, removed: usize) -> DomResult<()>' --
@@ -1588,7 +1603,9 @@ sharing one case.
     process, so the page string of 11a, 11b and 11c, which holds two elements (one of 4,096
     attributes with names of 1,000 bytes for 11a, one of 16,384 short names for 11b and 11c),
     is built once for the three, each run parses its own tree from it, and one test holds the
-    case 11d. The module sets the limits it raises in one place, its own `limits()` and
+    case 11d, the exception: its three reads change nothing, so it makes one runner and one
+    parse of its page and runs its three scripts in turn, and its time is named in the
+    implementor's report. The module sets the limits it raises in one place, its own `limits()` and
     `raised()` (copied from `dom_reading_cost.rs:22-46 @ 50a4239`), and raises no other:
     - parse limits: `max_attributes` 20,000 (the shapes hold 16,384, and 11e adds the 16,385th);
       `max_input_bytes` 23,068,672 (22 MiB; the default is 16,777,216, `limits.rs:103`, and the
@@ -1630,14 +1647,18 @@ sharing one case.
        `3 * string_length`) throws the `RangeError` with the steps raised by at least 786,432
        (12,582,913 / 16) and by less than 1,572,864, so no count was made or charged. The
        glue's charge for the answer is not reached in the two throws, so the floors are the
-       slice's alone. A slice that counted before it charged and threw would raise the steps by
-       less than the first of these and fail, and one that charged the count in the first band
-       only once fails the 524,288. The page holds the three values in one attribute each, in
-       one `#[test]`, under the limits above: the page is 20,971,522 bytes of values and a few
-       hundred of markup, under the `max_input_bytes` of 23,068,672, so the parse cuts no
-       value. No case holds a fourth value, one of
-       4,194,305 to 50,331,648 bytes whose units do not pass `string_length`, which a read
-       then answers: it meets the glue's own count of the answer (`longer_than` in
+       slice's alone. Each throwing read runs in `try { .. } catch (e) { if (!(e instanceof
+       RangeError)) throw e; }`, its try ending in `throw new Error('no RangeError')` so that a
+       read that answers is red (`dom_reading_cost.rs:794-795 @ 50a4239`), and the case ends
+       `Ran`, as `call` asserts (`:152` there). A slice that counted before it charged and
+       threw would raise the steps by less than the first of these and fail, and one that
+       charged the count in the first band only once fails the 524,288. The page holds the
+       three values in one attribute each, in one `#[test]` with one runner and one parse, the
+       steps of each script taken from `runner.steps()` before and after it, under the limits
+       above: the page is 20,971,522 bytes of values and a few hundred of markup, under the
+       `max_input_bytes` of 23,068,672, so the parse cuts no value. No case holds a fourth
+       value, one of 4,194,305 to 50,331,648 bytes whose units do not pass `string_length`,
+       which a read then answers: it meets the glue's own count of the answer (`longer_than` in
        `string_value`) after the glue's charge of `text.len() / 16` at `14f8a2a`, and before it
        at `83e6b8a`. The reading unit owns that order.
     e. `setAttribute` with a value of 4,194,304 bytes on an element of 16,384 attributes
