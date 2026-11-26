@@ -25,14 +25,15 @@
 //! tokens are CSS Syntax Level 3's (the Editor's Draft of 20 October 2026): CR, FF and CR LF are
 //! one newline and U+0000 is U+FFFD (3.3); an escape is up to six hex digits and one whitespace,
 //! or any other code point but a newline (4.3.7); an identifier starts with a digit only through
-//! an escape (4.3.8, 4.3.9); a string ends at its quote or at the end of the text, and a newline
+//! an escape (4.3.8, 4.3.9); a name holds the ident code points of 4.2, whose list beyond ASCII
+//! leaves out such code points as U+00A0, U+00D7 and U+200B, each a delim outside a string; a string ends at its quote or at the end of the text, and a newline
 //! inside it makes it bad (4.3.5); a comment is dropped and an unterminated one runs to the end
 //! (4.3.2). The end of the text closes an open `[` or `(` (5.5.9, 2.2), so `[a=b` is `[a=b]`.
 //!
 //! Outside the subset, and valid, a text is refused with a `SyntaxError` that says surf does not
 //! support it, naming the first such construct: a pseudo-class or a pseudo-element, recognised
-//! by its shape (a colon or two, an identifier, an argument in balanced parentheses skipped by
-//! token, its name and argument not validated; one colon before one of
+//! by its shape (a colon or two, an identifier, an argument skipped by token and read by the
+//! blocks of CSS Syntax 5.5.9 and 5.5.10, its name and argument not validated; one colon before one of
 //! [`LEGACY_PSEUDO_ELEMENTS`] is a pseudo-element, section 16), the combinators `+` and `~`, an
 //! attribute matcher
 //! other than `=`, a flag after the value, a namespace prefix of `*` or of none, and the nesting
@@ -253,8 +254,12 @@ enum Token {
     CloseBracket,
     OpenParen,
     CloseParen,
+    /// `{` and `}`: no production of a selector takes them, and inside the argument of a
+    /// pseudo-class they open and close a block.
+    OpenBrace,
+    CloseBrace,
     /// A token no production of a selector takes: a number, a dimension, a percentage, an
-    /// at-keyword, `{`, `}`, `;`, `<!--` or `-->`.
+    /// at-keyword, `;`, `<!--` or `-->`.
     Other,
     /// The end of the text.
     End,
@@ -268,8 +273,34 @@ fn is_digit(c: Option<char>) -> bool {
     c.is_some_and(|c| c.is_ascii_digit())
 }
 
+/// CSS Syntax 4.2, an ident-start code point: a letter, `_`, or a non-ASCII ident code point.
 fn is_name_start(c: Option<char>) -> bool {
-    c.is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || !c.is_ascii())
+    c.is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || is_non_ascii_ident(c))
+}
+
+/// CSS Syntax 4.2 (the Editor's Draft of 20 October 2026), a non-ASCII ident code point: the
+/// ranges of the text, each inclusive. Any other code point beyond ASCII starts no name and
+/// continues none: it is a delim token, so a selector that holds one outside a string, and not
+/// by an escape (4.3.12 appends an escape's code point whatever it is), is not valid.
+fn is_non_ascii_ident(c: char) -> bool {
+    matches!(
+        c,
+        '\u{B7}'
+            | '\u{C0}'..='\u{D6}'
+            | '\u{D8}'..='\u{F6}'
+            | '\u{F8}'..='\u{37D}'
+            | '\u{37F}'..='\u{1FFF}'
+            | '\u{200C}'
+            | '\u{200D}'
+            | '\u{203F}'
+            | '\u{2040}'
+            | '\u{2070}'..='\u{218F}'
+            | '\u{2C00}'..='\u{2FEF}'
+            | '\u{3001}'..='\u{D7FF}'
+            | '\u{F900}'..='\u{FDCF}'
+            | '\u{FDF0}'..='\u{FFFD}'
+            | '\u{10000}'..='\u{10FFFF}'
+    )
 }
 
 fn is_name(c: Option<char>) -> bool {
@@ -382,7 +413,9 @@ impl<'t> Lexer<'t> {
             ':' => self.single(Token::Colon),
             '[' => self.single(Token::OpenBracket),
             ']' => self.single(Token::CloseBracket),
-            ';' | '{' | '}' => self.single(Token::Other),
+            '{' => self.single(Token::OpenBrace),
+            '}' => self.single(Token::CloseBrace),
+            ';' => self.single(Token::Other),
             '+' | '.' if starts_number(self.peek(0), self.peek(1), self.peek(2)) => self.numeric(),
             '-' if starts_number(self.peek(0), self.peek(1), self.peek(2)) => self.numeric(),
             '-' if self.peek(1) == Some('-') && self.peek(2) == Some('>') => {
@@ -879,24 +912,44 @@ impl Parser<'_> {
     }
 
     /// A pseudo-class or pseudo-element by its shape, after its colons: an identifier, or a
-    /// function token and its argument up to the `)` that balances it or the end of the text,
-    /// skipped by token.
+    /// function token and its argument, skipped by token, read by the blocks of CSS Syntax
+    /// (5.5.8 to 5.5.10): a function token or `(` opens a block that `)` closes, `[` one that `]`
+    /// closes and `{` one that `}` closes, and inside a block a closer of another kind closes
+    /// nothing. The argument ends at the `)` of the function, or at the end of the text, which
+    /// closes every block still open (5.5.9, as an open `[` is closed elsewhere). Each token is
+    /// taken through `take`, so it is charged a step as every token before it is; the stack of
+    /// open blocks is one byte a block, at most one a byte of the text, which the text bound
+    /// holds to 4,096.
     fn pseudo(&mut self, cx: &mut DomCx<'_, '_>) -> Result<(), Stop> {
         match self.take(cx)? {
             Token::Ident(_) => Ok(()),
             Token::Function => {
-                let mut open = 1usize;
+                let mut open = vec![b')'];
                 loop {
-                    match self.take(cx)? {
+                    let closer = match self.take(cx)? {
                         Token::End => return Ok(()),
-                        Token::Function | Token::OpenParen => open += 1,
-                        Token::CloseParen => {
-                            open -= 1;
-                            if open == 0 {
-                                return Ok(());
-                            }
+                        Token::Function | Token::OpenParen => {
+                            open.push(b')');
+                            continue;
                         }
-                        _ => {}
+                        Token::OpenBracket => {
+                            open.push(b']');
+                            continue;
+                        }
+                        Token::OpenBrace => {
+                            open.push(b'}');
+                            continue;
+                        }
+                        Token::CloseParen => b')',
+                        Token::CloseBracket => b']',
+                        Token::CloseBrace => b'}',
+                        _ => continue,
+                    };
+                    if open.last() == Some(&closer) {
+                        open.pop();
+                        if open.is_empty() {
+                            return Ok(());
+                        }
                     }
                 }
             }

@@ -1093,6 +1093,11 @@ each read (measured on the reading slice: 500 children read by three cursors in 
 180,250 steps, and 5,000 children end at the step limit), which is charged and never answers a
 wrong sibling; a later story decides the tree's own sibling positions.
 
+The selector members (`story:scripts-dom-selectors`) take a name's code points from the list of
+CSS Syntax Level 3, 4.2 (the Editor's Draft of 20 October 2026), so a code point beyond ASCII
+outside it, such as U+00A0 in `div` U+00A0 `span`, makes the text not valid, a place where a
+browser may answer otherwise.
+
 Of those exceptions, swell lists as open that "`string_units` and `string_units_in` copy without
 a memory charge" and that "The `call` and `new` instructions copy their argument list uncharged"
 (`docs/plan/second-batch.md:284-285 @ 0.8.0`). These copies are not bounded by `memory_bytes`;

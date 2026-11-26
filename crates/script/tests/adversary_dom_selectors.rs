@@ -95,8 +95,8 @@ fn code_points_outside_the_ident_set_are_not_valid() {
         checked(
             runner,
             r##"
-var outside = ["div span", "a×", ".a÷b", "#x​", " ", "p",
-  "# ", "[a ]"];
+var outside = ["div\u00A0span", "a×", ".a÷b", "#x\u200B", "\u2028", "p\uE000",
+  "#\u00A0", "[a\u00A0]"];
 var wrong = [];
 for (var i = 0; i < outside.length; i++) {
   var got = err(function () { document.querySelector(outside[i]); });
@@ -208,12 +208,12 @@ fn code_lines(source: &str) -> Vec<(usize, &str)> {
 }
 
 /// Decision 17 of the story: `selectors.rs` holds no call of the tree and no charge. The
-/// unit's guard (`dom_selectors::the_selectors_read_the_tree_only_through_the_reads`) looks
+/// unit's first guard of `selectors.rs`, removed for this one, looked
 /// for the strings `tree()`, `tree_mut()`, `charge(` and `charge_steps(`, the form the reading
 /// slice's review showed to pass `DomCx::tree(cx)`, `cx.tree ()`, an alias of `charge` and
 /// `cx.engine()`; that review's guard (`adversary_dom_reading_5`) reads `reading.rs` and
 /// `mod.rs` only. With `let _ = DomCx::tree(cx).root();` in `selectors.rs` every case of
-/// `dom_selectors` stays green. This guard reads the code of `selectors.rs` for the words
+/// `dom_selectors` stayed green. This guard reads the code of `selectors.rs` for the words
 /// `tree`, `Tree`, `engine` and `charge`.
 #[test]
 fn the_selectors_name_no_tree_no_engine_and_no_charge() {

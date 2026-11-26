@@ -809,7 +809,11 @@ var unsupported = [
   // pseudo-elements, never pseudo-classes, in any case of their names.
   ["a:before", "pseudo-element"], ["a:after", "pseudo-element"],
   ["a:first-line", "pseudo-element"], ["a:First-Letter", "pseudo-element"],
-  ["a:before:hover", "pseudo-element"], ["a:hover:before", "pseudo-class"]
+  ["a:before:hover", "pseudo-element"], ["a:hover:before", "pseudo-class"],
+  // CSS Syntax 5.5.9 and 5.5.10: the argument is read by blocks, a closer of another kind
+  // closes nothing, and the end of the text closes every block still open.
+  ["a:is([", "pseudo-class"], ["a:is({)", "pseudo-class"], ["a:is((])", "pseudo-class"],
+  ["a:is([)]) > b", "pseudo-class"], ["a:is({[}])", "pseudo-class"]
 ];
 for (var i = 0; i < unsupported.length; i++) {
   var text = unsupported[i][0];
@@ -819,7 +823,7 @@ for (var i = 0; i < unsupported.length; i++) {
 var invalid = ["", "a[", "a:", "a,", "a >", "> a", "a:hover[", "a b)", "[a=", "[a=\"x\ny\"]",
   "ns|a", "[ns|a]", "a || b", "#123", ".1", "a/**/b", "[a=1]", "a ( b", "[a~b]", "a::", ",a",
   "a,,b", "[]", "[=b]", "[a=b c]", "a{", "a}", "[a=b]]", "*a", ".a div.", "a::before.b",
-  "a:before.b", "a:after[x]", "a:first-letter#i"];
+  "a:before.b", "a:after[x]", "a:first-letter#i", "a:is(]))", "a:is([])]"];
 for (var i = 0; i < invalid.length; i++) {
   var got = err(function () { document.querySelector(invalid[i]); });
   check(got === INVALID, JSON.stringify(invalid[i]) + ": " + got);
@@ -975,6 +979,93 @@ check(no(rep("\\61 ,", 512) + "\\61") === UNSUPPORTED + "more than 512 simple se
 check(no(rep("\\61 ,", 512) + "\\61[") === UNSUPPORTED + "more than 512 simple selectors", "513[");
 check(no("a[") === INVALID, "a[ alone");
 "##,
+        );
+    });
+}
+
+/// CSS Syntax Level 3 (the Editor's Draft of 20 October 2026), 4.2, "non-ASCII ident code
+/// point", typed from the text: each range inclusive, a single code point as a range of one.
+const NON_ASCII_IDENT: [(u32, u32); 15] = [
+    (0x00B7, 0x00B7),
+    (0x00C0, 0x00D6),
+    (0x00D8, 0x00F6),
+    (0x00F8, 0x037D),
+    (0x037F, 0x1FFF),
+    (0x200C, 0x200C),
+    (0x200D, 0x200D),
+    (0x203F, 0x203F),
+    (0x2040, 0x2040),
+    (0x2070, 0x218F),
+    (0x2C00, 0x2FEF),
+    (0x3001, 0xD7FF),
+    (0xF900, 0xFDCF),
+    (0xFDF0, 0xFFFD),
+    (0x10000, 0x10FFFF),
+];
+
+/// `c` as a JavaScript string literal of UTF-16 escapes.
+fn js_string(c: u32) -> String {
+    let c = char::from_u32(c).expect("a scalar value");
+    let mut units = [0u16; 2];
+    let escaped: String = c
+        .encode_utf16(&mut units)
+        .iter()
+        .map(|unit| format!("\\u{unit:04X}"))
+        .collect();
+    format!("\"{escaped}\"")
+}
+
+/// The edges of the name code points (CSS Syntax 4.2): for each range of [`NON_ASCII_IDENT`],
+/// the code point below it, its first, its last and the one above it. One inside the list
+/// continues a name (`a` and it, a type selector) and starts one (it and `a`, and a class
+/// after `.`); one outside is a delim, so each of those texts is not valid. A surrogate is
+/// left out: a script passes a lone one, which the glue copies as U+FFFD, inside the list. An
+/// escaped code point is a name code point whatever it is (4.3.12): `a\a0 b` and `.\2028`
+/// run.
+#[test]
+fn the_edges_of_the_name_code_points() {
+    let inside = |c: u32| {
+        NON_ASCII_IDENT
+            .iter()
+            .any(|&(lo, hi)| (lo..=hi).contains(&c))
+    };
+    let mut edges = Vec::new();
+    for (lo, hi) in NON_ASCII_IDENT {
+        for c in [lo - 1, lo, hi, hi + 1] {
+            if c <= 0x10FFFF && !(0xD800..=0xDFFF).contains(&c) {
+                edges.push(c);
+            }
+        }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    assert_eq!(edges.len(), 46);
+    let list: Vec<String> = edges
+        .iter()
+        .map(|&c| format!("[{}, {}, \"U+{c:04X}\"]", js_string(c), inside(c)))
+        .collect();
+    with_page(PAGE, |runner| {
+        checked(
+            runner,
+            &format!(
+                r##"
+var edges = [{}];
+var wrong = [];
+for (var i = 0; i < edges.length; i++) {{
+  var c = edges[i][0];
+  var want = edges[i][1] ? "no throw" : INVALID;
+  var texts = ["a" + c, c + "a", "." + c];
+  for (var j = 0; j < texts.length; j++) {{
+    var got = err(function () {{ document.querySelector(texts[j]); }});
+    if (got !== want) {{ wrong.push(edges[i][2] + " in " + j + ": " + got); }}
+  }}
+}}
+check(wrong.length === 0, wrong.join("; "));
+check(err(function () {{ document.querySelector("a\\a0 b"); }}) === "no throw", "an escaped U+00A0");
+check(err(function () {{ document.querySelector(".\\2028"); }}) === "no throw", "an escaped U+2028");
+"##,
+                list.join(",\n  ")
+            ),
         );
     });
 }
@@ -1151,14 +1242,13 @@ fn the_table_of_values_compared_without_case() {
     assert_eq!(table, CASE_INSENSITIVE);
 }
 
-/// The members read the tree, and charge, only through `selector_reads.rs`, which writes nothing,
-/// charges through the reads' `charge`, and reads a child list only inside `Frames::next`.
+/// `selector_reads.rs` writes nothing, charges through the reads' `charge`, and reads a child
+/// list only inside `Frames::next`. That `selectors.rs` names no tree, engine or charge is
+/// `adversary_dom_selectors::the_selectors_name_no_tree_no_engine_and_no_charge`, and that
+/// this file copies no list of the tree is
+/// `adversary_dom_selectors::the_selector_reads_copy_no_list_of_the_tree`.
 #[test]
-fn the_selectors_read_the_tree_only_through_the_reads() {
-    let selectors = include_str!("../src/dom/selectors.rs");
-    for call in ["tree()", "tree_mut()", "charge(", "charge_steps("] {
-        assert!(!selectors.contains(call), "selectors.rs holds `{call}`");
-    }
+fn the_selector_reads_write_nothing_and_walk_in_frames() {
     let reads = include_str!("../src/dom/selector_reads.rs");
     for call in ["tree_mut()", "charge_steps("] {
         assert!(!reads.contains(call), "selector_reads.rs holds `{call}`");
@@ -1665,6 +1755,35 @@ check(G.many.length === 3997 && G.one.length === 3997, "the second pair");
                 )];
                 report("15e", &calls);
                 under(&calls[0], 410_600);
+            },
+        );
+    }
+
+    /// The exact steps of one small call, each charge written out. `G.e.hasChildNodes();` takes
+    /// 13: the glue's step and 12 of the script's own. `G.e.matches(G.b)`, `b` against a `b`
+    /// element, takes 17 = 12 of the statement and 1 for the read of `G.b` (the script's 13),
+    /// the glue's step 1 and its copy of one code unit 0 (2 / 16), the parse's text 1 (1 + 1 /
+    /// 16), one token 1, the name's bytes 0 (1 / 16), the gate 1 and the type's bytes 0. With a
+    /// name of 16 bytes it is 22: the copy 2, the text 2, the name 1 at the parse and 1 at the
+    /// type test. A text charged without its step for the call is one step short.
+    #[test]
+    fn one_small_call_to_the_step() {
+        with_tree(
+            limits(),
+            || parsed("<b></b>"),
+            |runner| {
+                checked(
+                    runner,
+                    "G.e = document.getElementsByTagName(\"b\")[0]; G.b = \"b\"; G.b16 = rep(\"b\", 16);",
+                );
+                let calls = [
+                    call(runner, "hasChildNodes", "G.e.hasChildNodes();", 13),
+                    call(runner, "matches of b", "G.e.matches(G.b);", 17),
+                    call(runner, "matches of 16 b", "G.e.matches(G.b16);", 22),
+                ];
+                report("one small call", &calls);
+                let steps: Vec<u64> = calls.iter().map(|call| call.steps).collect();
+                assert_eq!(steps, [13, 17, 22]);
             },
         );
     }
