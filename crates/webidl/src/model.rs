@@ -331,6 +331,22 @@ pub struct Unresolved {
     pub line: usize,
 }
 
+thread_local! {
+    /// The definitions this thread looked up by their index in a [`Model`].
+    static DEFINITION_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The number of definitions the models of this thread have looked up by their index so far:
+/// each definition fetched through the one accessor of [`Model`] counts once (a lookup of a
+/// name through the maps, the members of an interface, the parent of an inheritance, a
+/// refusal's earlier definition). The loops that walk every definition once are not counted.
+/// For tests that bound the work of [`Model::new`] by a count that does not depend on the
+/// machine.
+#[doc(hidden)]
+pub fn definition_visits() -> usize {
+    DEFINITION_VISITS.with(std::cell::Cell::get)
+}
+
 /// The definitions of one or more IDL texts, read together.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Model {
@@ -398,7 +414,7 @@ impl Model {
                 continue;
             }
             if let Some(&first) = self.defined.get(&definition.name) {
-                let earlier = &self.definitions[first];
+                let earlier = self.definition_at(first);
                 return Err(ReadError::new(
                     &definition.file,
                     definition.line,
@@ -413,11 +429,18 @@ impl Model {
         Ok(())
     }
 
+    /// The definition at `index`, counted in [`definition_visits`]: every lookup of a
+    /// definition by its index goes through here.
+    fn definition_at(&self, index: usize) -> &Definition {
+        DEFINITION_VISITS.with(|visits| visits.set(visits.get().saturating_add(1)));
+        &self.definitions[index]
+    }
+
     /// The definition that defines `name`, if one does.
     fn definition_of(&self, name: &str) -> Option<&Definition> {
         self.defined
             .get(name)
-            .map(|&index| &self.definitions[index])
+            .map(|&index| self.definition_at(index))
     }
 
     /// Refuses a `partial interface D` where `D` is defined as something other than an
@@ -500,7 +523,7 @@ impl Model {
         for (index, child) in self.definitions.iter().enumerate() {
             let Some(parent) = self
                 .parent_of(index)
-                .map(|parent| &self.definitions[parent])
+                .map(|parent| self.definition_at(parent))
             else {
                 continue;
             };
@@ -567,13 +590,13 @@ impl Model {
             .expect("a cycle has a definition");
         let mut names = Vec::new();
         for step in 0..cycle.len() {
-            let definition = &self.definitions[cycle[(first + step) % cycle.len()]];
+            let definition = self.definition_at(cycle[(first + step) % cycle.len()]);
             names.push(format!(
                 "`{}` at {}:{}",
                 definition.name, definition.file, definition.line
             ));
         }
-        let head = &self.definitions[cycle[first]];
+        let head = self.definition_at(cycle[first]);
         ReadError::new(
             &head.file,
             head.line,
@@ -676,7 +699,7 @@ impl Model {
             .get(name)
             .into_iter()
             .flatten()
-            .map(|&index| &self.definitions[index])
+            .map(|&index| self.definition_at(index))
     }
 
     fn mixin_members(&self, mixin: &str) -> Vec<(&str, &Member)> {

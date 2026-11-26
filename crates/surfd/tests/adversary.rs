@@ -24,13 +24,16 @@ use surfd::{Daemon, State};
 const SETPRIV: &str = "/usr/bin/setpriv";
 const PRLIMIT: &str = "/usr/bin/prlimit";
 
-/// The arguments of `prlimit` for a session with scripts, as the story ships them.
-const SCRIPT_BOUNDS: [&str; 4] = [
-    "--as=4294967296:4294967296",
-    "--cpu=3600:3601",
-    "--nofile=64:64",
-    "--core=0:0",
-];
+/// The arguments of `prlimit` for a session with scripts, as the story ships them, with the core
+/// argument of [`expected_core`].
+fn script_bounds() -> [String; 4] {
+    [
+        "--as=4294967296:4294967296".to_string(),
+        "--cpu=3600:3601".to_string(),
+        "--nofile=64:64".to_string(),
+        expected_core().1.to_string(),
+    ]
+}
 
 /// An executable POSIX sh script `name` in the case's directory, `body` after its first line.
 fn script(dir: &TestDir, name: &str, body: &str) -> PathBuf {
@@ -278,7 +281,7 @@ fn the_wrappers_get_fixed_arguments_and_session_env_only() {
         session.id.clone(),
         socket.display().to_string(),
     ];
-    let mut prlimit_args: Vec<String> = SCRIPT_BOUNDS.iter().map(|s| s.to_string()).collect();
+    let mut prlimit_args: Vec<String> = script_bounds().to_vec();
     prlimit_args.extend(tail.iter().cloned());
     let mut setpriv_args = vec!["--no-new-privs".to_string(), prlimit.display().to_string()];
     setpriv_args.extend(prlimit_args.iter().cloned());
@@ -315,7 +318,7 @@ fn an_arg_scripts_other_than_true_takes_the_form_without_scripts() {
     for name in ["Max cpu time", "Max address space", "Max open files"] {
         assert_eq!(limit(pid, name), limit(own, name), "{name}");
     }
-    assert_eq!(limit(pid, "Max core file size"), ("0".to_string(), "0".to_string()));
+    assert_eq!(limit(pid, "Max core file size"), expected_core().0);
     assert_eq!(no_new_privs(pid), "1");
 }
 

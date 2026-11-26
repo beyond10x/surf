@@ -223,22 +223,47 @@ fn garbage_past_the_budget() {
     assert_eq!(end, ScriptEnd::Limit(Reason::Memory), "{end}");
 }
 
+/// The steps each script of the next test may charge, `MAKE`, `READ` and `READ` again: 1.5
+/// times the steps of its first green run
+/// (4,415,946, 2,334,536 and 2,334,536). The steps do not depend on the machine; the margin is
+/// for a change of the engine.
+const STEPS_CEILINGS: [u64; 3] = [6_623_919, 3_501_804, 3_501_804];
+
 /// Held. Swell's host interface @ 0.8.0, section 4: a handle listed in the `trace` of host data
 /// the engine reaches is strong. 64 exceptions of Strings no other value holds, collections
 /// forced by garbage in the making script, two `Agent::collect` between the scripts and more
-/// garbage in the reading one: every code unit read back, a lone surrogate too.
+/// garbage in the reading one: every code unit read back, a lone surrogate too. The cost of the
+/// three scripts is bounded by the steps each charges (`Runner::steps` around it, at most
+/// [`STEPS_CEILINGS`]); the collections charge no step and are not bounded here.
 #[test]
 fn strings_only_exceptions_hold_survive_collections_inside_and_between_scripts() {
     let started = Instant::now();
-    with(limits(BUDGET, 1 << 20), |runner| {
-        ran(runner, MAKE);
-        collect(runner);
-        ran(runner, READ);
-        collect(runner);
-        ran(runner, READ);
+    let steps = with(limits(BUDGET, 1 << 20), |runner| {
+        let mut steps = [0; 3];
+        for (script, source) in [MAKE, READ, READ].into_iter().enumerate() {
+            if script > 0 {
+                collect(runner);
+            }
+            let before = runner.steps();
+            ran(runner, source);
+            steps[script] = runner.steps() - before;
+        }
+        steps
     });
-    let seconds = started.elapsed().as_secs_f64();
-    assert!(seconds < 20.0, "{seconds} s");
+    println!(
+        "steps {steps:?}, ceilings {STEPS_CEILINGS:?}, {:?}",
+        started.elapsed()
+    );
+    for ((script, steps), ceiling) in ["MAKE", "READ", "READ again"]
+        .into_iter()
+        .zip(steps)
+        .zip(STEPS_CEILINGS)
+    {
+        assert!(
+            steps <= ceiling,
+            "{script} charged {steps} steps, over its ceiling of {ceiling}"
+        );
+    }
 }
 
 /// Held. The `DOMException` constructor converts its message and then its name, and either
@@ -397,8 +422,7 @@ fn the_code_getter_in_a_loop_copies_at_most_a_legacy_name_and_ends_at_the_step_l
     for end in ends {
         assert_eq!(end, ScriptEnd::Limit(Reason::StepsPerScript), "{end}");
     }
-    let seconds = started.elapsed().as_secs_f64();
-    assert!(seconds < 20.0, "{seconds} s");
+    println!("three loops to the step limit: {:?}", started.elapsed());
 }
 
 /// Red (should). `docs/design/scripts.md:332-337` holds as written (no script runs while the

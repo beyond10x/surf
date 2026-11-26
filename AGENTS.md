@@ -161,6 +161,8 @@ above, and the list of standards itself was written from memory.
   `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
   `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`; `taskfiles/doc-tests.yml` the tasks
   `doc-tests-check` and `doc-tests-check-test` over `taskfiles/doc-tests-check.sh`;
+  `taskfiles/test-clocks.yml` the tasks `test-clocks-check` and `test-clocks-check-test`
+  over `taskfiles/test-clocks-check.sh` and the ledger `taskfiles/test-clocks-ledger.txt`;
   `taskfiles/tls-anchors.yml` the tasks `anchors-refresh` (fetches curl's `cacert.pem` and
   its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
   differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
@@ -649,9 +651,10 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 89 tests (4 unit tests of `src/view.rs`,
-    `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link` 3, `built` 14,
-    `hardening` 17, `in_process` 14, `log` 6, `view` 10) run a stand-in session
+    from the directory of its own executable. Its 98 tests (4 unit tests of `src/view.rs`, 2 of
+    `src/daemon.rs`, `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_core`
+    4, `adversary_link` 3, `built` 14, `first_line` 1, `hardening` 19, `in_process` 14, `log` 6,
+    `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -873,9 +876,11 @@ above, and the list of standards itself was written from memory.
     task's error), then the `raise:` lines; `task agent-tasks-report` prints it.
     `tasks::a_call_that_never_answers_ends_at_its_bound` starts no TLS server and writes `task
     https skipped`; the model lane (`taskfiles/agent-tasks-model.sh`) writes `task https
-    skipped: server https`. 48 tests (`adversary` 4, `adversary2` 10, `archive_task` 1,
-    `bounded` 4, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
-    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). Depends on `surf-answer` and
+    skipped: server https`. 52 tests (`adversary` 4, `adversary2` 13, `archive_task` 1,
+    `bounded` 5, `calls` 1, `check` 1, `check_rule` 7, `fixtures` 1, `format` 3, `https_row` 2,
+    `judge` 2, `model_driver` 6, `status` 4, `tasks` 2). The tests of the model driver
+    (`adversary2`, `bounded`) decide that a model's processes ended by a wait, `ended_within`
+    with `END_BOUND`, never by one read. Depends on `surf-answer` and
     `surf-test-process`; its tests also
     on `surf-tls`, `surf-tls-test-server` and `surf-tls-test-certs`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
@@ -1064,7 +1069,7 @@ above, and the list of standards itself was written from memory.
     `adversary_same_object_3` 1, `depth` 4, `extraction` 6, `reader` 36, `refusals` 26,
     `same_object` 2, `selection` 14, `source` 2, `vendored` 1; the model of both pages is built
     once per run, in `vendored`;
-    `depth` also holds a model of 16,000 interfaces under 2 s).
+    `depth` also holds that the definitions a model visits double when its interfaces double).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
     at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
@@ -1631,6 +1636,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   Since
   `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
   `build`, and runs `doc-tests-check-test` after `sh-echo-test`.
+  Since `story:tests-without-wall-time-bounds` it runs `test-clocks-check` after
+  `doc-tests-check` and `test-clocks-check-test` after `doc-tests-check-test`.
   Since `story:release-linux-static-check` it runs `release-static-test` after
   `test-layout-test`, before `sh-echo-test`. Since
   `story:page-test-step-within-budget` it ends with `step-budgets` (`taskfiles/step-budgets.sh`),
@@ -1866,6 +1873,31 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
+- `task test-clocks-check`: `sh taskfiles/test-clocks-check.sh .`. A test proves a cost by
+  a count and bounds a time only by a wait with a limit (`task test`), so this reads the
+  tracked `*.rs` files under a `tests/` directory of `crates/`, `generated/` and
+  `conformance/` (`git ls-files`: an untracked file is not read), blanks comments, strings
+  and character literals, and fails, naming `<file>:<line>`, on an `assert!` that holds an
+  upper bound on an elapsed value (`.elapsed()`, `.duration_since(..)` and its `saturating_`
+  and `checked_` forms, or a name bound from one by `let`, `if let`, a `for` pattern, `=`,
+  `+=` or a `match` arm, in the forms the header of the script lists), on a clock read (`Instant::now() < deadline`) or a lower bound on the time left
+  (`deadline.saturating_duration_since(Instant::now()) > Duration::ZERO`), and on an `if`,
+  `while`, `else` or match guard on such a value whose block fails the test. The header of the
+  script lists the forms it reads and the ones it does not see. The ledger
+  `taskfiles/test-clocks-ledger.txt` (`<path> <count>`, one file per line, sorted by path)
+  lists the files that still hold such statements: a line out of order fails, a file with
+  more fails, a file with fewer fails and names the count to write, so the ledger only
+  shrinks. A line for a file the check did not read
+  (untracked, renamed, deleted or outside those directories) fails and says to delete the
+  line. `AWK=<command>` names the awk (POSIX awk only), `--ledger <file>` and `--count` are
+  options, a root that is not the top of a git work tree exits 2. Else it prints
+  `test-clocks-check: no elapsed-time bound outside taskfiles/test-clocks-ledger.txt`. It
+  calls no cargo.
+- `task test-clocks-check-test`: that script on small trees under
+  `.out/test-clocks-check-test/`, one case per name (refused, passed, exit 2, ledger), each
+  compared on its exit status and the lines printed, under each of `awk`, `mawk`, `gawk`,
+  `gawk --posix` and `busybox awk` that exists on the machine. `SCRIPT=<path>` runs a copy
+  of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`), from a checkout of the commit
   built: step 2 reads `crates/tls/src/anchors/SOURCE`.
@@ -1997,7 +2029,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   ignored), and `test step: <s> s of its budget of 120 s`. Raising either bound is not a fix: a
   test over the budget is. A test bounds a time only by a wait for the event with a limit at
   least 10 times the time it takes alone, and proves a cost by a count (such as
-  `surf_page::attribute_visits()`), not by a wall time.
+  `surf_page::attribute_visits()`), not by a wall time. `task test-clocks-check` (a step of
+  `check`) refuses the assertion of an upper bound on an elapsed time, in the forms the header
+  of `taskfiles/test-clocks-check.sh` lists as refused, that its ledger does not list; the
+  same header names the forms it does not see.
 - `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
   ones `task test` leaves out, under the same `.config/nextest.toml` and environment
   (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. Of the other packages

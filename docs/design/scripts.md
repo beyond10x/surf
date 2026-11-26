@@ -880,6 +880,16 @@ system stopped: unmet obligation: context answer `surf.net.RequestId` ...`` with
 stack that overflows ends in `SIGABRT` (Q5). Core files: the workstation's core handler stored
 the cores of two early probe runs made without `--core=0:0` and none of the nine later runs made
 with it (`coredumpctl list`: `COREFILE present`, then `none`).
+A limit of 0 does not stop a dump to a pipe handler: on a host with a pipe pattern a shell ended
+by `SIGABRT`, `SIGXCPU` or `SIGSEGV` under `--core=0:0` showed `(core dumped)` and was waitable
+after 113 to 220 ms, and under `--core=1:1` showed none and was waitable after 3 to 10 ms, so
+`surfd` starts a session with `--core=1:1` where its hard limit allows.
+Under a limit of 1 the kernel does not start a pipe handler for such an end: on one host with a
+pipe pattern the host's crash list (`coredumpctl list` under systemd) held 15 of 15 shells ended
+by these three signals under `--core=0:0` and 0 of 15 under `--core=1:1`, and the kernel's log
+held one line `RLIMIT_CORE is set to 1, aborting core` for each of the first 10 of the latter
+and none for the last 5. What the kernel does under a file pattern or a socket pattern is not
+shown.
 
 What a session holds over its life, the terms of the address-space bound:
 
@@ -965,17 +975,23 @@ SIGXCPU bound cpu`.
 | address space (`--as`) | with scripts only | the terms above; no finite sum until `story:session-memory-bound` and requirement 11 are closed | 4,294,967,296 (4 GiB), chosen as a backstop for the stories before `story:scripts-document-port`; reached after the use given above; that story ships with 2,147,483,648 (2 GiB), the sum above | `SIGABRT` (the probe's `as 268435456, alloc: exit 134 signal ABRT`) | `story:scripts-document-port` |
 | CPU seconds (`--cpu`) | with scripts only | the CPU time of a session's whole life, behind `surfd`'s 660 s per command and Q4's 5 s per document | 3,600 soft, 3,601 hard, chosen: 720 documents at Q4's wall clock | `SIGXCPU` at the soft value (`cpu soft 1 hard 2, spin: exit 152 signal XCPU`) | `story:scripts-document-port` |
 | open files (`--nofile`) | with scripts only | eight times the descriptors the session held after each page; not for sessions without scripts, because no measure covers every test and agent task (at 10 the second page failed though 8 were open after the first) | 64, chosen (the probe: 8 after each page; four pages loaded at 64) | no end: a load answers `page failed Unreachable`; at 8, the descriptors the session holds between requests, `go` answers `the session's system stopped` with exit status 3; at 7 `open` fails | `story:scripts-document-port` |
-| core size (`--core`) | every session | no core file: a core of a session holds its token and pages | 0 | no end; the workstation's core handler stored no core (`COREFILE none`) | `story:session-process-hardening` (a test reads it) |
+| core size (`--core`) | every session | no core file: a core of a session holds its token and pages; a limit of 1 lets a session that ends by a signal be seen without the wait for the host's core handler | 1 (0 where `surfd`'s own hard limit is 0) | no end; at 0 the workstation's core handler listed each end by a signal that dumps core and stored no core (`COREFILE none`); at 1 the kernel does not start a pipe handler, so the handler records nothing (0 of 15 such ends listed) | `story:session-process-hardening` (a test reads it) |
 | no new privileges (`setpriv --no-new-privs`) | every session | it cannot end a session that works today | `NoNewPrivs: 1` | no end | `story:session-process-hardening` (a test reads it) |
 | processes (`RLIMIT_NPROC`) | none | not set: it counts every process of the user, not the session's own, and a value below the user's count would stop the session from starting a thread; `ulimit -u` was `unlimited` on the build node | not set | not set | `story:scripts-document-port`, if a later review asks for one |
 
 The start, in `Config` with these shipped values (a test can name others), in two forms:
 
-- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=0:0 --
+- a session without scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit --core=1:1 --
   <session program> <identity> <socket>`;
 - a session with scripts: `/usr/bin/setpriv --no-new-privs /usr/bin/prlimit
-  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=0:0 -- <session program>
+  --as=4294967296:4294967296 --cpu=3600:3601 --nofile=64:64 --core=1:1 -- <session program>
   <identity> <socket>`.
+
+Where `surfd`'s own hard core limit is 0 the item is `--core=0:0`, because `prlimit` cannot raise
+a hard limit, and also where `/proc/self/limits` cannot be read or has no line `surfd` can read;
+the session keeps a limit of 0 and, with a pipe pattern, the wait. A process of the
+session can lower its soft limit to 0 and then dumps through a pipe handler again; it cannot raise
+the limit above 1.
 
 Which sessions: the decision on S5 binds a session with scripts, and only such a session gets the
 address-space, CPU and open-files bounds. A session without scripts gets what cannot end a session

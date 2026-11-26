@@ -14,7 +14,7 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,555 tests** (2,003, and 552 of the TLS crates in a step of their own): 2,552 pass, and 3
+- **2,559 tests** (2,007, and 552 of the TLS crates in a step of their own): 2,556 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
@@ -23,7 +23,14 @@ New with the hardened start of a session process, shipped in release `0.9.0`:
 - **A session starts with nothing of `surfd`'s.** `surfd` gives each session process an empty
   environment. Where `/usr/bin/setpriv` and `/usr/bin/prlimit` (util-linux) exist, it starts
   the session through them, with no new privileges and no core file; without them it starts
-  the session directly.
+  the session directly, and the session keeps `surfd`'s own core limit. Through them, its core
+  file size limit is 1 byte, so a session that ends by a signal is seen without the wait for
+  the host's core handler. On a Linux host whose core pattern is a pipe, the kernel then does
+  not start the handler when such a session ends by a signal that dumps core: the host's crash
+  list (`coredumpctl` under systemd) has no entry for it, and the kernel writes at most one log
+  line for it, `RLIMIT_CORE is set to 1, aborting core` (shown on one host). Where `surfd`'s own hard core
+  limit is 0, or `/proc/self/limits` cannot be read or has no line `surfd` can read, a session
+  started through them keeps a limit of 0, and the wait stays.
 - **A session that died says how.** When a session process ends by a signal `surfd` did not
   send, its answers end with `note ended: signal <name>`, such as `note ended: signal SIGKILL`,
   and the live view shows the signal beside `died`.
