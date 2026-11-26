@@ -50,7 +50,7 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 51
+revision: 52
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -149,7 +149,7 @@ and line. The facts the rest rests on:
   twice the length, and over 4, `shrink_to_fit`), called by `detach` (`:893`) for a child list
   and by `drop_attribute` (`:1532`) for an attribute list. A bulk removal takes the list:
   `remove_children` (`:539-545`) does `mem::take` and leaves capacity 0, and `set_text_content`
-  calls it (`:1458`). A text value never keeps spare room after a write that shortens it:
+  calls it (`:1457`). A text value never keeps spare room after a write that shortens it:
   `split_text` makes the head with `to_string` (`:1372`) and replaces the node's data with it,
   so the old string is freed and the head's capacity is its length; `replace_data` builds the
   new data with `String::with_capacity` of its exact size (`:1401-1404`) and replaces the old.
@@ -218,11 +218,15 @@ document's tree.
    (`ATTRIBUTES_A_STEP`, `reads.rs:252`), and a step per attribute record that a clone copies. 8
    steps per collection node in the glue (`COLLECTION_NODE_STEPS`, `bindings.rs:1251`). Ids of a
    child list: 2 ids of the 8-byte `NodeId` a step, `ids(n) = ceil(n / 2)`. `b16` and `ids` are
-   written once, in `mutation_writes.rs`, and a unit test there asserts `b16(16) = 1`,
-   `b16(17) = 2`, `ids(2) = 1`, `ids(3) = 2` and `size_of::<NodeId>() == 8`. They are private:
-   the cost module is an integration test and cannot name them, so it imports
-   `surf_script::bindings::STRING_BYTES_A_STEP` (`pub`) and derives its own 16 and 2 from it and
-   from `size_of::<NodeId>()`. Three list passes, each priced in `ids`:
+   written once, in `mutation_writes.rs`. They are private, and no unit test holds them:
+   `surf-script` has `[lib] test = false` (`Cargo.toml:10-11`) and `taskfiles/test-layout.yml:
+   19-20` fails on a `#[test]` in its source files. Two pairs of cost rows (acceptance 18) hold
+   their ceilings: `b16(16) = 1` and `b16(17) = 2` by `create text, ceiling` (a text of 17
+   units against 16), `ids(2) = 1` and `ids(3) = 2` by `insert, ceiling of ids` (3 children
+   against 2); each row is red if `ceil` became `floor`. The cost module is an integration
+   test and cannot name the functions, so it imports `surf_script::bindings::STRING_BYTES_A_STEP`
+   (`pub`) and derives its own 16 and 2 from it and from `size_of::<NodeId>()`. Three list
+   passes, each priced in `ids`:
    - `front(i) = ids(i + 1)`: the scan from the front to index `i` (`index_in_parent`,
      `tree.rs:871`);
    - `back(k) = ids(k)`: the scan from the back over `k` entries (the `rposition` of `remove`,
@@ -882,9 +886,10 @@ List terms of one node put into a child list, used by every insert, move and rep
   - `replaceChildren` (5194): the convert, then `2d + s` for the validity check before any
     removal (the new public check of the Change, `check_insertion`, which runs the ancestor
     test, the `Document` checks and the depth check, and charges `5 c_p` once for a `Document`
-    parent; it leaves the receiver's own children out of the `Document` tests, as the
-    standard's `childrenToExclude` does, `dom.html:4064`, `:5194-5207`, so that
-    `document.replaceChildren(element)` with `html` in place is accepted), then `2 c_p` for the
+    parent; it passes `Exclude::AllChildren`, which leaves the receiver's own children out of
+    the `Document` tests, as the standard's `childrenToExclude` does, `dom.html:4064`,
+    `:5194-5207`, so that `document.replaceChildren(element)` with `html` in place is accepted;
+    the test of a child is constant, so the 5 passes stay 5), then `2 c_p` for the
     removal (the any-element scan and `remove_all`, a step each
     child each pass; no share), then the insert, which sees `c_p = 0` and charges no `5 c_p`.
     A refused check leaves the children (`dom.html:4760-4795`). An item that is a child of the
@@ -934,7 +939,9 @@ List terms of one node put into a child list, used by every insert, move and rep
     Arithmetic, which no row asserts as an end because the engine's own steps move it: 3,161
     removals cost 3,161^2 + 4 x 3,161 = 10,004,565 and 3,160 cost 9,998,240, about the
     10,000,000 of the default limit, and the first 1,127 removals from a list of 5,000 cost
-    `r (2 n - r + 4)` = 10,004,379. The rows hold the price by the form of acceptance 16: the
+    `r (2 n - r + 4)` = 10,004,379 (the rows of acceptance 18 end at the lowered limit of
+    6,795,324: 2,605 removals cost 6,796,445, the first 733 of 5,000 cost 6,795,643). The rows
+    hold the price by the form of acceptance 16: the
     steps of the loop without the removals, `steps_without`, and the difference `D` the row
     measured; a limit of `steps_without + D - 1` ends the script and `steps_without + D` lets
     it finish. The same loop from the back costs 5 steps a turn, 10,000 for 2,000. That is the
@@ -1148,16 +1155,21 @@ steps, `:4502-4545`, `replaceChildren`, `:5194-5207 @ a14e3b0`), in three classe
   subtree is made inside the fragment first, then moved to its end). The script builds the
   chain of 512 `div` elements detached and puts it under the fragment, and ends `Ran`.
 - A `Document` receiver that takes an element only when it has none: `append`, `prepend`,
-  `appendChild`, `insertBefore` and the `DocumentType` rows `after` and `replaceWith` (the page
-  starts with a doctype, whose parent is the `Document`). The tree refuses an element there
-  while `html` is the document element (`has_element`, `tree.rs:935`; the standard's step at
-  `dom.html:4138`). The script first removes the document element
+  `appendChild`, `insertBefore` and the `DocumentType` rows `after` and `replaceWith`. The tree
+  refuses an element there while `html` is the document element (`has_element`, `tree.rs:935`;
+  the standard's step at `dom.html:4138`). The script first removes the document element
   (`document.removeChild(document.documentElement)`), builds the chain of 512 by script, and
-  then the call runs and the script ends `Ran`. `replaceChild` and `replaceChildren` of the
+  then the call runs and the script ends `Ran`. `prepend` and `insertBefore` (with the first
+  child as the reference) run on a page with no doctype: on a page that starts with a doctype
+  the element would go before it, and the tree refuses that even after `html` is removed
+  (`child_is_doctype`, `tree.rs:926`; `dom.html:4148`). The `DocumentType` rows `after` and
+  `replaceWith` use a page that starts with a doctype, whose parent is the `Document`; `append`
+  and `appendChild` run on either page. `replaceChild` and `replaceChildren` of the
   `Document` need no removal: they replace `html` with the chain (the standard leaves the
   replaced child, and for `replaceChildren` all the receiver's children, out of the test,
-  `dom.html:4139`, `:5194-5207`, and the `check_insertion` of the Change does the same). The
-  script ends the page, so the parser has nothing left to put into the removed `html`.
+  `dom.html:4139`, `:5194-5207`; the tree's check does the same with `Exclude::One(html)` for
+  `replaceChild` and `Exclude::AllChildren` for `replaceChildren`, the Change). The script ends
+  the page, so the parser has nothing left to put into the removed `html`.
 - A call the standard refuses whatever the depth: `Document.moveBefore` of an element (the
   element shares the document's root, so the document already has an element child, `html`:
   `dom.html:4537-4538`, `document_allows`, `tree.rs:935`) and `DocumentType.before` (the receiver
@@ -1259,22 +1271,30 @@ of the `title` walk is the tree's passes, charged up front: a price and not a de
   files below. No tree access, no charge (decision 1).
 - `crates/script/src/dom/mutation_reads.rs`: the walk structs and `step`, the length reads, the
   viable-sibling scan, the `title` search call. `crates/script/src/dom/mutation_writes.rs`: the
-  writes, the charges of decision 3 in the order of the tables, `b16` and `ids` with their unit
-  test, `charged_nodes` and `charged_write` (decision 5), the error map and the `record_inserted`
-  calls.
+  writes, the charges of decision 3 in the order of the tables, `b16` and `ids` (no unit test,
+  decision 2), `charged_nodes` and `charged_write` (decision 5), the error map and the
+  `record_inserted` calls.
 - `crates/script/src/dom/mod.rs`: two `mod` lines. `crates/script/src/dom/reads.rs`: `charge`,
   `find`, `Reads` and `html_element` made `pub(super)`: visibility edits only, held by the diff
   of acceptance 24. The selectors story writes `pub(super) enum Reads<'a>`: `find` takes
   `Reads` as that story spells it, and this story takes `main`'s spelling when it merges second.
 - `crates/html/src/tree.rs`, each addition with its cost:
   - `parent_or_host` becomes `pub`: constant;
-  - `check_insertion(node, parent, child, excluded)`, the public validity-only check: the
+  - `check_insertion(node, parent, child, exclude)`, the public validity-only check: the
     ancestor test, the `Document` checks and the depth check of `insertion_allowed` and
-    `admit_depth` with no write, `2d + s` and `5 c_p` for a `Document`. `excluded` is a slice of
-    the children the `Document` tests leave out (the standard's `childrenToExclude`): the one
-    child for a replace, all of the parent's children for `replaceChildren`; the private
-    `insertion_allowed` and `document_allows` take the same slice in place of their
-    `Option<NodeId>`, and the other callers pass a slice of one or none;
+    `admit_depth` with no write, `2d + s` and `5 c_p` for a `Document`. `exclude` is the new
+    `pub enum Exclude { None, One(NodeId), AllChildren }`: the standard's `childrenToExclude`
+    (`dom.html:4064`), the children the `Document` tests leave out. A child's membership is a
+    constant-time test (`None`: no child; `One(x)`: the child is `x`; `AllChildren`: every
+    child of the parent), so `document_allows` stays 5 passes and no slice is searched. The
+    private `insertion_allowed` and `document_allows` take an `Exclude` in place of their
+    `replaced: Option<NodeId>`. The callers pass `None` in `insert_before` (`tree.rs:1085`),
+    `One(child)` in `replace_child` (`:1117`), `None` in `move_before` (`:1155`), and
+    `AllChildren` for `replaceChildren`, through `check_insertion`. In `document_allows` the
+    test "child is a doctype" becomes "child is a doctype and not excluded" (`dom.html:4148`,
+    `tree.rs:926`), and the doctype test "child is null and the parent has an element"
+    (`tree.rs:939`) loses its `replaced.is_none()` guard, which `has_element` makes redundant
+    by leaving the excluded children out;
   - `check_offset(node, offset, count)`, the one check of an offset and a count in UTF-16
     units against a value (decision 3), called by `split_text`, by `replace_data` and by the
     slice: 1 pass of `L` for count 0, else 3;
@@ -1294,8 +1314,8 @@ of the `title` walk is the tree's passes, charged up front: a price and not a de
   the `IndexSizeError` bound (the tree owns it in `check_offset`; the slice calls that function
   and charges its passes, and a source test holds that it names no surrogate rule), the depth
   (`admit_depth` owns it; the slice only prices the climbs), and `b16` and `ids` (private to the
-  slice with their unit test; the cost module derives its 16 and 2 from `STRING_BYTES_A_STEP`
-  and `size_of::<NodeId>()`, decision 2).
+  slice; two pairs of cost rows hold their ceilings; the cost module derives its 16 and 2
+  from `STRING_BYTES_A_STEP` and `size_of::<NodeId>()`, decision 2).
 - `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs`, regenerating
   `crates/script/src/bindings.rs`: `charge_nodes`, `settle_nodes` (its `Terminated` case of
   decision 5, and one line that names `DomEnd::Fault`: the attributes story counts the lines
@@ -1365,7 +1385,12 @@ says it is a guard. Every command that reads the diff names its base:
      -- crates/script/src/dom/reads.rs | grep -E '^[^:]+=[0-9]+=' | grep -v -e 'fn
      element_children(' -e 'fn shallow_equal(' -e 'fn children('` prints the headers of `find`,
      `text_content`, `is_equal` and `whole_text` at `83e6b8a` and nothing at `14f8a2a` and
-     `50a4239`. It must print nothing at the implementor's base, and nothing else.
+     `50a4239`. It must print nothing at the implementor's base, and nothing else. In the
+     working tree a header line reads `crates/script/src/dom/reads.rs=349=fn find(`. With a
+     commit in the command (`git grep ... 83e6b8a -- ...`) each line begins `83e6b8a:` and the
+     filter `^[^:]+=[0-9]+=` passes none, so the command prints nothing at any commit whatever
+     the file holds; to read it at a commit, use `^[^=]+=[0-9]+=`, which passes both forms. The
+     commit prefix is the only difference.
    - The reads gate (c), positive: `git grep -c -F 'fn preorder(' --
      crates/script/src/dom/reads.rs` prints `crates/script/src/dom/reads.rs:1` at `14f8a2a` and
      `50a4239` and nothing at `83e6b8a`. At the implementor's base it must print that one line:
@@ -1440,16 +1465,27 @@ says it is a guard. Every command that reads the diff names its base:
    `<title>Before</title><script>document.title = "Written by script"</script>` answers a tree
    whose title text is `Written by script`, and its list of ends holds one end, `Ran`. It waits
    for the reads gates of acceptance 1. A second case, `title_on_an_svg_root`: over
-   `<body><svg><!--c--></svg><script>var s = document.body.firstChild;
+   `<body><svg><!--c--></svg><script>var s = document.documentElement.lastChild.firstChild;
    document.replaceChild(s, document.documentElement); document.title = "x"; document.title =
    "y"</script>` the end is `Ran`, the document element is the `svg` element, its first child
    is a `title` in the SVG namespace with the text `y`, and it holds one `title` child, not
-   two.
+   two. The page's tree before the script: `html` holds `head` (implied by `<body>`) and
+   `body`, so `lastChild` of the document element is `body`; `body` holds the `svg` element
+   first and the `script` after it, so `firstChild` of `body` is the `svg` element. The script
+   uses `documentElement`, `lastChild`, `firstChild`, `replaceChild` and `title`, all rows of
+   `selection.txt`, and no `document.body`, which is not a member.
 6. `append_keeps_the_order`: the page
    `<body><div id="a"></div><script>document.getElementById("a").appendChild(
    document.createElement("p"))</script><i>after</i></body>` leaves the tree's `body` children
    in the order `div`, `script`, `i`; the only child of `div` is `p`; the text of `i` is
-   `after`.
+   `after`. A second case, `replace_children_on_a_document_accepted`: over
+   `<body><script>document.replaceChildren(document.createElement("i"))</script>` with `html`
+   in place, the end is `Ran` and the document's one child is the new `i` element (the
+   standard leaves the receiver's children out of the validity test, `dom.html:4064`, `:5205`;
+   the check passes `Exclude::AllChildren`). Red on `main`, where `Document.replaceChildren`
+   is the trait's default method and throws `NotSupportedError` ("Document.replaceChildren is
+   not supported"), so the script does not end `Ran` and `html` stays; once the member exists
+   it is red if the check leaves no child out (`HierarchyRequestError`, `has_element`).
 7. `limit_*` tests, one for each row of the limits table in "What each member charges" (15
    tests): for each member of the family, one parse; the script's end is the limit's word, also
    inside `try { } catch { }`, parsing goes on (in the `limit_nodes_*` and `limit_stored_*`
@@ -1475,14 +1511,22 @@ says it is a guard. Every command that reads the diff names its base:
      `node_count`'s doc says, `tree.rs:584-586 @ 83e6b8a`). Since nothing follows the script,
      that is the count at the call. The limit is that count for a refusal of a call that adds,
      and the count at the call plus the part to be admitted for a call that must be admitted in
-     part. Every `limit_nodes_*` and `limit_stored_*` case takes its limit this way.
-   - `limit_nodes_title` and `limit_stored_title` parse a page that has a `title` element, so
-     that the tree after the refusal equals the tree before (with a `title` that exists the text
+     part. Every `limit_nodes_*` and `limit_stored_*` case takes its limit this way. Each such
+     case puts the script, and the `title` it reads, in `body` (the page begins with `<body>`):
+     a script in `head` is followed by the `body` the parser implies at the end of the input,
+     a node after the script. The pages of `limit_nodes_split` and `split_at_the_stored_limit`
+     hold the script last in `body` for the same reason.
+   - `limit_nodes_title` and `limit_stored_title` parse a page that has a `title` element
+     (`<body><title>T</title><script>document.title = "x"</script>`: the `title` and the script
+     are in `body`), so that the tree after the refusal equals the tree before (with a `title`
+     that exists the text
      node is made first, decision 6: it is the one node and the one byte of `"x"` that the call
      makes, so the limit is the first parse's count less 1, and the new text node is refused).
      One more case,
      `title_refused_leaves_the_new_title`, parses a page with no `title` and the script
-     `document.title = "x"`, and its limit is read as above: under a `max_nodes` of the first
+     `document.title = "x"` in `body` (`<body><script>document.title = "x"</script>`: a script
+     in `head` would be followed by the `body` the parser implies at the end of the input, a
+     node after it), and its limit is read as above: under a `max_nodes` of the first
      parse's `node_count()` less 1, which admits the new `title` (1 node) and refuses its text
      node (the second), and then under a `max_stored_bytes` of the first parse's
      `stored_bytes()` less 1, which admits the `title` element and refuses its one byte of text.
@@ -1520,11 +1564,18 @@ says it is a guard. Every command that reads the diff names its base:
      asserts that it ends `Ran`, so the memory end comes from the loop's calls and not from the
      setup. The charge of `appendData` is on the stored handle (decision 5), not in
      `totals()`, whose bytes are the node handle's: after the run the case asserts
-     `stored_live()` equal to `1 + 1,048,576 n` for the `n` appends made, and `stored_charged()`
-     equal to `2 x stored_live()` (`STORED_FACTOR`), the member's charge on the books. Without
-     the member's charge the loop would run to the tree's `max_stored_bytes` of 67,108,864 and
-     end `limit: stored-bytes`, which the case's assertion of the end word `limit: memory`
-     refuses.
+     `stored_live()` equal to `1,048,576 n` for the `n` appends that ran (`n` may be 0, when
+     the first `charge_stored` is refused), and `stored_charged()` equal to `2 x stored_live()`
+     (`STORED_FACTOR`), the member's charge on the books. The `"x"` byte of `createTextNode` is
+     not in `stored_live()`: it is charged on the node handle, and `stored_live()` is the net
+     rise of script writes since the parse. Without the member's charge the loop would end
+     `limit: steps-per-script` or `limit: stored-bytes`, never `limit: memory`: an append costs
+     `1 + g(u) + 5 b16(L) + b16(data_len)` steps with `L` the text's length before the call,
+     196,614 for the first and 327,680 more for each MiB of text already there, so the steps
+     pass 10,000,000 in the 8th append (cumulative 10,747,952) and 50,000,000 in the 18th
+     (53,674,092), and the stored bytes pass 67,108,864 only in the 64th (arithmetic: `g(u)`
+     131,072 and `b16(data_len)` 65,536 for the 1 MiB string). The assertion of the end word
+     `limit: memory` refuses each.
 8. `memory_before_nodes_at_defaults`: `var b = document.documentElement.lastChild; for (;;) {
    var e = document.createElement("i"); b.appendChild(e); b.removeChild(e); }` ends `limit:
    memory` at the session's limits after at most 164,482 nodes (408 bytes each; the wrapper's 423
@@ -1534,7 +1585,16 @@ says it is a guard. Every command that reads the diff names its base:
    `body` at `d` = 3, 5 for the removal of the last child; 164,482 x 25 = 4,112,050, under
    10,000,000, but the engine's own steps for each turn come on top and are not in the tables);
    the case sets `steps_per_entry` to 50,000,000, as the cost module does, whatever a turn
-   costs, so that the memory end comes before the step end.
+   costs, so that the memory end comes before the step end. The case is not a row of the cost
+   module, and memory bounds its time: at most 164,482 turns, 4,112,050 steps by the tables,
+   3.0 s at the measured rate of 7.358 s for 10,000,000 steps (about 80,756 turns, 2,018,900
+   steps, 1.5 s with the wrapper's bytes), plus the engine's own steps, which no formula
+   gives; without the memory end 50,000,000 steps would take 36.8 s. It gets no lower step
+   limit: 6,795,324 would leave 16 steps a turn for the engine's own, and the case shows that
+   memory ends the loop before the steps do. Its `wall_clock` is the cost module's 50 s and
+   not the session's 5 s: 5 s is under ten times the case's 3.0 s, and a bound is at least
+   ten times the time it bounds (50 s is 16.5 times 3.0 s), so memory and not the clock ends
+   it. Its 4,112,050 steps are under 6,795,324 and its time is under 5 s by the tables.
 9. `charge_nodes_is_bulk`: through the real slice, `append` of 1,000 strings of 3 UTF-16 units
    charges `charge_nodes(1,001, 9,000)` = 426,408 bytes (arithmetic: 1,001 x 408 + 2 x 9,000)
    and settles to 414,408 in `totals().bytes` (arithmetic: 1,001 x 408 + 2 x 3,000; the settle
@@ -1574,7 +1634,11 @@ says it is a guard. Every command that reads the diff names its base:
    the tree gained plus 2 x the stored bytes it gained, plus 408 (arithmetic: the call's
    charge is `charge_nodes(1, 0)`, the fragment, 408 bytes), where the tree's gain is its
    `node_count()` and `stored_bytes()` less those of the same page parsed with each script
-   replaced by `1`. The second script's own node is in both sides.
+   replaced by `1`. The second script's own node is in both sides. At `steps_without + 100`
+   the convert has already made the fragment (arithmetic: the glue's step, the `n` of the
+   list, the fragment and the two items are 20 steps, before the climb of `p`, steps 21 to
+   520, where the limit falls), so the skipped settle leaves 0 above what was made: the case
+   holds the bound `gain + 1` with a slack of 1, and does not show an over-charge.
 10. `variadic_strings_are_charged_before_any_node`: `append` of 200,000 empty strings ends
     `limit: memory` with `totals().nodes` 0 and the tree's node count unchanged, because
     `charge_nodes(200,001, 0)` is 81,600,408 bytes (arithmetic: 200,001 x 408), over the
@@ -1586,7 +1650,11 @@ says it is a guard. Every command that reads the diff names its base:
     a.cloneNode(false); for (;;) document.documentElement.append(a, b);` at the default limits
     under `steps_per_entry` 50,000,000 ends `limit: memory`, not `limit: nodes`, and the node
     count the tree gained equals `totals().nodes`: the temporary fragment of each call is a node
-    and is charged.
+    and is charged. Memory bounds its time as in the case above: at most 164,482 calls of 38
+    steps by the tables (arithmetic), 6,250,316 steps, under 6,795,324, and 4.6 s at the
+    measured rate, plus the engine's own steps. The case gives the cost module's `wall_clock`
+    of 50 s, not the session's 5 s: 5 s is under ten times the case's 4.6 s, and a bound is at
+    least ten times the time it bounds (50 s is 10.9 times 4.6 s).
 11. `the_counter_per_write`: for each line of the table "Which tree write raises the counter"
     (member; tree function; raises when), one script makes the write and the test reads
     `Tree::writes()` through its tree handle before and after, and asserts raises or not as the
@@ -1663,40 +1731,78 @@ says it is a guard. Every command that reads the diff names its base:
       `insert_before` run without a stack overflow. A guard in the same test: a trivial call
       (`Tree::children(root)`) runs on that named thread, and a probe that recurses to half
       the stack (frame size and depth printed, arithmetic) completes on it, so the stack is
-      the one asked for.
+      the one asked for. The shape of the chain: 200 blocks of 100 elements. For each block the
+      test makes its 100 parentless elements and appends each under the one before it (top-down,
+      so each append climbs a chain of at most 99), then appends the chain built so far under
+      the block's deepest element, so that the block's first element is the chain's new root.
+      After block 200 the chain is one chain of 20,000 elements, depth 20,000 (arithmetic: 200 x
+      100), under the raised `max_depth`; the last join is the largest, a chain of 19,900 under
+      a block of 100. The claim needs a chain on which any recursion over its depth overflows
+      the stack: 262,144 bytes over 20,000 levels leave 13.1 bytes a level (arithmetic), less
+      than one call frame, and the shape gives that chain, the same one as an element-by-element
+      build, so the five functions run over the same depth and the claim keeps its strength;
+      only the build differs. The build costs 4,029,600 visits and climbs in a debug build
+      (arithmetic): the blocks 200 x 9,999 = 1,999,800 (the climbs of one block, the sum of
+      `2 d + 1` for `d` from 1 to 99) and the joins 2,029,800 (`element_height` in
+      `admit_depth` visits the chain moved, 100 x `j` for the join of the `j`th block, and
+      the new parent's two climbs of depth 100 each). Built top-down one element at a time,
+      the ancestor test and `element_depth` of each append climb the chain made so far: 20,000
+      x 20,001 = 400,020,000 climbs; built bottom-up one element at a time, 2 climbs for each
+      append but 200,010,000 visits of `element_height`. The test's time is named in the
+      report when it is over 5 s.
     - `walks_over_a_deep_chain`, an integration test in `crates/script/tests/dom_mutation.rs`:
       `Subtree`, `Climb` and `Siblings` are private to `dom/` (`mod mutation;` at
       `dom/mod.rs:8`) and `surf-script` has `[lib] test = false` (`Cargo.toml:10-11 @
       83e6b8a`; `task test-layout` fails on a `#[test]` in a source file), so no integration
       test names them and no source test can hold them on a small stack. The case holds them
-      through the members that call them, in a script over a page whose parser limit
-      `max_depth` is raised to 30,000 for a chain of 20,000 `div` elements and which also
-      holds 20,000 sibling `i` elements under one `p`: `appendChild` of the chain's root into a
-      fragment
-      (`Subtree`), `appendChild` under the chain's deepest element (`Climb`), and
+      through the members that call them, in a script over a page of 20,000 nested `div`
+      elements (the deepest has `id="deep"`) that holds one `p` with `id="s"` and 20,000 sibling
+      `<i></i>` under it, and the script after the `p`: `appendChild` of the chain's root into
+      a fragment (`Subtree`), `appendChild` under the chain's deepest element (`Climb`), and
       `insertBefore` of a new element before the last `i` (`Siblings`) each end the script
-      `Ran`. It runs on the runner's own thread, whose stack is `stack_bytes()`, 8,739,584 bytes
+      `Ran`. The case's `Limits` set `max_depth` 30,000 and `max_steps` 1 << 28 (268,435,456).
+      Arithmetic: each `div` start tag runs `close_a_p_element_in_button_scope`, whose scan of
+      the whole stack of open elements adds its visits to the parse's steps (`modes.rs:1141`,
+      `tree_builder.rs:1656-1673 @ 31a6979`); the `k`-th `div` scans `html`, `body` and the
+      `div` elements before it, `k + 1` visits, so the chain costs `n (n + 3) / 2` =
+      200,030,000 steps for `n` = 20,000. The default `max_steps` is 1 << 27 = 134,217,728
+      (`limits.rs:108 @ 31a6979`), and a parse at the default stops in the scan of the 16,383rd
+      `div`, before the script. With 1 << 28 the margin is 68,405,456 steps, for the scan of the
+      `p` start tag (20,001) and about 60,000 other tokens, each a few steps (the `i` tokens
+      read the top of the stack and a list of one entry), which allows 1,139 each. The page
+      holds 40,007 nodes (the script adds 3) against `max_nodes` 1,048,576, 80,455 stored bytes
+      against `max_stored_bytes` 67,108,864 and 240,308 input bytes against 16,777,216; the
+      script's steps by the tables are about 270,072 against the 10,000,000 of
+      `steps_per_entry`. The other pages of the story that parse a chain stay far under the
+      default: the 497 `div` of acceptance 9 cost `497 x 500 / 2` = 124,250 steps of scan, a
+      parsed chain of 512 (`max_depth`) at most `512 x 515 / 2` = 131,840 against 134,217,728,
+      and the chain of 512 of the depth guard is built by the script, not parsed. The case
+      runs on the runner's own thread, whose stack is `stack_bytes()`, 8,739,584 bytes
       for `RunnerLimits::SESSION` (`runner.rs:109-115`), so a walk that recursed with a frame
       over 436 bytes a level (arithmetic: 8,739,584 / 20,000 = 436) would overflow it; this
       is a bound on the frames it can notice, not a proof, and no claim is made about a
       smaller stack. The source test of decision 8 shows no function of the walks calls
       itself, which holds the rest.
 18. `dom_mutation_cost.rs` (new): worst shapes, each row one script, with the steps asserted
-    exactly and never a time. A row over 5 s is named in the report with its time; a row that
-    ends the script at a step limit runs under the 50 s wall-clock bound of
-    `dom_reading_cost.rs:34`, since the engine's 10,000,000 steps take about 7 s in the test
-    profile (`docs/design/scripts.md:302`) and a bound of 5 s would end the script first; no row
-    runs over 60 s, and the module's step ends within 120 s (acceptance 23).
+    exactly and never a time. A row over 5 s is named in the report with its time. A bound is
+    at least ten times the time it bounds (decision 12): a row that ends its script at a step
+    limit sets `steps_per_entry` to at most 6,795,324 (arithmetic: 10,000,000 x 5 / 7.358, the
+    10,000,000 steps that take 7.358 s in the test profile, `docs/design/scripts.md:302 @
+    a14e3b0`), which takes 5 s, so that the 50 s wall-clock bound of the runner in the module
+    (`dom_reading_cost.rs:36 @ 31a6979`) is ten times it. The default of 10,000,000 takes
+    7.358 s, and 50 s is 6.8 times that. No row runs over 60 s, and the module's step ends
+    within 120 s (acceptance 23).
     - The method. A row measures the call's own steps as the steps of the script with the call
       minus the steps of the same script without it (`Runner::steps()` before and after each, as
-      `dom_reading_cost.rs:146` does), with the call line holding only variables, so that no
-      argument is built on it. For each family there is a baseline shape in which every priced
-      term is the smallest it can be. The row asserts `with - base == F(with) - F(base)`, `F`
-      the family's formula of "What each member charges" evaluated on the two shapes: exact,
-      with no floor, ceiling or band. The glue's copy is an integer division (`units x 2 / 16`
-      at `14f8a2a`), so `g(u) = floor(u / 8)` is exact for any length; the rows use lengths that
-      are a multiple of 8 UTF-16 units or under 8, except the namespace of 28 units (`g` 3). The
-      row prints its name, `with`, `base` (the formula's values on the two shapes, the call's
+      `dom_reading_cost.rs:148 @ 31a6979` does), with the call line holding only variables, so
+      that no argument is built on it. For each family there is a baseline shape in which
+      every priced term is the smallest it can be. The row asserts `with - base == F(with) -
+      F(base)`, `F` the family's formula of "What each member charges" evaluated on the two
+      shapes: exact, with no floor, ceiling or band. The glue's copy is an integer division
+      (`units x 2 / 16` at `14f8a2a`), so `g(u) = floor(u / 8)` is exact for any length; the rows
+      use lengths that are a multiple of 8 UTF-16 units or under 8, except the namespace of 28
+      units (`g` 3) and the 17 units of the ceiling row of `b16` (`g` is 2 for 16 and for 17).
+      The row prints its name, `with`, `base` (the formula's values on the two shapes, the call's
       own steps) and the expected difference. A row whose call writes the tree also asserts that
       the steps it charged are at least the converted `Tree::work()` raised by the call
       (decision 4). That sentence holds per call for a list with spare capacity: a call that
@@ -1708,9 +1814,9 @@ says it is a guard. Every command that reads the diff names its base:
       a variadic call, a loop's target) has `2 (len + m)` after each growth (decision 15). A row
       on a list the script shrinks or grows across a reallocation asserts the sum over the whole
       script, and the parser-list row below asserts the named slack. The rows run under
-      `steps_per_entry` 50,000,000 (as `dom_reading_cost.rs:23`) unless the row says it ends. A
-      row that ends or throws has the pair form of acceptance 16: the same script without the
-      call gives `steps_without`; a limit of `steps_without + D - 1` ends the script and
+      `steps_per_entry` 50,000,000 (as `dom_reading_cost.rs:25 @ 31a6979`) unless the row says
+      it ends. A row that ends or throws has the pair form of acceptance 16: the same script
+      without the call gives `steps_without`; a limit of `steps_without + D - 1` ends the script and
       `steps_without + D` completes it, `D` the difference the row measured. No row asserts a
       count of the engine's own steps. Rows that share a page are one `#[test]`.
     - The rows, in the order of the tables (each figure is arithmetic from the formulas, as
@@ -1719,6 +1825,9 @@ says it is a guard. Every command that reads the diff names its base:
     - Creates:
       - create text: `createTextNode` of 1 MiB (1,048,576 units): 196,610 / 2 (the empty
         string) = 196,608 (131,072 + 65,536).
+      - create text, ceiling (holds `b16`): `createTextNode` of 17 units against 16: 6 / 5 = 1
+        (`2 + g + b16` with `g` 2 for both and `b16` 2 against 1). With `floor` in place of
+        `ceil` the two are 5 and 5, the difference 0, and the row is red.
       - create element: `createElement` of a name of 1 MiB: 327,682 / 5 (the name `a`) =
         327,677.
       - create template: `createElement("template")` against `createElement("templatx")`:
@@ -1746,6 +1855,10 @@ says it is a guard. Every command that reads the diff names its base:
         child, against a fragment of one: 7,011 / 18 = 6,993.
       - reference child: `insertBefore` of a fresh element before the child at index 10,000
         of 20,000, against index 0 of 2: 20,020 / 21 = 19,999.
+      - insert, ceiling of `ids` (holds `ids`): `insertBefore` of a fresh element before the
+        first child (`d` = 4), with 3 children against 2: 22 / 21 = 1 (the front walk
+        `ids(1)` is 1 for both; the back walk `ids(3)` is 2 against `ids(2)` 1). With `floor`
+        the two are 20 and 20, the difference 0, and the row is red.
       - child is the node: `insertBefore(x, x)` with `x` at index 10,000 of 20,000, against
         index 1 of 3: 50,023 / 29 = 49,994.
     - Replace and move:
@@ -1805,8 +1918,12 @@ says it is a guard. Every command that reads the diff names its base:
     - `normalize`:
       - one parent of 2,000 adjacent texts of 1 byte, against two: 4,016,381 / 29 =
         4,016,352 (1 + 2,001 + 12,006 + 375 + 4,001,998).
-      - 8 parents of 1,000 adjacent texts, against two texts: 8,065,548 / 29 = 8,065,519
-        (8,009 + 48,054 + 1,500 + 8,007,984 + 1).
+      - 8 parents of 900 adjacent texts of 1 byte under one `div`, against two texts:
+        6,538,998 / 29 = 6,538,969 (7,209 + 43,254 + 1,350 + 6,487,184 + 1: the walk `s`, the
+        six passes, `3 b16(B)`, the sum of `removed_p x (c_p + 2)` and the glue's step). It
+        holds the sum over parents: the removals of one run of 900 are 810,898, and the row's
+        sum over 8 parents is 6,487,184, which a charge of the longest run alone, or of one
+        run of all 7,200 texts (51,847,198), does not give.
       - one text of 4 MiB, against one of 1 byte: 786,447 / 18 = 786,429.
     - Other writers:
       - `textContent =` a string of 1 MiB on a node of 20,000 children, against `""` on a
@@ -1844,10 +1961,13 @@ says it is a guard. Every command that reads the diff names its base:
         first child 10,002 (1 + 1 + `ids(20,000)`), the replace-all 4; the base is the glue's
         step, a scan of 1, and the replace-all of 1 + 2 + 1. It holds the scan and the shift
         of the SVG branch. It waits for the reads gates of acceptance 1.
-      - refill: a kept `childNodes` read after each of 1,000 appends, from no children, against
-        10 appends: 8,501,500 / 865 = 8,500,635. The parts, for 1,000: the glue's steps 1,000
-        (one for each read), the getter's `8 x (kept + children)` 8,000,000, and the child
-        counts `children` charges before its copy, one step each, 500,500.
+      - refill: a kept `childNodes` read after each of 850 appends, from no children, against
+        10 appends: 6,142,525 / 865 = 6,141,660. The parts, for 850: the glue's steps 850
+        (one for each read), the getter's `8 x (kept + children)` 5,780,000, and the child
+        counts `children` charges before its copy, one step each, 361,675. It holds that each
+        read of the kept list is charged for the whole list again, the quadratic term, which
+        is 94 % of the row; 850 is the largest round number of appends under the limit
+        (900 would cost 6,886,350).
     - Removals: `p` has 2,000 children from the page. From the front,
       `removeChild(p.firstChild)` 2,000 times: 4,008,000 (arithmetic: the sum of `2 c + 3` for
       `c` from 1 to 2,000); from the back, `removeChild(p.lastChild)` 2,000 times: 10,000 (5 a
@@ -1857,23 +1977,36 @@ says it is a guard. Every command that reads the diff names its base:
       `steps_without + D` completes it. That holds the whole price of one removal, its share
       included, as one charge made before the call and no later; it does not hold the value of
       the share (see the terms below).
-    - Rows that end the script. No row claims that a script ends or does not end at the
-      default `steps_per_entry` of 10,000,000 by a count of the engine's own steps; the claims
-      are the pair form above, or an inequality in which the engine's steps only add:
+    - Rows that end the script. No row claims that a script ends or does not end at its
+      `steps_per_entry` by a count of the engine's own steps; the claims are the pair form
+      above, or an inequality in which the engine's steps only add. Each of the three rows that
+      end at a step limit sets `steps_per_entry` to 6,795,324, the largest limit within 5 s
+      (above), and its shape still shows its claim under it:
       - 5,000 removals from the front of a list of 5,000: the removals alone cost 25,020,000
-        (arithmetic) and the first 1,127 cost 10,004,379 by `r (2 n - r + 4)` (1,126 cost
-        9,996,628), so the script ends `limit: steps-per-script` at the 1,127th removal or before
-        it, and `p` keeps at least 3,873 children (arithmetic: 5,000 - 1,127). The row also has
-        the pair form on a list of 100 removed whole from the front, `D` measured;
-      - a list of 3,161 children removed whole from the front: the removals alone cost
-        10,004,565 (arithmetic: 3,161^2 + 4 x 3,161), over the default, so the script ends
-        `limit: steps-per-script` whatever the engine's own steps are. A list of 3,160 costs
-        9,998,240, 1,760 under the default: whether its script completes depends on the engine's
+        (arithmetic), 3.7 times the limit, and the first 733 cost 6,795,643 by `r (2 n - r +
+        4)` (732 cost 6,787,104), so the script ends `limit: steps-per-script` at the 733rd
+        removal or before it, and `p` keeps at least 4,267 children (arithmetic: 5,000 - 733).
+        The row also has the pair form on a list of 100 removed whole from the front, `D`
+        measured;
+      - a list of 2,605 children removed whole from the front: the removals alone cost
+        6,796,445 (arithmetic: 2,605^2 + 4 x 2,605), 1,121 over the limit, so the script ends
+        `limit: steps-per-script` whatever the engine's own steps are. A list of 2,604 costs
+        6,791,232, 4,092 under the limit: whether its script completes depends on the engine's
         own steps, so no row claims it;
       - `normalize` over 20 parents of 1,000 adjacent texts: its one charge is at least 20,019,960
-        (arithmetic: 20 x 999 x 1,002, the removals alone), so the script ends `limit:
-        steps-per-script` at that charge whatever the engine's own steps are;
+        (arithmetic: 20 x 999 x 1,002, the removals alone), 13,224,636 over the limit, so the
+        script ends `limit: steps-per-script` at that charge, before any of its work, whatever
+        the engine's own steps are;
       - a second deep clone under `max_nodes` 25,000 ends `limit: nodes`.
+      The pair rows keep their own limit, `steps_without + D`: the largest is 1,048,579 (a text
+      of 4 MiB made by `createTextNode`, 786,434, and the `splitText` pair, 262,145), under the
+      limit, so no pair row runs over about 1 s at the measured rate. The limit of 6,795,324
+      holds for every row of the module, not only for the rows that end: the steps of a row
+      are at most that. The two largest rows that complete are the refill row, 6,142,525 steps
+      (4.5 s), and the row of 8 parents of 900 adjacent texts, 6,538,998 steps (4.8 s); the
+      next is the `normalize` of one parent of 2,000 texts, 4,016,381 steps (3.0 s), and the
+      removals from the front of 2,000 children, 4,008,000 steps (2.9 s). Every other row that
+      completes is under 2,000,000 steps (the largest, the cycle row, 1,960,000).
     - Throw rows (the call refuses, its walks are paid): the base is the same throw on a small
       shape, and the pair of acceptance 16 holds the limit one below the call's own charge.
       - ancestor: `a.appendChild(ancestor)`, `d` = 5, a subtree of 100,000 nodes from the page
@@ -1977,6 +2110,8 @@ says it is a guard. Every command that reads the diff names its base:
 23. The folder's bounds hold:
     - no test runs over 60 s and the test step ends within 120 s; a test over 5 s is named in
       the report with its time, and the step prints its ten slowest tests;
+    - every compile and test runs through `slot`, and none of `--local`, `--here`,
+      `SLOT_NO_REMOTE` or `SLOT_SHIM_OFF` is used;
     - a build or test job in the pool ends within 10 minutes or names `slot --timeout`
       (at most 30 minutes), and is not started again unchanged;
     - a script that measures or waits starts without the `slot` prefix;
@@ -1999,7 +2134,11 @@ says it is a guard. Every command that reads the diff names its base:
                  -e "s/&'a str/\&'static str/g" | tr -d ' \n,')
     ```
     prints nothing (the pattern of the selectors story's acceptance 9, so that its lifetime and
-    string edits do not count as this story's).
+    string edits do not count as this story's). The command runs from the first base that holds
+    `reads.rs`: the file is not on `main` at `a14e3b0`, where the base side is empty and the
+    command prints the whole file, and it is at `14f8a2a`, `50a4239` and `31a6979`; the
+    implementor's base holds it, since the price gate of acceptance 1 needs the reading story
+    merged first.
 25. `crates/html/src/tree.rs` unit tests (the capacity of a list is private, so they live in
     the file):
     - `work_sees_the_passes`: each write function raises `work()` for the passes its doc comment
