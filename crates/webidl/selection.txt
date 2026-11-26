@@ -93,7 +93,7 @@ Element getAttributeNames attributes
 Element getAttribute attributes
 Element getAttributeNS attributes
 Element setAttribute attributes deviation: (TrustedType or DOMString) read as DOMString
-Element setAttributeNS attributes deviation: (TrustedType or DOMString) read as DOMString
+Element setAttributeNS attributes deviation: (TrustedType or DOMString) read as DOMString; deviation: a namespace that is none of the six the tree stores (HTML, MathML, SVG, XLink, XML, XMLNS) throws NotSupportedError after validate and extract, before the attribute is looked up
 Element removeAttribute attributes
 Element removeAttributeNS attributes
 Element toggleAttribute attributes

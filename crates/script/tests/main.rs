@@ -17,6 +17,7 @@ mod adversary_dom_reading_5;
 mod adversary_dom_reading_6;
 mod bindings;
 mod dom_attributes;
+mod dom_attributes_cost;
 mod dom_mutation;
 mod dom_reading;
 mod dom_reading_cost;

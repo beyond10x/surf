@@ -82,6 +82,14 @@ enum Writes {
     Charge,
     /// `createTextNode` answers the document without a charge: what the call costs besides it.
     Uncharged,
+    /// `createTextNode("A R")` charges and settles the stored bytes of decision 8 of
+    /// `story:scripts-dom-attributes`: `charge_stored(A, R)` then `settle_stored(A, R)`; a
+    /// last character `!` settles `(0, 0)` (a write the tree refused), `?` does so and then
+    /// throws a refusal that is not a limit, and `~` records the stored charge after the
+    /// charge and after a settle of `(0, 0)`.
+    Stored,
+    /// `createTextNode` answers `DomEnd::Fault`.
+    Fault,
 }
 
 /// The node of the element whose local name is `name`.
@@ -147,7 +155,17 @@ impl Attributes for TestAttributes {
     }
 }
 
-struct TestMutation(Writes);
+struct TestMutation(Writes, Record);
+
+impl TestMutation {
+    fn push(&self, what: &str, value: u64) {
+        self.1
+            .0
+            .lock()
+            .expect("the record")
+            .push((what.to_string(), value.to_string()));
+    }
+}
 
 impl Mutation for TestMutation {
     fn document_create_element(
@@ -159,7 +177,7 @@ impl Mutation for TestMutation {
     ) -> DomResult<NodeId> {
         match self.0 {
             Writes::LimitNodes => Err(DomEnd::Limit(Limit::Nodes)),
-            Writes::None | Writes::Charge | Writes::Uncharged => {
+            Writes::None | Writes::Charge | Writes::Uncharged | Writes::Stored | Writes::Fault => {
                 Err(not_supported("Document.createElement"))
             }
         }
@@ -177,6 +195,34 @@ impl Mutation for TestMutation {
                 Ok(this)
             }
             Writes::Uncharged => Ok(this),
+            Writes::Stored => {
+                let mark = data.chars().last().filter(|c| "!?~".contains(*c));
+                let numbers: Vec<usize> = data
+                    .trim_end_matches(['!', '?', '~'])
+                    .split(' ')
+                    .map(|n| n.parse().expect("a number"))
+                    .collect();
+                let (added, removed) = (numbers[0], numbers[1]);
+                cx.charge_stored(added, removed)?;
+                match mark {
+                    None => cx.settle_stored(added, removed)?,
+                    Some('!') => cx.settle_stored(0, 0)?,
+                    Some('?') => {
+                        cx.settle_stored(0, 0)?;
+                        return Err(DomEnd::Throw(DomException::new(
+                            "InvalidStateError",
+                            "a refusal that is not a limit",
+                        )));
+                    }
+                    Some(_) => {
+                        self.push("mid", cx.stored_charged());
+                        cx.settle_stored(0, 0)?;
+                        self.push("after", cx.stored_charged());
+                    }
+                }
+                Ok(this)
+            }
+            Writes::Fault => Err(DomEnd::Fault),
             Writes::None | Writes::LimitNodes => Err(not_supported("Document.createTextNode")),
         }
     }
@@ -217,8 +263,8 @@ fn test_document(writes: Writes, record: Record) -> impl FnOnce() -> Document + 
         limits: ParserLimits::default(),
         slices: Slices {
             reading: Box::new(TestReading),
-            attributes: Box::new(TestAttributes(record)),
-            mutation: Box::new(TestMutation(writes)),
+            attributes: Box::new(TestAttributes(record.clone())),
+            mutation: Box::new(TestMutation(writes, record)),
             selectors: Box::new(TestSelectors),
             wrap: Box::new(TestWrap),
         },
@@ -799,6 +845,33 @@ fn recorded(runner: &mut Runner) -> (Option<Limit>, usize) {
     (state.limit(), state.tree().node_count())
 }
 
+/// A defect ends the run and no script catches it (`story:scripts-dom-attributes`, acceptance
+/// 6h): a slice that answers `DomEnd::Fault` ends the script `Faulted`, past its `catch` and
+/// its `finally`, where a throw would be caught and give `Ran`.
+#[test]
+fn a_fault_ends_the_run() {
+    with_document(
+        limits(),
+        test_document(Writes::Fault, Record::default()),
+        |runner| {
+            let end = runner.evaluate(&format!(
+                "{PRELUDE}try {{ document.createTextNode(\"x\"); }} catch (e) {{ }} finally {{ }}"
+            ));
+            assert_eq!(end, ScriptEnd::Faulted);
+            let host: &ScriptHost = runner.agent_and_realm().0.host();
+            let state = host.document().expect("a document");
+            assert_eq!(
+                (
+                    state.stored_live(),
+                    state.stored_charged(),
+                    state.stored_handles()
+                ),
+                (0, 0, 0)
+            );
+        },
+    );
+}
+
 #[test]
 fn limit_end() {
     with_document(
@@ -950,5 +1023,109 @@ fn node_charge() {
             ));
             assert_eq!(end, ScriptEnd::Limit(Reason::Memory), "{end}");
         },
+    );
+}
+
+/// (`stored_live()`, `stored_charged()`, `stored_handles()`) of the document, and that the node
+/// totals and the node charges are 0.
+fn stored(runner: &mut Runner) -> (u64, u64, usize) {
+    let host: &ScriptHost = runner.agent_and_realm().0.host();
+    let state = host.document().expect("a document");
+    assert_eq!((state.totals().nodes, state.totals().bytes), (0, 0));
+    assert_eq!(state.node_charges(), 0);
+    (
+        state.stored_live(),
+        state.stored_charged(),
+        state.stored_handles(),
+    )
+}
+
+/// The functions of the stored charge themselves (`story:scripts-dom-attributes`, acceptance
+/// 6f), through the test slice's `createTextNode("A R")`: one handle sized to twice the live
+/// bytes, a removal refunds and never below 0, a refused write is put back, a refusal that
+/// is not a limit too, and a charge over the budget ends the script and changes nothing.
+#[test]
+fn the_stored_charge_functions() {
+    let record = Record::default();
+    let handed = record.clone();
+    with_document(limits(), test_document(Writes::Stored, record), |runner| {
+        assert_eq!(stored(runner), (0, 0, 0));
+        let steps = [
+            ("1000 0", (1_000, 2_000, 1)),
+            ("500 0", (1_500, 3_000, 1)),
+            ("0 700", (800, 1_600, 1)),
+            ("600 0", (1_400, 2_800, 1)),
+            ("300 0", (1_700, 3_400, 1)),
+            ("0 5000", (0, 0, 1)),
+            ("900 400", (500, 1_000, 1)),
+            ("0 0", (500, 1_000, 1)),
+            ("100 0~", (500, 1_000, 1)),
+            ("100 0!", (500, 1_000, 1)),
+        ];
+        for (argument, after) in steps {
+            ran(runner, &format!("document.createTextNode({argument:?});"));
+            assert_eq!(stored(runner), after, "{argument}");
+        }
+        ran(
+            runner,
+            r#"var refused = null;
+try { document.createTextNode("100 0?"); } catch (e) { refused = e; }
+check(refused instanceof DOMException && refused.name === "InvalidStateError", "the refusal");"#,
+        );
+        let (live, charged, handles) = stored(runner);
+        assert_eq!((live, charged, handles), (500, 1_000, 1));
+        assert_eq!(charged, 2 * live);
+    });
+    assert_eq!(
+        handed.taken(),
+        [
+            ("mid".to_string(), "1200".to_string()),
+            ("after".to_string(), "1000".to_string())
+        ]
+    );
+    with_document(
+        limits(),
+        test_document(Writes::Stored, Record::default()),
+        |runner| {
+            ran(
+                runner,
+                "for (var i = 0; i < 10000; i++) document.createTextNode(\"1 0\");",
+            );
+            assert_eq!(stored(runner), (10_000, 20_000, 1));
+            ran(runner, "document.createTextNode(\"0 5000\");");
+            assert_eq!(stored(runner), (5_000, 10_000, 1));
+        },
+    );
+    let mut small = limits();
+    small.engine.memory_bytes = 1024 * 1024;
+    with_document(
+        small,
+        test_document(Writes::Stored, Record::default()),
+        |runner| {
+            ran(runner, "document.createTextNode(\"1000 0\");");
+            let end = runner.evaluate(&format!(
+                "{PRELUDE}document.createTextNode(\"10000000 0\");"
+            ));
+            assert_eq!(end, ScriptEnd::Limit(Reason::Memory), "{end}");
+            assert_eq!(stored(runner), (1_000, 2_000, 1));
+        },
+    );
+    let grows = |writes: Writes| {
+        with_document(
+            limits(),
+            test_document(writes, Record::default()),
+            |runner| {
+                ran(runner, "");
+                let before = runner.agent_and_realm().0.heap_bytes().expect("heap");
+                ran(runner, r#"document.createTextNode("100000 0");"#);
+                let after = runner.agent_and_realm().0.heap_bytes().expect("heap");
+                after.saturating_sub(before)
+            },
+        )
+    };
+    let (charged, uncharged) = (grows(Writes::Stored), grows(Writes::Uncharged));
+    assert!(
+        charged >= uncharged + 200_000,
+        "the stored charge adds {charged} - {uncharged} bytes"
     );
 }

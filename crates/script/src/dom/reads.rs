@@ -130,7 +130,7 @@ pub(super) fn base_url(cx: &mut DomCx<'_, '_>, address: &Url) -> DomResult<Strin
 
 /// Charges `steps` to the running script. Past its limit the run ends; the answer here is then
 /// a throw the engine does not deliver.
-fn charge(cx: &mut DomCx<'_, '_>, steps: usize) -> DomResult<()> {
+pub(super) fn charge(cx: &mut DomCx<'_, '_>, steps: usize) -> DomResult<()> {
     if steps == 0 {
         return Ok(());
     }
@@ -365,10 +365,10 @@ enum Reads {
 
 /// The step of passing attributes in a scan for one by name: one per 4 attributes, so that a
 /// step buys a bounded number of name compares.
-const ATTRIBUTES_A_STEP: usize = 4;
+pub(super) const ATTRIBUTES_A_STEP: usize = 4;
 
 /// The number of attributes of `node`, 0 for a node that is no element.
-fn attribute_count(tree: &Tree, node: NodeId) -> usize {
+pub(super) fn attribute_count(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
         NodeData::Element { attributes, .. } => attributes.len(),
         NodeData::Document
